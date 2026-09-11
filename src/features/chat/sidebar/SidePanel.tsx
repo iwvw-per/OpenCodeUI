@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore
 import { useTranslation } from 'react-i18next'
 import { FolderRecentList } from './FolderRecentList'
 import { MultiServerFolderList } from './MultiServerFolderList'
-import { SearchResults } from './SearchResults'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
 import { getProjectGroupIdentity } from './projectGrouping'
@@ -623,7 +622,6 @@ export function SidePanel({
     const insertAt = Math.min(Math.max(globalFolderIndex, 0), list.length)
     return [...list.slice(0, insertAt), globalFolderProject, ...list.slice(insertAt)]
   }, [folderProjectGroups, currentDirectory, currentProject, globalFolderProject, globalFolderIndex, sidebarShowGlobal])
-  // 文件夹模式开启（搜索时由 SearchResults 接管，文件夹与 session 一起搜）
 
   const workspaceDirectoriesByProjectId = useMemo(() => {
     const map = new Map<string, string[]>()
@@ -639,8 +637,6 @@ export function SidePanel({
     () => currentProject.workspaceDirectories ?? [],
     [currentProject.workspaceDirectories],
   )
-  const shouldRenderWorkspaceTreeOnly =
-    !search && currentProjectWorkspaceDirectories.length > 1 && currentProject.id !== 'global'
   const shouldWaitForWorkspaceResolution =
     !search &&
     !!currentDirectory &&
@@ -649,31 +645,9 @@ export function SidePanel({
     !!normalizedCurrentDirectory &&
     !gitWorkspaceCatalog.has(normalizedCurrentDirectory)
 
-  const currentProjectTreeProjects = useMemo<ProjectItem[]>(() => {
-    if (!shouldRenderWorkspaceTreeOnly || currentProject.id === 'global') return []
-
-    const draggableWorkspaceSet = new Set(
-      (currentProject.memberDirectories ?? []).map(directory => normalizeToForwardSlash(directory)),
-    )
-
-    return currentProjectWorkspaceDirectories.map(workspaceDirectory => {
-      const isSavedWorkspace = draggableWorkspaceSet.has(normalizeToForwardSlash(workspaceDirectory))
-
-      return {
-        id: workspaceDirectory,
-        worktree: workspaceDirectory,
-        name: getDirectoryName(workspaceDirectory),
-        canReorder: isSavedWorkspace,
-        memberDirectories: isSavedWorkspace ? [workspaceDirectory] : [],
-        reorderPath: isSavedWorkspace ? workspaceDirectory : undefined,
-        sectionKind: 'workspace' as const,
-      }
-    })
-  }, [currentProject, currentProjectWorkspaceDirectories, shouldRenderWorkspaceTreeOnly])
-
   const allDisplayedProjects = useMemo(() => {
-    return [...folderProjects, ...currentProjectTreeProjects]
-  }, [folderProjects, currentProjectTreeProjects])
+    return [...folderProjects]
+  }, [folderProjects])
 
   // 需求 3：点击项目目录/名称不跳转（只展开/收起），只有点击会话才导航。
   // 保持签名兼容 FolderRecentList 的 onSelectProject 调用，但不再 setCurrentDirectory。
@@ -728,20 +702,6 @@ export function SidePanel({
       reorderDirectories(draggedReorderPath, targetReorderPath)
     },
     [folderProjects, reorderDirectories, globalFolderIndex],
-  )
-
-  const handleSelect = useCallback(
-    (session: ApiSession) => {
-      // Global 模式下，点击 session 自动切换到该 session 的工作目录并添加到项目列表
-      if (!currentDirectory && session.directory) {
-        addDirectory(session.directory)
-      }
-      onSelectSession(session)
-      if (window.innerWidth < 768 && onCloseMobile) {
-        onCloseMobile()
-      }
-    },
-    [currentDirectory, addDirectory, onSelectSession, onCloseMobile],
   )
 
   // 多服务器模式：从分组列表选择 session（serverId 已由 MultiServerFolderList 附加）
@@ -867,7 +827,8 @@ export function SidePanel({
   const commonFolderRecentListProps = {
     currentDirectory,
     selectedSessionId,
-    expandedProjectIds: expandedRecentProjectIds,
+    // 搜索时强制展开所有项目：让各项目加载会话供就地筛选（否则折叠项目的会话未加载会被误隐藏）
+    expandedProjectIds: search ? folderProjects.map(project => project.id) : expandedRecentProjectIds,
     onExpandedProjectIdsChange: setExpandedRecentProjectIds,
     onSelectProject: handleSelectFolderProject,
     onSelectSession: handleSelectActive,
@@ -877,6 +838,7 @@ export function SidePanel({
     expandedChildSessionIds,
     inlineChildSessions,
     onSelectChildSession: handleSelectActive,
+    search,
     isEditMode,
     selectedSessionIds,
     selectedProjectIds,
@@ -979,7 +941,7 @@ export function SidePanel({
 
         {/* Search — 与上方导航同列 gap-0.5；收起时图标，展开时输入框 */}
         {showLabels ? (
-          <div className="relative w-full">
+          <div className="relative w-full mb-1.5">
             <span className="pointer-events-none absolute left-[6px] top-1/2 -translate-y-1/2 size-5 flex items-center justify-center text-text-300">
               <SearchIcon size={16} />
             </span>
@@ -1014,7 +976,7 @@ export function SidePanel({
               onToggleSidebar()
             }}
             aria-label={t('sidebar.searchChats')}
-            className="h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 hover:bg-bg-200 active:scale-[0.98] transition-all duration-300 overflow-hidden"
+            className="h-8 mb-1.5 flex items-center rounded-lg text-text-300 hover:text-text-100 hover:bg-bg-200 active:scale-[0.98] transition-all duration-300 overflow-hidden"
             style={{ width: 32, paddingLeft: 6, paddingRight: 6 }}
             title={t('sidebar.searchChats')}
           >
@@ -1146,22 +1108,15 @@ export function SidePanel({
               className={`flex-1 overflow-hidden ${isEditMode ? 'select-none' : ''}`}
             >
               {subscribedServerIds.length > 0 ? (
-                search ? (
-                  <SearchResults
-                    search={search}
-                    selectedSessionId={multiServerSelectedSessionKey}
-                    onSelectSession={handleSelectMultiServer}
-                  />
-                ) : (
-                  <MultiServerFolderList
-                    serverIds={subscribedServerIds}
-                    selectedSessionId={multiServerSelectedSessionKey}
-                    currentDirectory={currentDirectory}
-                    onSelectSession={handleSelectMultiServer}
-                    onNewSession={onNewSession}
-                    flat
-                  />
-                )
+                <MultiServerFolderList
+                  serverIds={subscribedServerIds}
+                  selectedSessionId={multiServerSelectedSessionKey}
+                  currentDirectory={currentDirectory}
+                  onSelectSession={handleSelectMultiServer}
+                  onNewSession={onNewSession}
+                  flat
+                  search={search}
+                />
               ) : (
                 <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-[length:var(--fs-xs)] text-text-400/70">
                   <span>{t('sidebar.noSubscribedServers', { defaultValue: 'No servers subscribed yet.' })}</span>
@@ -1184,17 +1139,12 @@ export function SidePanel({
               className={`flex-1 overflow-hidden ${isEditMode ? 'select-none' : ''}`}
             >
               {search ? (
-                /* 项目模式 + 搜索：文件夹 + session 一起搜 */
-                <SearchResults
-                  search={search}
-                  selectedSessionId={selectedSessionId}
-                  onSelectSession={handleSelect}
-                />
-              ) : shouldRenderWorkspaceTreeOnly ? (
+                /* 项目模式 + 搜索：文件夹 + session 就地筛选 */
                 <FolderRecentList
-                  projects={currentProjectTreeProjects}
+                  projects={folderProjects}
                   {...commonFolderRecentListProps}
-                  onReorderProject={reorderDirectories}
+                  onReorderProject={handleReorderProjectGroup}
+                  workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
                   pinnedSessions={resolvedPinnedSessions}
                   unavailablePinnedEntries={unavailablePinnedEntries}
                 />
