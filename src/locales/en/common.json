@@ -66,5 +66,11 @@
   "upDownSelect": "↑↓ select",
   "enterRun": "↵ run",
   "enterConfirmShort": "↵ confirm",
-  "escCancel": "esc cancel"
+  "escCancel": "esc cancel",
+  "relativeTime": {
+    "justNow": "Just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  }
 }

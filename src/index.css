@@ -1245,3 +1245,92 @@ body {
     transition: none;
   }
 }
+
+/* ============================================
+ * Auto-scroll title（会话标题过长时滚动）
+ * 容器测量溢出后设置 --marquee-distance，标题在 hover/聚焦时滚动一次
+ * ============================================ */
+.marquee-title {
+  overflow: hidden;
+  white-space: nowrap;
+}
+.marquee-title:hover .marquee-title-inner,
+.marquee-title:focus-within .marquee-title-inner {
+  animation: marquee-scroll var(--marquee-duration, 4s) linear infinite;
+}
+@keyframes marquee-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--marquee-distance, -40px));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee-title:hover .marquee-title-inner,
+  .marquee-title:focus-within .marquee-title-inner {
+    animation: none;
+  }
+}
+
+/* ============================================================
+   可读性补丁 —— 追加到文件末尾
+   ============================================================ */
+
+/* 1) 全局字重 / 行高 / 渲染 */
+:root:root {
+  font-weight: 500;        /* Inter、PingFang 的 400 在 12–14px 会发虚 */
+  line-height: 1.6;        /* 中英混排要比 1.4 松一些 */
+  letter-spacing: 0.01em;  /* 给中文一点呼吸感 */
+  font-optical-sizing: auto;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* 等宽字体单独加粗，并处理连字 */
+:root:root code,
+:root:root pre,
+:root:root kbd,
+:root:root samp,
+:root:root textarea,
+:root:root [class*='font-mono'] {
+  font-weight: 500;
+  letter-spacing: 0;
+  font-variant-ligatures: contextual; /* 讨厌连字就改成 none */
+}
+
+/* 2) 浅色：弱文字整体压深一档 */
+/* 说明：themeStore 会注入同特异性 (:root:root) 的主题变量（opencode-theme-vars），
+   且注入的 <style> 位于本文件之后 → 这里用 :root:root:root 提升特异性才不会被覆盖 */
+:root:root:root,
+:root:root[data-mode='light'] {
+  --text-200: 220 14% 28%;
+  --text-300: 220 12% 41%;
+  --text-400: 220 10% 52%;
+  --text-500: 220 9% 64%;
+  --border-100: 220 16% 80%;
+  --border-200: 220 13% 73%;
+}
+
+/* 3) 深色：弱文字整体提亮一档 */
+:root:root[data-mode='dark'] {
+  --text-200: 220 12% 79%;
+  --text-300: 220 10% 67%;
+  --text-400: 220 9% 56%;
+  --text-500: 220 8% 46%;
+  --border-100: 220 12% 30%;
+  --border-200: 220 12% 36%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:root:not([data-mode]) {
+    --text-200: 220 12% 79%;
+    --text-300: 220 10% 67%;
+    --text-400: 220 9% 56%;
+    --text-500: 220 8% 46%;
+    --border-100: 220 12% 30%;
+    --border-200: 220 12% 36%;
+  }
+}

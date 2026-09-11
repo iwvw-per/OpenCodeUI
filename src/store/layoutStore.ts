@@ -101,6 +101,10 @@ interface LayoutState {
   sidebarFolderRecents: boolean
   sidebarFolderRecentsShowDiff: boolean
   sidebarShowChildSessions: boolean
+  /** 侧栏显示「全局」分组（非 Git 工作区会话），默认关闭 */
+  sidebarShowGlobal: boolean
+  /** 发送消息快捷键：Enter（默认 true）或 Shift+Enter（false） */
+  sendOnEnter: boolean
 
   // 右侧栏
   rightPanelOpen: boolean
@@ -125,6 +129,8 @@ const STORAGE_KEY_SIDEBAR = 'opencode-sidebar-expanded'
 const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS = 'opencode-sidebar-folder-recents'
 const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF = 'opencode-sidebar-folder-recents-show-diff'
 const STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS = 'opencode-sidebar-show-child-sessions'
+const STORAGE_KEY_SIDEBAR_SHOW_GLOBAL = 'opencode-sidebar-show-global'
+const STORAGE_KEY_SEND_ON_ENTER = 'opencode-send-on-enter'
 const STORAGE_KEY_PANEL_LAYOUT = 'opencode-panel-layout'
 const STORAGE_KEY_TERMINAL_LAYOUT = 'opencode-terminal-layout'
 const STORAGE_KEY_RIGHT_PANEL_WIDTH = 'opencode-right-panel-width'
@@ -313,6 +319,8 @@ export class LayoutStore {
     sidebarFolderRecents: false,
     sidebarFolderRecentsShowDiff: true,
     sidebarShowChildSessions: false,
+    sidebarShowGlobal: false,
+    sendOnEnter: true,
     rightPanelOpen: false,
     rightPanelWidth: 450,
     bottomPanelOpen: false,
@@ -411,6 +419,16 @@ export class LayoutStore {
       const savedShowChildSessions = localStorage.getItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS)
       if (savedShowChildSessions !== null) {
         this.state.sidebarShowChildSessions = savedShowChildSessions === 'true'
+      }
+
+      const savedShowGlobal = localStorage.getItem(STORAGE_KEY_SIDEBAR_SHOW_GLOBAL)
+      if (savedShowGlobal !== null) {
+        this.state.sidebarShowGlobal = savedShowGlobal === 'true'
+      }
+
+      const savedSendOnEnter = localStorage.getItem(STORAGE_KEY_SEND_ON_ENTER)
+      if (savedSendOnEnter !== null) {
+        this.state.sendOnEnter = savedSendOnEnter !== 'false'
       }
 
       const savedWakeLock = localStorage.getItem(STORAGE_KEY_WAKE_LOCK)
@@ -522,6 +540,28 @@ export class LayoutStore {
     this.state.sidebarShowChildSessions = enabled
     try {
       localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, String(enabled))
+    } catch {
+      /* ignore */
+    }
+    this.notify()
+  }
+
+  setSidebarShowGlobal(enabled: boolean) {
+    if (this.state.sidebarShowGlobal === enabled) return
+    this.state.sidebarShowGlobal = enabled
+    try {
+      localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_GLOBAL, String(enabled))
+    } catch {
+      /* ignore */
+    }
+    this.notify()
+  }
+
+  setSendOnEnter(enabled: boolean) {
+    if (this.state.sendOnEnter === enabled) return
+    this.state.sendOnEnter = enabled
+    try {
+      localStorage.setItem(STORAGE_KEY_SEND_ON_ENTER, String(enabled))
     } catch {
       /* ignore */
     }
@@ -1170,6 +1210,8 @@ export interface LayoutBackup {
   sidebarFolderRecents: boolean
   sidebarFolderRecentsShowDiff: boolean
   sidebarShowChildSessions: boolean
+  sidebarShowGlobal: boolean
+  sendOnEnter: boolean
   wakeLock: boolean
   rightPanelWidth: number
   bottomPanelHeight: number
@@ -1214,6 +1256,8 @@ export function exportLayoutBackup(): LayoutBackup {
     sidebarFolderRecents: state.sidebarFolderRecents,
     sidebarFolderRecentsShowDiff: state.sidebarFolderRecentsShowDiff,
     sidebarShowChildSessions: state.sidebarShowChildSessions,
+    sidebarShowGlobal: state.sidebarShowGlobal,
+    sendOnEnter: state.sendOnEnter,
     wakeLock: state.wakeLock,
     rightPanelWidth: state.rightPanelWidth,
     bottomPanelHeight: state.bottomPanelHeight,
@@ -1248,6 +1292,8 @@ export function importLayoutBackup(raw: unknown): void {
     String(parsed?.sidebarFolderRecentsShowDiff !== false),
   )
   localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, String(parsed?.sidebarShowChildSessions === true))
+  localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_GLOBAL, String(parsed?.sidebarShowGlobal === true))
+  localStorage.setItem(STORAGE_KEY_SEND_ON_ENTER, String(parsed?.sendOnEnter !== false))
   localStorage.setItem(STORAGE_KEY_WAKE_LOCK, String(parsed?.wakeLock === true))
   localStorage.setItem(STORAGE_KEY_RIGHT_PANEL_WIDTH, String(rightPanelWidth))
   localStorage.setItem(STORAGE_KEY_BOTTOM_PANEL_HEIGHT, String(bottomPanelHeight))

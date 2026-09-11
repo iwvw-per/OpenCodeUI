@@ -29,6 +29,7 @@ import {
 } from './input/inputUtils'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
 import { themeStore } from '../../store/themeStore'
+import { useLayoutStore } from '../../store/layoutStore'
 import { useChatViewport } from './chatViewport'
 import type { ApiAgent } from '../../api/client'
 import type { ModelInfo, FileCapabilities } from '../../api'
@@ -203,6 +204,7 @@ function InputBoxComponent({
   collapsedQuestion,
 }: InputBoxProps) {
   const { t } = useTranslation('chat')
+  const { sendOnEnter } = useLayoutStore()
   // 合并文件能力：优先用 fileCapabilities，回退到 supportsImages
   const fileCaps: FileCapabilities = useMemo(
     () =>
@@ -671,14 +673,43 @@ function InputBoxComponent({
         return
       }
 
-      // 发送消息（读取 keybinding 配置）
+      // 发送消息：发送方式设置决定 Enter / Shift+Enter 哪个是发送键；
+      // 另一个键保留默认换行。自定义 sendMessage 键（默认 Ctrl+Enter）始终可用。
       const sendKey = keybindingStore.getKey('sendMessage')
-      if (sendKey && !isImeComposing && matchesKeybinding(nativeEvent, sendKey)) {
+      const isPlainEnter = e.key === 'Enter' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey
+
+      if (!sendOnEnter) {
+        // Shift+Enter 发送：裸 Enter 只换行，Shift+Enter 直接发送
+        if (e.key === 'Enter' && e.shiftKey && !isImeComposing) {
+          e.preventDefault()
+          handleSend()
+        } else if (sendKey && !isImeComposing && !isPlainEnter && matchesKeybinding(nativeEvent, sendKey)) {
+          e.preventDefault()
+          handleSend()
+        }
+        return
+      }
+
+      // Enter 发送（默认）：裸 Enter 直接发送
+      if (isPlainEnter && !isImeComposing) {
+        e.preventDefault()
+        handleSend()
+      } else if (sendKey && !isImeComposing && !isPlainEnter && matchesKeybinding(nativeEvent, sendKey)) {
         e.preventDefault()
         handleSend()
       }
     },
-    [mentionOpen, slashOpen, mentionQuery, updateMentionQuery, handleSend, text, attachments, handleHistoryKeyDown],
+    [
+      mentionOpen,
+      slashOpen,
+      mentionQuery,
+      updateMentionQuery,
+      handleSend,
+      text,
+      attachments,
+      handleHistoryKeyDown,
+      sendOnEnter,
+    ],
   )
 
   const handleChange = useCallback(

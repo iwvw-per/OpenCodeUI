@@ -92,6 +92,11 @@ import {
   AppWindow,
   ZoomIn,
   ZoomOut,
+  Hash,
+  ArrowUpNarrowWide,
+  MoreHorizontal,
+  FolderPlus,
+  Archive,
 } from 'lucide-react'
 
 export interface IconProps extends SVGProps<SVGSVGElement> {
@@ -222,3 +227,8 @@ export const SplitHorizontalIcon = wrap(Columns2)
 export const SplitVerticalIcon = wrap(Rows2)
 export const GripVerticalIcon = wrap(GripVertical)
 export const AppWindowIcon = wrap(AppWindow)
+export const HashIcon = wrap(Hash)
+export const SortIcon = wrap(ArrowUpNarrowWide)
+export const MenuDotsIcon = wrap(MoreHorizontal)
+export const FolderPlusIcon = wrap(FolderPlus)
+export const ArchiveIcon = wrap(Archive)

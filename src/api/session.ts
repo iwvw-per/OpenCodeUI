@@ -88,6 +88,7 @@ export async function getLastTurnDiff(sessionId: string, directory?: string, ser
 
 /**
  * 获取 session 列表
+ * 归档的会话（time.archived）不进入任何列表（侧栏/搜索/会话切换），避免归档后回显。
  */
 export async function getSessions(params: SessionListParams = {}, serverId?: string): Promise<ApiSession[]> {
   const sdk = getSDKClient(serverId)
@@ -102,7 +103,7 @@ export async function getSessions(params: SessionListParams = {}, serverId?: str
         limit,
       }),
     ),
-  )
+  ).filter(session => !session.time?.archived)
 }
 
 /**

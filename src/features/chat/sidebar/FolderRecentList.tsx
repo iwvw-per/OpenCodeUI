@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ApiSession } from '../../../api'
+import { updateSession, type ApiSession } from '../../../api'
 import {
   FolderIcon,
   FolderOpenIcon,
@@ -10,6 +10,7 @@ import {
   PinIcon,
   SpinnerIcon,
   ChevronDownIcon,
+  PlusIcon,
 } from '../../../components/Icons'
 import { ExpandableSection } from '../../../components/ui'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
@@ -52,6 +53,8 @@ interface FolderRecentListProps {
   onRenameSession: (session: ApiSession, newTitle: string) => Promise<void>
   onDeleteSession: (session: ApiSession) => Promise<void>
   onReorderProject: (draggedPath: string, targetPath: string) => void
+  /** 项目行 hover 的 + 按钮：在该项目目录下新建会话（无目录的项目（全局）不显示） */
+  onNewSessionInDirectory?: (directory: string) => void
   expandedChildSessionIds?: Set<string>
   inlineChildSessions?: Map<string, ApiSession[]>
   onSelectChildSession?: (session: ApiSession) => void
@@ -430,6 +433,7 @@ export function FolderRecentList({
   onRenameSession,
   onDeleteSession,
   onReorderProject,
+  onNewSessionInDirectory,
   expandedChildSessionIds,
   inlineChildSessions,
   onSelectChildSession,
@@ -593,6 +597,7 @@ export function FolderRecentList({
                   selectedSessionId={selectedSessionId}
                   onSelectProject={() => handleSelectDirectory(project.worktree, project.sectionKind)}
                   onSelectDirectory={handleSelectDirectory}
+                  onNewSessionInDirectory={onNewSessionInDirectory}
                   onToggle={() => handleToggleProject(project.id)}
                   onSelectSession={onSelectSession}
                   onRenameSession={onRenameSession}
@@ -800,6 +805,7 @@ interface FolderRecentSectionProps {
   selectedSessionId: string | null
   onSelectProject: () => void
   onSelectDirectory: (directory: string, sectionKind?: FolderRecentProject['sectionKind']) => void
+  onNewSessionInDirectory?: (directory: string) => void
   onToggle: () => void
   onSelectSession: (session: ApiSession) => void
   onRenameSession: (session: ApiSession, newTitle: string) => Promise<void>
@@ -843,6 +849,7 @@ function FolderRecentSection({
   selectedSessionId,
   onSelectProject,
   onSelectDirectory,
+  onNewSessionInDirectory,
   onToggle,
   onSelectSession,
   onRenameSession,
@@ -923,6 +930,21 @@ function FolderRecentSection({
       })
     },
     [sessions, onRequestDeleteSession, removeLocalSession],
+  )
+
+  // 归档：updateSession({ time: { archived: now } })，成功后本地移除
+  const handleArchive = useCallback(
+    async (sessionId: string) => {
+      const session = sessions.find(item => item.id === sessionId)
+      if (!session) return
+      try {
+        await updateSession(session.id, { time: { archived: Date.now() } }, session.directory, serverId)
+        removeLocalSession(sessionId)
+      } catch {
+        // 归档失败静默（由列表刷新兜底）
+      }
+    },
+    [sessions, serverId, removeLocalSession],
   )
 
   const projectName =
@@ -1019,6 +1041,21 @@ function FolderRecentSection({
               </span>
             )}
           </button>
+          {/* 项目行 hover 的 + 按钮：在该项目目录下新建会话（全局/无目录项目不显示） */}
+          {!isEditMode && onNewSessionInDirectory && project.worktree && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation()
+                onNewSessionInDirectory(project.worktree)
+              }}
+              className="shrink-0 flex items-center justify-center w-6 h-6 mr-0.5 rounded-full text-accent-main-100 hover:bg-accent-main-100/10 hover:text-accent-main-200 transition-colors"
+              title={t('sidebar.newTaskInDirectory', { defaultValue: 'New conversation here' })}
+              aria-label={t('sidebar.newTaskInDirectory', { defaultValue: 'New conversation here' })}
+            >
+              <PlusIcon size={13} />
+            </button>
+          )}
           {/* 管理模式下保留展开/收起，否则选不了内部会话 */}
           {isEditMode && (
             <button
@@ -1110,6 +1147,7 @@ function FolderRecentSection({
                         onSelect={() => onSelectSession(session)}
                         onRename={newTitle => handleRename(session.id, newTitle)}
                         onDelete={() => handleDelete(session.id)}
+                        onArchive={() => void handleArchive(session.id)}
                         preferTouchUi={preferTouchUi}
                         density="minimal"
                         showStats={showSessionDiffStats}

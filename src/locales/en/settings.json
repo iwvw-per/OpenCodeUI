@@ -111,6 +111,10 @@
     "actionsOnLatestAssistantOnlyDesc": "In a turn with multiple assistant messages, show fork and copy only on the last one",
     "desktopCollapsedInputDock": "Collapse composer on desktop",
     "desktopCollapsedInputDockDesc": "When scrolling up through history, shrink the input into a capsule; always on for mobile, on by default on desktop",
+    "sendMode": "Send message with",
+    "sendModeDesc": "Choose whether Enter or Shift+Enter sends the message; the other key inserts a newline.",
+    "sendModeEnter": "Enter to send",
+    "sendModeShiftEnter": "Shift+Enter to send",
     "descriptiveToolSteps": "Descriptive Steps",
     "descriptiveToolStepsDesc": "Replace plain step counts with tool-aware summaries and show a steps line even for single tool calls",
     "processCollapse": "Collapse process",
@@ -251,7 +255,9 @@
     "folderStyleRecentsShowDiff": "Show Diff In Folder View",
     "folderStyleRecentsShowDiffDesc": "Show additions, deletions, and file counts for sessions in folder-style recents",
     "showChildSessions": "Always Show Child Sessions",
-    "showChildSessionsDesc": "Always list child sessions under their parent. When off, only active or selected children are shown."
+    "showChildSessionsDesc": "Always list child sessions under their parent. When off, only active or selected children are shown.",
+    "showGlobal": "Show global conversations",
+    "showGlobalDesc": "Show the Global group in the sidebar (non-Git workspace, usually where opencode started). Off by default."
   },
   "workspace": {
     "layout": "Layout & Reading",

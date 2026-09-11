@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useState, useMemo, useSyncExternalStore, type PointerEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SearchIcon, PencilIcon, TrashIcon, ComposeIcon, PinIcon } from '../../components/Icons'
+import { SearchIcon, PencilIcon, TrashIcon, ComposeIcon, PinIcon, ArchiveIcon, SpinnerIcon } from '../../components/Icons'
 import { getSelectionRoundClass } from './selectionRound'
 import { formatRelativeTime } from '../../utils/dateUtils'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
@@ -378,6 +378,8 @@ export interface SessionListItemProps {
   onSelect: () => void
   onDelete: () => void
   onRename: (newTitle: string) => void
+  /** 归档按钮（项目模式会话行尾部）；缺省不显示 */
+  onArchive?: () => void
   preferTouchUi: boolean
   density?: 'default' | 'compact' | 'minimal'
   showStats?: boolean
@@ -400,6 +402,7 @@ export function SessionListItem({
   onSelect,
   onDelete,
   onRename,
+  onArchive,
   preferTouchUi,
   density = 'default',
   showStats = true,
@@ -485,6 +488,13 @@ export function SessionListItem({
       onRename(trimmed)
     }
     setIsEditing(false)
+  }
+
+  // 归档：调用方负责 updateSession({ time: { archived } })
+  const handleArchive = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setShowActions(false)
+    onArchive?.()
   }
 
   const handleCancelEdit = () => {
@@ -635,17 +645,11 @@ export function SessionListItem({
   if (isMinimal) {
     const statusIndicatorTitle =
       activeStatus?.label || (hasUnreadCompletedNotification ? t('chat:notification.completed') : undefined)
+    // 活跃/工作中：显示旋转状态图标；否则显示状态点
+    const isWorking = !!activeStatus?.pulse
 
     return (
-      <div
-        ref={itemRef}
-        {...selectionAttrs}
-        onClick={handleClick}
-        onMouseDown={handleSelectionMouseDown}
-        onTouchStart={!isEditMode ? handleTouchStart : undefined}
-        onTouchMove={!isEditMode ? handleTouchMove : undefined}
-        onTouchEnd={!isEditMode ? handleTouchEnd : undefined}
-        className={`group relative flex items-center gap-2 px-2 py-1.5 cursor-default transition-colors duration-150 select-none ${getSelectionRoundClass(
+      <div className={`group relative flex items-center gap-1 px-2 py-1.5 cursor-default transition-colors duration-150 select-none ${getSelectionRoundClass(
           isEditMode && isChecked,
           checkedPrev,
           checkedNext,
@@ -661,16 +665,40 @@ export function SessionListItem({
         } ${showActions && !isEditMode ? 'bg-bg-200/40' : ''}`}
       >
         <span className="relative shrink-0 flex items-center justify-center size-5" title={statusIndicatorTitle}>
-          {activeStatus ? (
-            <>
-              <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot}`} />
-              {activeStatus.pulse && (
-                <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot} animate-ping opacity-50`} />
-              )}
-            </>
-          ) : hasUnreadCompletedNotification ? (
-            <span className="absolute w-1.5 h-1.5 rounded-full bg-accent-main-100" />
-          ) : null}
+          {/* 状态指示：hover（或触摸长按显示操作）时让位给 pin */}
+          <span
+            className={`flex items-center justify-center transition-opacity duration-150 ${
+              !isEditMode ? (actionsVisible ? 'opacity-0' : 'group-hover:opacity-0') : ''
+            }`}
+          >
+            {isWorking ? (
+              <SpinnerIcon size={12} className="animate-spin text-text-400" />
+            ) : activeStatus ? (
+              <>
+                <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot}`} />
+                {activeStatus.pulse && (
+                  <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot} animate-ping opacity-50`} />
+                )}
+              </>
+            ) : hasUnreadCompletedNotification ? (
+              <span className="absolute w-1.5 h-1.5 rounded-full bg-accent-main-100" />
+            ) : null}
+          </span>
+          {/* pin：填补状态图标位的空白，hover 时淡入覆盖 */}
+          {!isEditMode && (
+            <button
+              type="button"
+              data-compact
+              onClick={handlePin}
+              className={`absolute inset-0 flex items-center justify-center rounded transition-opacity duration-150 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset ${
+                actionsVisible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
+              } ${isPinned ? 'text-accent-main-100' : 'text-text-500 hover:text-text-200'}`}
+              title={isPinned ? t('sessions.unpin') : t('sessions.pin')}
+              aria-label={isPinned ? t('sessions.unpin') : t('sessions.pin')}
+            >
+              <PinIcon className="w-3.5 h-3.5" />
+            </button>
+          )}
         </span>
 
         <button
@@ -683,81 +711,51 @@ export function SessionListItem({
           }}
           className="peer flex min-w-0 flex-1 items-center gap-1.5 bg-transparent border-none p-0 text-left select-none"
         >
-          <div
-            className={`flex min-w-0 flex-1 items-center gap-1.5 transition-[padding] duration-200 ${
-              showActions ? 'pr-20' : 'pr-0 group-hover:pr-20'
-            }`}
-          >
+          <AutoScrollTitle text={session.title || t('sessions.untitledChat')} />
+
+          {((hasSummaryStats && session.summary) || session.time?.updated) && (
             <span
-              className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)]"
-              title={session.title || t('sessions.untitledChat')}
+              className={`shrink-0 flex items-center gap-1.5 text-[length:var(--fs-xxs)] text-text-500 transition-opacity duration-150 ${
+                !isEditMode && onArchive
+                  ? actionsVisible
+                    ? 'opacity-0'
+                    : 'group-hover:opacity-0 group-focus-within:opacity-0'
+                  : ''
+              }`}
             >
-              {session.title || t('sessions.untitledChat')}
+              {hasSummaryStats && session.summary && (
+                <span className="flex shrink-0 items-center gap-1 font-mono">
+                  {session.summary.additions > 0 && (
+                    <span className="text-success-100">+{session.summary.additions}</span>
+                  )}
+                  {session.summary.deletions > 0 && (
+                    <span className="text-danger-100">-{session.summary.deletions}</span>
+                  )}
+                  {session.summary.files > 0 && <span>{session.summary.files}f</span>}
+                </span>
+              )}
+
+              {session.time?.updated && <span className="shrink-0">{formatRelativeTime(session.time.updated)}</span>}
             </span>
-
-            {((hasSummaryStats && session.summary) || session.time?.updated) && (
-              <div
-                className={`${actionsVisible ? 'hidden' : 'flex group-hover:hidden'} shrink-0 items-center gap-1.5 text-[length:var(--fs-xxs)] text-text-500`}
-              >
-                {hasSummaryStats && session.summary && (
-                  <span className="flex shrink-0 items-center gap-1 font-mono">
-                    {session.summary.additions > 0 && (
-                      <span className="text-success-100">+{session.summary.additions}</span>
-                    )}
-                    {session.summary.deletions > 0 && (
-                      <span className="text-danger-100">-{session.summary.deletions}</span>
-                    )}
-                    {session.summary.files > 0 && <span>{session.summary.files}f</span>}
-                  </span>
-                )}
-
-                {session.time?.updated && <span className="shrink-0">{formatRelativeTime(session.time.updated)}</span>}
-              </div>
-            )}
-          </div>
+          )}
         </button>
 
-        {/* 操作按钮 — 管理模式下隐藏，避免和点选冲突 */}
-        {!isEditMode && (
-          <div
-            className={`absolute right-2 z-10 shrink-0 flex items-center gap-0.5 transition-opacity duration-150 ${
+        {/* 归档：主按钮之外的覆盖层，hover 时与时间互换显示（不在按钮内嵌套 <button>） */}
+        {!isEditMode && onArchive && (
+          <button
+            type="button"
+            data-compact
+            onClick={handleArchive}
+            className={`absolute right-1.5 top-1/2 -translate-y-1/2 z-10 p-0.5 rounded transition-opacity duration-150 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset ${
               actionsVisible
                 ? 'opacity-100 pointer-events-auto'
-                : 'opacity-0 group-hover:opacity-100 peer-focus-visible:opacity-100 focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto peer-focus-visible:pointer-events-auto focus-within:pointer-events-auto'
-            }`}
+                : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto'
+            } text-text-500 hover:text-text-200 hover:bg-bg-300`}
+            title={t('chat:sidebar.archiveConversation', { defaultValue: 'Archive' })}
+            aria-label={t('chat:sidebar.archiveConversation', { defaultValue: 'Archive' })}
           >
-            <button
-              type="button"
-              onClick={handlePin}
-              className={`p-1 rounded transition-colors focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset ${
-                isPinned
-                  ? 'text-accent-main-100 hover:text-accent-main-200'
-                  : 'text-text-500 hover:text-text-200 hover:bg-bg-300'
-              }`}
-              title={isPinned ? t('sessions.unpin') : t('sessions.pin')}
-              aria-label={isPinned ? t('sessions.unpin') : t('sessions.pin')}
-            >
-              <PinIcon className="w-3 h-3" />
-            </button>
-            <button
-              type="button"
-              onClick={handleStartEdit}
-              className="p-1 rounded hover:bg-bg-300 text-text-500 hover:text-text-200 transition-colors focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset"
-              title={t('sessions.rename')}
-              aria-label={t('sessions.rename')}
-            >
-              <PencilIcon className="w-3 h-3" />
-            </button>
-            <button
-              type="button"
-              onClick={handleDelete}
-              className="p-1 rounded hover:bg-danger-bg text-text-500 hover:text-danger-100 transition-colors focus-visible:ring-1 focus-visible:ring-danger-100/40 focus-visible:ring-inset"
-              title={t('common:delete')}
-              aria-label={t('common:delete')}
-            >
-              <TrashIcon className="w-3 h-3" />
-            </button>
-          </div>
+            <ArchiveIcon className="w-3.5 h-3.5" />
+          </button>
         )}
       </div>
     )
@@ -960,9 +958,53 @@ function UnavailablePinnedSessionItem({
 // Loading Spinner
 // ============================================
 
-import { SpinnerIcon } from '../../components/Icons'
-
 function LoadingSpinner({ size = 'md' }: { size?: 'sm' | 'md' }) {
   const sizeClass = size === 'sm' ? 'w-3 h-3' : 'w-5 h-5'
   return <SpinnerIcon className={`animate-spin text-text-400 ${sizeClass}`} size={size === 'sm' ? 12 : 20} />
+}
+
+// ============================================
+// AutoScrollTitle - 标题过长时 hover 自动滚动
+// ============================================
+
+function AutoScrollTitle({ text }: { text: string }) {
+  const outerRef = useRef<HTMLSpanElement>(null)
+  const innerRef = useRef<HTMLSpanElement>(null)
+  const [overflow, setOverflow] = useState(false)
+
+  useEffect(() => {
+    const outer = outerRef.current
+    const inner = innerRef.current
+    if (!outer || !inner) return
+
+    const measure = () => {
+      setOverflow(inner.scrollWidth > outer.clientWidth)
+    }
+    measure()
+
+    const ro = new ResizeObserver(measure)
+    ro.observe(outer)
+    ro.observe(inner)
+    return () => ro.disconnect()
+  }, [text])
+
+  return (
+    <span
+      ref={outerRef}
+      className={`min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[length:var(--fs-sm)] ${overflow ? 'marquee-title' : 'truncate'}`}
+      title={text}
+    >
+      <span
+        ref={innerRef}
+        className="inline-block whitespace-nowrap marquee-title-inner max-w-none"
+        style={
+          overflow
+            ? ({ ['--marquee-distance' as string]: `calc(${30}px - 100%)`, ['--marquee-duration' as string]: '2.8s' } as React.CSSProperties)
+            : undefined
+        }
+      >
+        {text}
+      </span>
+    </span>
+  )
 }

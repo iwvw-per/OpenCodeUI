@@ -1,43 +1,35 @@
-import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SessionList } from '../../sessions'
 import { FolderRecentList } from './FolderRecentList'
 import { MultiServerFolderList } from './MultiServerFolderList'
 import { SearchResults } from './SearchResults'
-import { useMultiServerStore, multiServerStore } from '../../../store/multiServerStore'
+import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
 import { getProjectGroupIdentity } from './projectGrouping'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
-import { ActiveSessionItem } from './ActiveSessionItem'
-import { NotificationItem } from './NotificationItem'
 import { SidebarFooter } from './SidebarFooter'
-import { buildActiveSessionTree } from './activeSessionTree'
-import { getParentPath } from './sidebarUtils'
 import {
   SidebarIcon,
   FolderIcon,
-  GlobeIcon,
   PlusIcon,
   NewChatIcon,
   TrashIcon,
   SearchIcon,
   CloseIcon,
-  ChevronDownIcon,
   ListFilterIcon,
   FolderMinusIcon,
   CheckIcon,
   SpinnerIcon,
+  HashIcon,
 } from '../../../components/Icons'
-import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog, useVcsInfo } from '../../../hooks'
+import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog } from '../../../hooks'
 import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore, childSessionStore } from '../../../store'
-import { useBusySessions, useBusyCount } from '../../../store/activeSessionStore'
-import { notificationStore, useNotifications, useUnreadNotificationCount } from '../../../store/notificationStore'
+import { useBusySessions } from '../../../store/activeSessionStore'
+import { useNotifications } from '../../../store/notificationStore'
 import { pinnedSessionsStore } from '../../../store/pinnedSessionsStore'
 import { serverStore } from '../../../store/serverStore'
-import { readServerWorkspaces, addServerWorkspace } from '../../../utils/serverWorkspaces'
-import { subscribePerServerStorageVersion, getStorageVersion } from '../../../utils/perServerStorage'
-import type { NotificationEntry } from '../../../store/notificationStore'
+import { addServerWorkspace } from '../../../utils/serverWorkspaces'
 import {
   updateSession,
   deleteSession as apiDeleteSession,
@@ -129,7 +121,6 @@ export function SidePanel({
     removeDirectory,
     addDirectory,
     reorderDirectories,
-    recentProjects,
   } = useDirectory()
   const catalogDirectories = useMemo(
     () =>
@@ -145,7 +136,7 @@ export function SidePanel({
   // 多服务器订阅模式配置
   const multiServerConfig = useMultiServerStore()
   // 多服务器模式：Git/路径信息跟随「焦点服务器」（焦点缺省 = 活动服务器）
-  const { activeServer } = useServerStore()
+  const { activeServer, servers } = useServerStore()
   const catalogServerId = multiServerConfig.enabled
     ? (multiServerConfig.focusedServerId ?? activeServer?.id)
     : undefined
@@ -153,21 +144,15 @@ export function SidePanel({
     catalogDirectories,
     catalogServerId,
   )
-  const { vcsInfo: currentDirectoryVcsInfo, isLoading: isCurrentDirectoryVcsLoading } = useVcsInfo(
-    currentDirectory,
-    catalogServerId,
-  )
-  const { sidebarFolderRecents, sidebarShowChildSessions } = useLayoutStore()
-  // per-server storage 版本（添加/排序工作区时刷新项目选择器；版本号递增触发重渲染）
-  const storageVersionSnapshot = useSyncExternalStore(
-    subscribePerServerStorageVersion,
-    getStorageVersion,
-    getStorageVersion,
-  )
+  const { sidebarShowChildSessions, sidebarShowGlobal } = useLayoutStore()
   const subscribedServerIds = useMemo(() => {
     // 白名单精确生效：只展示用户在设置里勾选的服务器
-    return multiServerConfig.subscribedServerIds.filter(id => serverStore.getServers().some(s => s.id === id))
-  }, [multiServerConfig.subscribedServerIds])
+    const subscribed = multiServerConfig.subscribedServerIds.filter(id => servers.some(s => s.id === id))
+    if (subscribed.length > 0) return subscribed
+    // 未开启多服务器（或尚未订阅）时回退到活动服务器，保证「分组」视图至少有一个主机块
+    const fallbackId = activeServer?.id ?? servers[0]?.id
+    return fallbackId ? [fallbackId] : []
+  }, [multiServerConfig.subscribedServerIds, servers, activeServer?.id])
   // 多服务器列表按复合 key（serverId::sessionId）比较，避免跨服务器同名 session 串高亮
   const multiServerSelectedSessionKey = selectedSessionId
   const [globalFolderIndex, setGlobalFolderIndex] = useState<number>(() => {
@@ -180,12 +165,7 @@ export function SidePanel({
     [currentDirectory],
   )
   const [connectionState, setConnectionState] = useState<ConnectionInfo | null>(null)
-  const [projectDeleteConfirm, setProjectDeleteConfirm] = useState<{ isOpen: boolean; projectId: string | null }>({
-    isOpen: false,
-    projectId: null,
-  })
-  const [projectsExpanded, setProjectsExpanded] = useState(false)
-  const [sidebarTab, setSidebarTab] = useState<'recents' | 'active'>('recents')
+  const [sidebarView, setSidebarView] = useState<'group' | 'project'>('group')
   const [expandedRecentProjectIds, setExpandedRecentProjectIds] = useState<string[]>([])
 
   // ---- 编辑模式状态 ----
@@ -195,10 +175,7 @@ export function SidePanel({
   const sessionSelectionAnchorIdRef = useRef<string | null>(null)
   const projectSelectionAnchorIdRef = useRef<string | null>(null)
   const recentsSelectionRootRef = useRef<HTMLDivElement>(null)
-  const projectToggleRef = useRef<HTMLButtonElement>(null)
-  const projectsDropdownRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const pendingOpenProjectsRef = useRef(false)
   const pendingFocusSearchRef = useRef(false)
   // 批量删除确认弹窗
   const [batchDeleteSessionConfirm, setBatchDeleteSessionConfirm] = useState(false)
@@ -296,22 +273,9 @@ export function SidePanel({
   const showLabels = isExpanded || isMobile
   const newChatShortcut = useKeybindingLabel('newSession')
 
-  useEffect(() => {
-    if (showLabels && projectsExpanded) return
-    const activeElement = document.activeElement as Node | null
-    if (activeElement && projectsDropdownRef.current?.contains(activeElement)) {
-      projectToggleRef.current?.focus()
-    }
-  }, [projectsExpanded, showLabels])
-
-  // 收起态点项目/搜索：展开后再执行打开列表或聚焦输入
+  // 收起态点搜索：展开后再聚焦输入框
   useEffect(() => {
     if (!showLabels) return
-
-    if (pendingOpenProjectsRef.current) {
-      pendingOpenProjectsRef.current = false
-      setProjectsExpanded(true)
-    }
 
     if (pendingFocusSearchRef.current) {
       pendingFocusSearchRef.current = false
@@ -324,7 +288,6 @@ export function SidePanel({
 
   // Active sessions
   const busySessions = useBusySessions()
-  const busyCount = useBusyCount()
   useSyncExternalStore(
     childSessionStore.subscribe.bind(childSessionStore),
     childSessionStore.getVersion,
@@ -332,15 +295,12 @@ export function SidePanel({
   )
   // Notification history
   const notifications = useNotifications()
-  const unreadNotificationCount = useUnreadNotificationCount()
-  const attentionCount = busyCount + unreadNotificationCount
 
   useEffect(() => {
     return subscribeToConnectionState(setConnectionState)
   }, [])
 
-  const { sessions, isLoading, isLoadingMore, hasMore, search, setSearch, loadMore, deleteSession, refresh } =
-    useSessionContext()
+  const { sessions, search, setSearch, refresh } = useSessionContext()
 
   const pinnedEntries = useSyncExternalStore(
     pinnedSessionsStore.subscribe,
@@ -368,23 +328,6 @@ export function SidePanel({
     return map
   }, [sessions, fetchedSessions])
 
-  const orderedSessions = useMemo(() => {
-    const pinnedSet = new Set(pinnedEntries.map(e => e.sessionId))
-    const pinned = pinnedEntries
-      .map(entry => sessionLookup.get(entry.sessionId))
-      .filter((session): session is ApiSession => Boolean(session))
-    const rest = sessions.filter(s => !pinnedSet.has(s.id))
-    return [...pinned, ...rest]
-  }, [pinnedEntries, sessionLookup, sessions])
-  const pinnedDividerAfterIds = useMemo(() => {
-    const lastPinned = pinnedEntries
-      .map(entry => sessionLookup.get(entry.sessionId))
-      .filter((session): session is ApiSession => Boolean(session))
-      .at(-1)
-    if (!lastPinned) return undefined
-    const pinnedSet = new Set(pinnedEntries.map(e => e.sessionId))
-    return sessions.some(s => !pinnedSet.has(s.id)) ? new Set([lastPinned.id]) : undefined
-  }, [pinnedEntries, sessionLookup, sessions])
   const resolvedPinnedSessions = useMemo(
     () =>
       pinnedEntries
@@ -575,11 +518,6 @@ export function SidePanel({
     multiServerConfig.enabled,
   ])
 
-  const activeSessionTree = useMemo(
-    () => buildActiveSessionTree(busySessions, findParentId),
-    [busySessions, findParentId],
-  )
-
   const buildProjectGroups = useCallback(
     (directories: typeof savedDirectories): ProjectItem[] => {
       const savedNameByPath = new Map(
@@ -637,28 +575,6 @@ export function SidePanel({
     return buildProjectGroups(savedDirectories)
   }, [buildProjectGroups, savedDirectories])
 
-  // 多服务器模式：项目选择器显示「焦点服务器」的工作区（读该服务器 per-server saved-directories）
-  const focusedServerWorkspaces = useMemo(() => {
-    if (!multiServerConfig.enabled) return [] as (typeof savedDirectories)[number][]
-    const serverId = multiServerStore.getFocusedServerId()
-    return readServerWorkspaces(serverId).map(
-      dir => ({ path: dir, addedAt: 0 } as (typeof savedDirectories)[number]),
-    )
-  }, [multiServerConfig, storageVersionSnapshot])
-
-  const selectorProjectGroups = useMemo<ProjectItem[]>(() => {
-    if (multiServerConfig.enabled) {
-      return buildProjectGroups(focusedServerWorkspaces)
-    }
-    const sortedDirectories = [...savedDirectories].sort((a, b) => {
-      const aTime = recentProjects[a.path] || a.addedAt
-      const bTime = recentProjects[b.path] || b.addedAt
-      return bTime - aTime
-    })
-
-    return buildProjectGroups(sortedDirectories)
-  }, [multiServerConfig.enabled, focusedServerWorkspaces, buildProjectGroups, recentProjects, savedDirectories])
-
   const globalProject = useMemo<ProjectItem>(
     () => ({
       id: 'global',
@@ -667,10 +583,6 @@ export function SidePanel({
     }),
     [t],
   )
-
-  const projects = useMemo<ProjectItem[]>(() => {
-    return [globalProject, ...selectorProjectGroups]
-  }, [globalProject, selectorProjectGroups])
 
   const currentProject = useMemo<ProjectItem>(() => {
     if (!currentDirectory) return globalProject
@@ -693,21 +605,6 @@ export function SidePanel({
     }
   }, [currentDirectory, folderProjectGroups, gitWorkspaceCatalog, globalProject, normalizedCurrentDirectory])
 
-  const currentProjectLabel = useMemo(() => {
-    const baseLabel = currentProject?.name || t('sidebar.global')
-    if (!currentDirectory || currentProject?.id === 'global') return baseLabel
-
-    const branchLabel = currentDirectoryVcsInfo?.branch ?? (isCurrentDirectoryVcsLoading ? '...' : undefined)
-    return branchLabel ? `${baseLabel} · ${branchLabel}` : baseLabel
-  }, [
-    currentDirectory,
-    currentDirectoryVcsInfo?.branch,
-    currentProject?.id,
-    currentProject?.name,
-    isCurrentDirectoryVcsLoading,
-    t,
-  ])
-
   const globalFolderProject = useMemo<ProjectItem>(
     () => ({ id: 'global', worktree: '', name: t('sidebar.global'), canReorder: true }),
     [t],
@@ -720,9 +617,12 @@ export function SidePanel({
       list.push({ ...currentProject, canReorder: false })
     }
 
+    // 需求 1：全局对话开关（默认关闭）决定「全局」文件夹是否显示
+    if (!sidebarShowGlobal) return list
+
     const insertAt = Math.min(Math.max(globalFolderIndex, 0), list.length)
     return [...list.slice(0, insertAt), globalFolderProject, ...list.slice(insertAt)]
-  }, [folderProjectGroups, currentDirectory, currentProject, globalFolderProject, globalFolderIndex])
+  }, [folderProjectGroups, currentDirectory, currentProject, globalFolderProject, globalFolderIndex, sidebarShowGlobal])
   // 文件夹模式开启（搜索时由 SearchResults 接管，文件夹与 session 一起搜）
 
   const workspaceDirectoriesByProjectId = useMemo(() => {
@@ -742,7 +642,6 @@ export function SidePanel({
   const shouldRenderWorkspaceTreeOnly =
     !search && currentProjectWorkspaceDirectories.length > 1 && currentProject.id !== 'global'
   const shouldWaitForWorkspaceResolution =
-    !sidebarFolderRecents &&
     !search &&
     !!currentDirectory &&
     isGitWorkspaceCatalogLoading &&
@@ -776,18 +675,9 @@ export function SidePanel({
     return [...folderProjects, ...currentProjectTreeProjects]
   }, [folderProjects, currentProjectTreeProjects])
 
-  const handleSelectFolderProject = useCallback(
-    (project: ProjectItem) => {
-      if (!project.worktree) {
-        if (!currentDirectory) return
-        setCurrentDirectory(undefined)
-        return
-      }
-      if (currentDirectory && isSameDirectory(currentDirectory, project.worktree)) return
-      setCurrentDirectory(project.worktree)
-    },
-    [currentDirectory, setCurrentDirectory],
-  )
+  // 需求 3：点击项目目录/名称不跳转（只展开/收起），只有点击会话才导航。
+  // 保持签名兼容 FolderRecentList 的 onSelectProject 调用，但不再 setCurrentDirectory。
+  const handleSelectFolderProject = useCallback((_project: ProjectItem) => {}, [])
 
   const getProjectDirectoriesToRemove = useCallback(
     (projectId: string) => {
@@ -795,25 +685,6 @@ export function SidePanel({
       return project?.memberDirectories?.length ? project.memberDirectories : [projectId]
     },
     [allDisplayedProjects],
-  )
-
-  const handleSelectProject = useCallback(
-    (projectId: string) => {
-      if (projectId === 'global') {
-        setCurrentDirectory(undefined)
-      } else {
-        setCurrentDirectory(projectId)
-      }
-      setProjectsExpanded(false)
-    },
-    [setCurrentDirectory],
-  )
-
-  const handleRemoveProject = useCallback(
-    (projectId: string) => {
-      getProjectDirectoriesToRemove(projectId).forEach(directory => removeDirectory(directory))
-    },
-    [getProjectDirectoriesToRemove, removeDirectory],
   )
 
   const handleReorderProjectGroup = useCallback(
@@ -884,20 +755,6 @@ export function SidePanel({
     [onSelectSession, onCloseMobile],
   )
 
-  // Active tab 专用：跨目录的 session 需要确保目录在项目列表中
-  // 多服务器模式：活跃 session 按服务器分组（组内保留父子结构）
-  const activeServerGroups = useMemo(() => {
-    if (!multiServerConfig.enabled) return [] as Array<{ serverId: string; roots: (typeof busySessions)[number][] }>
-    const map = new Map<string, (typeof busySessions)[number][]>()
-    for (const entry of activeSessionTree.rootEntries) {
-      const serverId = splitSessionKey(entry.sessionId).serverId
-      const list = map.get(serverId) ?? []
-      list.push(entry)
-      map.set(serverId, list)
-    }
-    return Array.from(map.entries()).map(([serverId, roots]) => ({ serverId, roots }))
-  }, [multiServerConfig.enabled, activeSessionTree.rootEntries])
-
   const handleSelectActive = useCallback(
     (session: ApiSession & { serverId?: string }) => {
       if (session.directory) {
@@ -915,63 +772,6 @@ export function SidePanel({
       }
     },
     [addDirectory, addServerWorkspace, onSelectSession, onCloseMobile],
-  )
-
-  const renderActiveSessionNode = useCallback(
-    function renderActiveSessionNode(entry: (typeof busySessions)[number], level = 0): ReactNode {
-      // entry.sessionId 是复合 key（serverId::sessionId），解析出服务器与原始 id
-      const { serverId, sessionId } = splitSessionKey(entry.sessionId)
-      const resolvedSession =
-        sessionLookup.get(sessionId) ??
-        (entry.title || entry.directory
-          ? ({
-              id: sessionId,
-              title: entry.title,
-              directory: entry.directory,
-            } as ApiSession)
-          : undefined)
-      // childrenByParent 以原始 id 为 key（buildActiveSessionTree 统一）
-      const childEntries = activeSessionTree.childrenByParent.get(sessionId) ?? []
-
-      return (
-        <div key={entry.sessionId} style={level > 0 ? { marginLeft: level * 12 } : undefined}>
-          <ActiveSessionItem
-            entry={entry}
-            resolvedSession={resolvedSession}
-            isSelected={entry.sessionId === selectedSessionId}
-            onSelect={session =>
-              handleSelectActive({ ...session, serverId } as ApiSession & { serverId?: string })
-            }
-          />
-          {childEntries.map(childEntry => renderActiveSessionNode(childEntry, level + 1))}
-        </div>
-      )
-    },
-    [activeSessionTree.childrenByParent, handleSelectActive, selectedSessionId, sessionLookup],
-  )
-
-  const handleRename = useCallback(
-    async (sessionId: string, newTitle: string) => {
-      try {
-        await updateSession(sessionId, { title: newTitle }, currentDirectory)
-        pinnedSessionsStore.update(sessionId, { title: newTitle })
-        refresh()
-      } catch (e) {
-        uiErrorHandler('rename session', e)
-      }
-    },
-    [currentDirectory, refresh],
-  )
-
-  const handleDeleteSession = useCallback(
-    async (sessionId: string) => {
-      await deleteSession(sessionId)
-
-      if (selectedSessionId === sessionId) {
-        onNewSession()
-      }
-    },
-    [deleteSession, onNewSession, selectedSessionId],
   )
 
   const handleRenameFolderSession = useCallback(
@@ -1053,6 +853,17 @@ export function SidePanel({
     setBatchRemoveProjectConfirm(false)
   }, [getProjectDirectoriesToRemove, selectedProjectIds, removeDirectory])
 
+  // 需求 4：在指定项目目录下新建会话 —— 先切目录上下文，再走全局新建
+  const handleNewSessionInDirectory = useCallback(
+    (directory: string) => {
+      if (!isSameDirectory(currentDirectory, directory)) {
+        setCurrentDirectory(directory)
+      }
+      onNewSession()
+    },
+    [currentDirectory, setCurrentDirectory, onNewSession],
+  )
+
   const commonFolderRecentListProps = {
     currentDirectory,
     selectedSessionId,
@@ -1062,6 +873,7 @@ export function SidePanel({
     onSelectSession: handleSelectActive,
     onRenameSession: handleRenameFolderSession,
     onDeleteSession: handleDeleteFolderSession,
+    onNewSessionInDirectory: handleNewSessionInDirectory,
     expandedChildSessionIds,
     inlineChildSessions,
     onSelectChildSession: handleSelectActive,
@@ -1071,20 +883,6 @@ export function SidePanel({
     onToggleSessionSelection: toggleSessionSelection,
     onToggleProjectSelection: toggleProjectSelection,
   }
-
-  useEffect(() => {
-    let frameId: number | null = null
-
-    if (!isExpanded) {
-      frameId = requestAnimationFrame(() => {
-        setProjectsExpanded(false)
-      })
-    }
-
-    return () => {
-      if (frameId !== null) cancelAnimationFrame(frameId)
-    }
-  }, [isExpanded])
 
   // 统一的结构，通过 CSS 控制显示/隐藏
   return (
@@ -1155,178 +953,29 @@ export function SidePanel({
           </span>
         </button>
 
-        {/* Project Selector - 收起时仅图标，点击展开侧栏并打开列表 */}
+        {/* 新建项目 - 收起时仅图标 */}
         <button
-          ref={projectToggleRef}
           type="button"
-          onClick={() => {
-            if (!showLabels) {
-              pendingOpenProjectsRef.current = true
-              onToggleSidebar()
-              return
-            }
-            setProjectsExpanded(!projectsExpanded)
-          }}
-          aria-expanded={showLabels ? projectsExpanded : false}
-          aria-label={currentProjectLabel}
-          className={`h-8 flex items-center rounded-lg active:scale-[0.98] transition-all duration-300 overflow-hidden ${
-            projectsExpanded && showLabels
-              ? 'bg-bg-200 text-text-100'
-              : 'text-text-300 hover:text-text-100 hover:bg-bg-200'
-          }`}
+          onClick={onAddProject}
+          aria-label={t('sidebar.newProject')}
+          className="h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 hover:bg-bg-200 active:scale-[0.98] transition-all duration-300 group overflow-hidden"
           style={{
             width: showLabels ? '100%' : 32,
             paddingLeft: 6,
             paddingRight: 6,
           }}
-          title={currentProjectLabel}
+          title={t('sidebar.newProject')}
         >
           <span className="size-5 flex items-center justify-center shrink-0">
-            {currentProject?.id === 'global' ? (
-              <GlobeIcon size={16} className="text-accent-main-100" />
-            ) : (
-              <FolderIcon size={16} />
-            )}
+            <PlusIcon size={16} />
           </span>
-          <div
-            className="ml-2 min-w-0 flex-1 text-left text-[length:var(--fs-base)] transition-opacity duration-300"
+          <span
+            className="ml-2 text-[length:var(--fs-base)] whitespace-nowrap transition-opacity duration-300"
             style={{ opacity: showLabels ? 1 : 0 }}
           >
-            <div
-              className="block overflow-hidden whitespace-nowrap text-left"
-              style={{
-                WebkitMaskImage: 'linear-gradient(to right, black 82%, transparent 100%)',
-                maskImage: 'linear-gradient(to right, black 82%, transparent 100%)',
-              }}
-            >
-              {currentProjectLabel}
-            </div>
-          </div>
-          <ChevronDownIcon
-            size={14}
-            className={`ml-auto text-text-400 transition-all duration-200 shrink-0 ${
-              projectsExpanded && showLabels ? '' : '-rotate-90'
-            }`}
-            style={{ opacity: showLabels ? 1 : 0 }}
-          />
+            {t('sidebar.newProject')}
+          </span>
         </button>
-
-        {/* Projects Dropdown */}
-        <div
-          ref={projectsDropdownRef}
-          className="overflow-hidden transition-[max-height,opacity,margin] duration-300 ease-out"
-          style={{
-            maxHeight: showLabels && projectsExpanded ? 304 : 0,
-            opacity: showLabels && projectsExpanded ? 1 : 0,
-            marginTop: showLabels && projectsExpanded ? 4 : 0,
-            visibility: showLabels && projectsExpanded ? 'visible' : 'hidden',
-            pointerEvents: showLabels && projectsExpanded ? 'auto' : 'none',
-          }}
-          aria-hidden={!showLabels || !projectsExpanded}
-        >
-          <div className="rounded-lg border border-border-200/60 glass-alt shadow-sm overflow-hidden">
-            <div className="max-h-48 overflow-y-auto custom-scrollbar p-1">
-              {projects.map(project => {
-                const isGlobal = project.id === 'global'
-                const isActive = currentProject?.id === project.id
-                const itemLabel =
-                  isActive && !isGlobal
-                    ? currentProjectLabel
-                    : project.name || (isGlobal ? t('sidebar.global') : project.worktree)
-                return (
-                  <div
-                    key={project.id}
-                    onClick={() => handleSelectProject(project.id)}
-                    className={`group w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors ${
-                      isActive ? 'bg-bg-200/60 text-text-100' : 'text-text-300 hover:text-text-100 hover:bg-bg-200/50'
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={e => {
-                        e.stopPropagation()
-                        handleSelectProject(project.id)
-                      }}
-                      aria-current={isActive ? 'true' : undefined}
-                      className="min-w-0 flex flex-1 items-center gap-2 text-left bg-transparent border-none p-0"
-                      title={project.worktree}
-                    >
-                      <span className="w-5 h-5 flex items-center justify-center shrink-0">
-                        {isGlobal ? <GlobeIcon size={14} className="text-accent-main-100" /> : <FolderIcon size={14} />}
-                      </span>
-                      <div className="flex-1 min-w-0 text-left">
-                        <div className="text-left text-[length:var(--fs-sm)]">
-                          <div
-                            className="overflow-hidden whitespace-nowrap text-left"
-                            style={{
-                              WebkitMaskImage: 'linear-gradient(to right, black 82%, transparent 100%)',
-                              maskImage: 'linear-gradient(to right, black 82%, transparent 100%)',
-                            }}
-                          >
-                            {itemLabel}
-                          </div>
-                        </div>
-                        <div
-                          className={`text-[length:var(--fs-xxs)] text-text-400 truncate opacity-70 ${isGlobal ? '' : 'font-mono'}`}
-                        >
-                          {isGlobal
-                            ? t('sidebar.globalProjectHint')
-                            : project.worktree
-                              ? getParentPath(project.worktree)
-                              : ''}
-                        </div>
-                      </div>
-                    </button>
-                    {!isGlobal && (
-                      <button
-                        type="button"
-                        onClick={e => {
-                          e.stopPropagation()
-                          setProjectDeleteConfirm({ isOpen: true, projectId: project.id })
-                        }}
-                        aria-label={t('sidebar.removeProject')}
-                        className="p-1 rounded text-text-400 hover:text-danger-100 hover:bg-danger-100/10 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100 transition-all"
-                        title={t('common:remove')}
-                      >
-                        <TrashIcon size={12} />
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-            <div className="relative p-1 pt-1.5">
-              <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-border-200/30" />
-              {/* 多服务器模式：当前「焦点服务器」— 与项目项同款样式（图标位=状态点） */}
-              {multiServerConfig.enabled && subscribedServerIds.length > 0 && (
-                <div className="group mb-1 flex w-full items-center gap-2 rounded-md bg-bg-200/40 px-2 py-1.5">
-                  <span className="relative w-5 h-5 flex items-center justify-center shrink-0">
-                    <span className="h-2 w-2 rounded-full bg-success-100" />
-                  </span>
-                  <div className="flex-1 min-w-0 text-left">
-                    <div className="text-left text-[length:var(--fs-sm)] text-text-200 truncate">
-                      {serverStore.getServer(multiServerStore.getFocusedServerId())?.name ??
-                        multiServerStore.getFocusedServerId()}
-                    </div>
-                    <div className="text-[length:var(--fs-xxs)] text-text-400 truncate opacity-70">
-                      {t('sidebar.focusServerHint', {
-                        defaultValue: '焦点服务器 · 点击列表中服务器节点切换',
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={onAddProject}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200/50 transition-colors"
-              >
-                <PlusIcon size={14} />
-                {t('sidebar.addProject')}
-              </button>
-            </div>
-          </div>
-        </div>
 
         {/* Search — 与上方导航同列 gap-0.5；收起时图标，展开时输入框 */}
         {showLabels ? (
@@ -1387,7 +1036,7 @@ export function SidePanel({
         {/* Tab Bar: Recents / Active */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="flex items-center mx-2 gap-1 shrink-0">
-            {isEditMode && sidebarTab === 'recents' ? (
+            {isEditMode ? (
               <>
                 {/* 与 tab 同字号字重，左侧文案变成状态提示 */}
                 <span className="pl-[6px] pr-2 py-1.5 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider text-text-100 min-w-0 truncate">
@@ -1440,113 +1089,107 @@ export function SidePanel({
               </>
             ) : (
               <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSidebarTab('recents')
-                    if (sidebarTab !== 'recents') exitEditMode()
-                  }}
-                  className={`pl-[6px] pr-2 py-1.5 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 ${
-                    sidebarTab === 'recents' ? 'text-text-100' : 'text-text-500 hover:text-text-300'
-                  }`}
-                >
-                  {t('sidebar.recents')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSidebarTab('active')
-                    exitEditMode()
-                  }}
-                  className={`pl-[6px] pr-2 py-1.5 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 flex items-center gap-1 ${
-                    sidebarTab === 'active' ? 'text-text-100' : 'text-text-500 hover:text-text-300'
-                  }`}
-                >
-                  <span className="inline-flex h-4 items-center leading-none">{t('sidebar.active')}</span>
-                  {attentionCount > 0 && (
-                    <span
-                      className={`inline-flex h-[15px] min-w-[15px] shrink-0 items-center justify-center self-center rounded-full px-1 text-[length:var(--fs-xxs)] font-medium leading-none transition-colors ${
-                        attentionCount > busyCount
-                          ? 'bg-accent-main-100/10 text-accent-main-100'
-                          : 'bg-success-100/10 text-success-100'
-                      }`}
-                    >
-                      {attentionCount}
-                    </span>
-                  )}
-                </button>
-                {sidebarTab === 'recents' && (
+                {/* 视图模式切换：分组（按主机）/ 项目（按目录） */}
+                <div className="flex items-center gap-0.5 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSidebarView('group')
+                      if (sidebarView !== 'group') exitEditMode()
+                    }}
+                    className={`flex flex-1 min-w-0 items-center justify-center gap-1 pl-[6px] pr-2 py-1.5 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 rounded-md ${
+                      sidebarView === 'group'
+                        ? 'bg-bg-200/70 text-text-100'
+                        : 'text-text-500 hover:text-text-300 hover:bg-bg-200/30'
+                    }`}
+                    title={t('sidebar.groupByHost', { defaultValue: 'Group by server' })}
+                  >
+                    <HashIcon size={13} />
+                    <span className="truncate">{t('sidebar.group', { defaultValue: 'Group' })}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSidebarView('project')
+                      if (sidebarView !== 'project') exitEditMode()
+                    }}
+                    className={`flex flex-1 min-w-0 items-center justify-center gap-1 pl-[6px] pr-2 py-1.5 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 rounded-md ${
+                      sidebarView === 'project'
+                        ? 'bg-bg-200/70 text-text-100'
+                        : 'text-text-500 hover:text-text-300 hover:bg-bg-200/30'
+                    }`}
+                    title={t('sidebar.projectByFolder', { defaultValue: 'Group by project' })}
+                  >
+                    <FolderIcon size={13} />
+                    <span className="truncate">{t('sidebar.project', { defaultValue: 'Project' })}</span>
+                  </button>
+                </div>
+                  {/* 管理按钮常驻：避免切换视图时图标消失导致布局偏移 */}
                   <button
                     type="button"
                     onMouseDown={e => e.preventDefault()}
                     onClick={enterEditMode}
                     aria-label={t('sidebar.manageSessions')}
-                    className="ml-auto p-1 rounded-md text-text-500 hover:text-text-300 hover:bg-bg-200/50 transition-colors duration-150"
+                    className="shrink-0 p-1 rounded-md text-text-500 hover:text-text-300 hover:bg-bg-200/50 transition-colors duration-150"
                     title={t('sidebar.manageSessions')}
                   >
                     <ListFilterIcon size={14} />
                   </button>
-                )}
-              </>
+                </>
             )}
           </div>
 
-          {/* Recents Tab */}
-          {sidebarTab === 'recents' && (
+          {/* 分组模式：按主机分块（订阅服务器列表），块内扁平会话列表 */}
+          {sidebarView === 'group' && (
             <div
               ref={recentsSelectionRootRef}
               className={`flex-1 overflow-hidden ${isEditMode ? 'select-none' : ''}`}
             >
-              {multiServerConfig.enabled ? (
-                subscribedServerIds.length > 0 ? (
-                  search ? (
-                    <SearchResults
-                      search={search}
-                      selectedSessionId={multiServerSelectedSessionKey}
-                      onSelectSession={handleSelectMultiServer}
-                    />
-                  ) : (
-                    <MultiServerFolderList
-                      serverIds={subscribedServerIds}
-                      selectedSessionId={multiServerSelectedSessionKey}
-                      currentDirectory={currentDirectory}
-                      onSelectSession={handleSelectMultiServer}
-                      onNewSession={onNewSession}
-                      expandedChildSessionIds={expandedChildSessionIds}
-                      inlineChildSessions={inlineChildSessions}
-                      onSelectChildSession={handleSelectActive}
-                    />
-                  )
-                ) : (
-                  <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-[length:var(--fs-xs)] text-text-400/70">
-                    <span>{t('sidebar.noSubscribedServers', { defaultValue: 'No servers subscribed yet.' })}</span>
-                    <button
-                      type="button"
-                      onClick={onOpenSettings}
-                      className="rounded-md px-2 py-1 text-[length:var(--fs-xs)] text-accent-main-100 hover:bg-accent-main-100/10 transition-colors"
-                    >
-                      {t('sidebar.openServerSettings', { defaultValue: 'Open Server Settings' })}
-                    </button>
-                  </div>
-                )
-              ) : sidebarFolderRecents ? (
+              {subscribedServerIds.length > 0 ? (
                 search ? (
-                  /* 文件夹模式 + 搜索：文件夹 + session 一起搜（单服务器：无服务器组头） */
                   <SearchResults
                     search={search}
-                    selectedSessionId={selectedSessionId}
-                    onSelectSession={handleSelect}
+                    selectedSessionId={multiServerSelectedSessionKey}
+                    onSelectSession={handleSelectMultiServer}
                   />
                 ) : (
-                  <FolderRecentList
-                    projects={folderProjects}
-                    {...commonFolderRecentListProps}
-                    onReorderProject={handleReorderProjectGroup}
-                    workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
-                    pinnedSessions={resolvedPinnedSessions}
-                    unavailablePinnedEntries={unavailablePinnedEntries}
+                  <MultiServerFolderList
+                    serverIds={subscribedServerIds}
+                    selectedSessionId={multiServerSelectedSessionKey}
+                    currentDirectory={currentDirectory}
+                    onSelectSession={handleSelectMultiServer}
+                    onNewSession={onNewSession}
+                    flat
                   />
                 )
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-[length:var(--fs-xs)] text-text-400/70">
+                  <span>{t('sidebar.noSubscribedServers', { defaultValue: 'No servers subscribed yet.' })}</span>
+                  <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    className="rounded-md px-2 py-1 text-[length:var(--fs-xs)] text-accent-main-100 hover:bg-accent-main-100/10 transition-colors"
+                  >
+                    {t('sidebar.openServerSettings', { defaultValue: 'Open Server Settings' })}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 项目模式：按项目文件夹分组，嵌套缩进 */}
+          {sidebarView === 'project' && (
+            <div
+              ref={recentsSelectionRootRef}
+              className={`flex-1 overflow-hidden ${isEditMode ? 'select-none' : ''}`}
+            >
+              {search ? (
+                /* 项目模式 + 搜索：文件夹 + session 一起搜 */
+                <SearchResults
+                  search={search}
+                  selectedSessionId={selectedSessionId}
+                  onSelectSession={handleSelect}
+                />
               ) : shouldRenderWorkspaceTreeOnly ? (
                 <FolderRecentList
                   projects={currentProjectTreeProjects}
@@ -1560,148 +1203,14 @@ export function SidePanel({
                   <SpinnerIcon size={14} className="animate-spin" />
                 </div>
               ) : (
-                <SessionList
-                  sessions={orderedSessions}
-                  selectedId={selectedSessionId}
-                  isLoading={isLoading}
-                  isLoadingMore={isLoadingMore}
-                  hasMore={hasMore}
-                  search={search}
-                  onSearchChange={setSearch}
-                  onSelect={handleSelect}
-                  onDelete={handleDeleteSession}
-                  onRename={handleRename}
-                  onLoadMore={loadMore}
-                  onNewChat={onNewSession}
-                  showHeader={false}
-                  grouped={false}
-                  density="compact"
-                  showStats
-                  showDirectory={!currentDirectory}
-                  expandedChildSessionIds={expandedChildSessionIds}
-                  inlineChildSessions={inlineChildSessions}
-                  onSelectChildSession={handleSelectActive}
-                  pinnedDividerAfterIds={pinnedDividerAfterIds}
+                <FolderRecentList
+                  projects={folderProjects}
+                  {...commonFolderRecentListProps}
+                  onReorderProject={handleReorderProjectGroup}
+                  workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
+                  pinnedSessions={resolvedPinnedSessions}
                   unavailablePinnedEntries={unavailablePinnedEntries}
-                  availablePinnedCount={resolvedPinnedSessions.length}
-                  isEditMode={isEditMode}
-                  selectedSessionIds={selectedSessionIds}
-                  onToggleSessionSelection={toggleSessionSelection}
                 />
-              )}
-            </div>
-          )}
-
-          {/* Active Sessions Tab */}
-          {sidebarTab === 'active' && (
-            <div className="flex-1 overflow-y-auto custom-scrollbar px-2 pb-3">
-              {busySessions.length === 0 && notifications.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-text-400 opacity-60">
-                  <p className="text-[length:var(--fs-sm)]">{t('sidebar.noActiveSessions')}</p>
-                </div>
-              ) : multiServerConfig.enabled && activeServerGroups.length > 0 ? (
-                <div className="mt-1 space-y-2">
-                  {/* 多服务器模式：活跃 session 按服务器分组 */}
-                  {activeServerGroups.map(({ serverId, roots }) => (
-                    <div key={serverId}>
-                      <div className="px-[6px] pt-0.5 pb-1 text-[length:var(--fs-xxs)] font-medium uppercase tracking-wider text-text-400">
-                        {serverStore.getServer(serverId)?.name ?? serverId}
-                      </div>
-                      <div className="space-y-0.5">
-                        {roots.map(entry => renderActiveSessionNode(entry))}
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Divider + actions between busy and notifications */}
-                  {notifications.length > 0 && (
-                    <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-border-200/30">
-                      <span className="text-[length:var(--fs-xxs)] font-medium text-text-400 uppercase tracking-wider pl-[6px]">
-                        {t('sidebar.notifications')}
-                      </span>
-                      <div className="flex items-center gap-0.5">
-                        {notifications.some((n: NotificationEntry) => !n.read) && (
-                          <button
-                            className="text-[length:var(--fs-xxs)] text-text-400 hover:text-text-200 px-1.5 py-0.5 rounded-md hover:bg-bg-200 transition-all duration-150 active:scale-95"
-                            onClick={() => notificationStore.markAllRead()}
-                          >
-                            {t('sidebar.readAll')}
-                          </button>
-                        )}
-                        <button
-                          className="text-[length:var(--fs-xxs)] text-text-400 hover:text-text-200 px-1.5 py-0.5 rounded-md hover:bg-bg-200 transition-all duration-150 active:scale-95"
-                          onClick={() => notificationStore.clearAll()}
-                        >
-                          {t('common:clear')}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Notification history */}
-                  {notifications.map((entry: NotificationEntry) => {
-                    const { serverId, sessionId } = splitSessionKey(entry.sessionId)
-                    const resolvedSession = sessionLookup.get(sessionId)
-                    return (
-                      <NotificationItem
-                        key={entry.id}
-                        entry={entry}
-                        resolvedSession={resolvedSession}
-                        onSelect={session =>
-                          handleSelectActive({ ...session, serverId } as ApiSession & { serverId?: string })
-                        }
-                      />
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="mt-1 space-y-0.5">
-                  {/* Busy sessions — 子 session 挂在父下面 */}
-                  {activeSessionTree.rootEntries.map(entry => renderActiveSessionNode(entry))}
-
-                  {/* Divider + actions between busy and notifications */}
-                  {notifications.length > 0 && (
-                    <div
-                      className={`flex items-center justify-between gap-2 ${busySessions.length > 0 ? 'mt-2 pt-2 border-t border-border-200/30' : ''}`}
-                    >
-                      <span className="text-[length:var(--fs-xxs)] font-medium text-text-400 uppercase tracking-wider pl-[6px]">
-                        {t('sidebar.notifications')}
-                      </span>
-                      <div className="flex items-center gap-0.5">
-                        {notifications.some((n: NotificationEntry) => !n.read) && (
-                          <button
-                            className="text-[length:var(--fs-xxs)] text-text-400 hover:text-text-200 px-1.5 py-0.5 rounded-md hover:bg-bg-200 transition-all duration-150 active:scale-95"
-                            onClick={() => notificationStore.markAllRead()}
-                          >
-                            {t('sidebar.readAll')}
-                          </button>
-                        )}
-                        <button
-                          className="text-[length:var(--fs-xxs)] text-text-400 hover:text-text-200 px-1.5 py-0.5 rounded-md hover:bg-bg-200 transition-all duration-150 active:scale-95"
-                          onClick={() => notificationStore.clearAll()}
-                        >
-                          {t('common:clear')}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Notification history */}
-                  {notifications.map((entry: NotificationEntry) => {
-                    const { serverId, sessionId } = splitSessionKey(entry.sessionId)
-                    const resolvedSession = sessionLookup.get(sessionId)
-                    return (
-                      <NotificationItem
-                        key={entry.id}
-                        entry={entry}
-                        resolvedSession={resolvedSession}
-                        onSelect={session =>
-                          handleSelectActive({ ...session, serverId } as ApiSession & { serverId?: string })
-                        }
-                      />
-                    )
-                  })}
-                </div>
               )}
             </div>
           )}
@@ -1717,22 +1226,6 @@ export function SidePanel({
         connectionState={connectionState?.state || 'disconnected'}
         contextLimit={contextLimit}
         onOpenSettings={onOpenSettings}
-      />
-
-      {/* Confirm Dialog */}
-      <ConfirmDialog
-        isOpen={projectDeleteConfirm.isOpen}
-        onClose={() => setProjectDeleteConfirm({ isOpen: false, projectId: null })}
-        onConfirm={() => {
-          if (projectDeleteConfirm.projectId) {
-            handleRemoveProject(projectDeleteConfirm.projectId)
-          }
-          setProjectDeleteConfirm({ isOpen: false, projectId: null })
-        }}
-        title={t('sidebar.removeProject')}
-        description={t('sidebar.removeProjectConfirm')}
-        confirmText={t('common:remove')}
-        variant="danger"
       />
 
       {/* 批量删除会话确认弹窗 */}
