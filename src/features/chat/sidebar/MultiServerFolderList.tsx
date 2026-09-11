@@ -21,7 +21,7 @@ import {
   addServerWorkspace,
   reorderServerWorkspaces,
 } from '../../../utils/serverWorkspaces'
-import { deleteSession, updateSession, type ApiSession } from '../../../api'
+import { deleteSession, getSessions, updateSession, type ApiSession } from '../../../api'
 import { isSameDirectory } from '../../../utils'
 import { clearSessionRuntimeState } from '../../../utils/sessionLifecycle'
 import { uiErrorHandler } from '../../../utils'
@@ -45,6 +45,8 @@ interface MultiServerFolderListProps {
   onNewSession: () => void
   /** flat 模式：块内直接渲染扁平会话列表（分组视图），不按文件夹分组 */
   flat?: boolean
+  /** 就地筛选：匹配服务器名或会话标题/目录；无匹配的服务器块隐藏 */
+  search?: string
   /** 子会话展示（SidePanel 按选中/活跃计算；key 为原始 id，与列表 session.id 一致） */
   expandedChildSessionIds?: Set<string>
   inlineChildSessions?: Map<string, ApiSession[]>
@@ -92,6 +94,7 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
   onTouchMove,
   onTouchEnd,
   flat = false,
+  search = '',
 }: {
   serverId: string
   selectedSessionId: string | null
@@ -110,6 +113,7 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
   onTouchMove: (e: React.TouchEvent) => void
   onTouchEnd: (e: React.TouchEvent) => void
   flat?: boolean
+  search?: string
 }) {
   // 与 FolderRecentList / SidePanel 一致的 namespace，保证 t('sidebar.global') 等翻译正确
   const { t } = useTranslation(['chat', 'common'])
@@ -119,10 +123,11 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
   const connectionState = useServerConnectionState(serverId)
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([])
   const { preferTouchUi } = useInputCapabilities()
-  // flat 模式：块内扁平会话列表（该服务器全部会话）
+  // flat 模式：块内扁平会话列表（该服务器全部会话，不限根目录）
   const { sessions, isLoading, loadMore, hasMore, isLoadingMore, removeLocalSession } = useSessions({
     serverId,
     pageSize: 30,
+    rootsOnly: false,
     enabled: flat && isExpanded,
   })
 
@@ -137,6 +142,48 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
     void storageVersion
     return readServerWorkspaces(serverId)
   }, [serverId, storageVersion])
+
+  // 服务端全局列表只含服务器根目录的会话；已保存工作区目录里的会话需按目录查询。
+  // 这里合并各工作区目录的会话，保证分组视图与项目视图一致（新会话仍由 useSessions 事件实时补入）。
+  const [extraSessions, setExtraSessions] = useState<ApiSession[]>([])
+  useEffect(() => {
+    if (!flat || !isExpanded) return
+    let cancelled = false
+    const workspaceDirectories = readServerWorkspaces(serverId)
+    if (workspaceDirectories.length === 0) {
+      setExtraSessions([])
+      return
+    }
+    Promise.all(
+      workspaceDirectories.map(directory => getSessions({ directory, roots: false, limit: 100 }, serverId)),
+    )
+      .then(results => {
+        if (cancelled) return
+        const merged = new Map<string, ApiSession>()
+        for (const list of results) {
+          for (const session of list) {
+            if (!merged.has(session.id)) merged.set(session.id, session)
+          }
+        }
+        setExtraSessions(Array.from(merged.values()))
+      })
+      .catch(() => {
+        if (!cancelled) setExtraSessions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [flat, isExpanded, serverId, storageVersion])
+
+  // 根目录列表（含实时事件）+ 各工作区目录会话，按 id 去重合并
+  const mergedSessions = useMemo(() => {
+    const merged = new Map<string, ApiSession>()
+    for (const session of sessions) merged.set(session.id, session)
+    for (const session of extraSessions) {
+      if (!merged.has(session.id)) merged.set(session.id, session)
+    }
+    return Array.from(merged.values())
+  }, [sessions, extraSessions])
 
   // 展示顺序：global 固定第一，工作区按存储顺序
   const projects = useMemo<FolderRecentProject[]>(() => {
@@ -186,6 +233,28 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
   )
 
   const displayName = server?.name ?? serverId
+
+  // 就地筛选：搜索词匹配服务器名或会话标题/目录；无匹配的服务器块整体隐藏
+  const searchTerms = useMemo(
+    () => search.trim().toLowerCase().split(/\s+/).filter(Boolean),
+    [search],
+  )
+  const filteredSessions = useMemo(() => {
+    if (searchTerms.length === 0) return mergedSessions
+    return mergedSessions.filter(session =>
+      searchTerms.some(term => {
+        const title = (session.title || '').toLowerCase()
+        const dir = (session.directory || '').toLowerCase()
+        return title.includes(term) || dir.includes(term)
+      }),
+    )
+  }, [mergedSessions, searchTerms])
+  const serverMatched =
+    searchTerms.length > 0 &&
+    [server?.name, serverId, server?.url].some(value => value && searchTerms.some(term => value.toLowerCase().includes(term)))
+
+  // 搜索时该块无任何匹配 → 不渲染（筛选掉）
+  if (searchTerms.length > 0 && !serverMatched && filteredSessions.length === 0) return null
 
   return (
     <div
@@ -245,18 +314,20 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
       <ExpandableSection show={isExpanded}>
         {flat ? (
           <div className="pl-3 pb-1">
-            {isLoading && sessions.length === 0 ? (
+            {isLoading && filteredSessions.length === 0 ? (
               <div className="flex items-center gap-2 px-2 py-1.5">
                 <SpinnerIcon size={12} className="animate-spin text-text-400" />
               </div>
-            ) : sessions.length === 0 ? (
+            ) : filteredSessions.length === 0 ? (
               <div className="px-2 py-1 text-[length:var(--fs-xs)] text-text-400/50">
-                {t('sidebar.noChatsInFolder', { defaultValue: 'No conversations yet.' })}
+                {searchTerms.length > 0
+                  ? t('sidebar.searchNoMatches', { defaultValue: 'No matching chats' })
+                  : t('sidebar.noChatsInFolder', { defaultValue: 'No conversations yet.' })}
               </div>
             ) : (
               <>
                 <div className="space-y-0.5">
-                  {sessions.map(session => (
+                  {filteredSessions.map(session => (
                     <SessionListItem
                       key={session.id}
                       session={session}
@@ -370,6 +441,7 @@ export function MultiServerFolderList({
   inlineChildSessions,
   onSelectChildSession,
   flat = false,
+  search = '',
 }: MultiServerFolderListProps) {
   // 服务器展开状态（父级管理，拖拽时自动收起/恢复 — 与文件夹模式对齐）
   const [expandedServerIds, setExpandedServerIds] = useState<string[]>(() => [...serverIds])
@@ -451,6 +523,7 @@ export function MultiServerFolderList({
           onSelectSession={onSelectSession}
           onNewSession={onNewSession}
           flat={flat}
+          search={search}
           isExpanded={expandedServerIds.includes(serverId)}
           onToggleExpanded={makeToggleExpanded(serverId)}
           isDragged={draggedId === serverId}

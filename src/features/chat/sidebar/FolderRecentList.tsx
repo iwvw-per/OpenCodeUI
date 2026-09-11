@@ -61,6 +61,8 @@ interface FolderRecentListProps {
   workspaceDirectoriesByProjectId?: Map<string, string[]>
   pinnedSessions?: ApiSession[]
   unavailablePinnedEntries?: PinnedSessionEntry[]
+  /** 就地筛选：匹配项目名或会话标题/目录；无匹配的项目隐藏 */
+  search?: string
   // ---- 编辑模式 ----
   isEditMode?: boolean
   selectedSessionIds?: Set<string>
@@ -445,6 +447,7 @@ export function FolderRecentList({
   selectedProjectIds,
   onToggleSessionSelection,
   onToggleProjectSelection,
+  search = '',
 }: FolderRecentListProps) {
   const { t } = useTranslation(['chat', 'common'])
   const { preferTouchUi } = useInputCapabilities()
@@ -590,6 +593,7 @@ export function FolderRecentList({
                   project={project}
                   serverId={serverId}
                   isExpanded={isExpanded}
+                  search={search}
                   folderStatus={folderStatusByProjectId.get(project.id) ?? null}
                   preferTouchUi={preferTouchUi}
                   showSessionDiffStats={sidebarFolderRecentsShowDiff}
@@ -798,6 +802,8 @@ interface FolderRecentSectionProps {
   /** 数据服务器（多服务器模式；缺省用活动服务器） */
   serverId?: string
   isExpanded: boolean
+  /** 就地筛选：匹配项目名或会话标题/目录；无匹配的项目隐藏 */
+  search?: string
   folderStatus: FolderStatus | null
   preferTouchUi: boolean
   showSessionDiffStats: boolean
@@ -842,6 +848,7 @@ function FolderRecentSection({
   project,
   serverId,
   isExpanded,
+  search = '',
   folderStatus,
   preferTouchUi,
   showSessionDiffStats,
@@ -968,6 +975,30 @@ function FolderRecentSection({
     visibleSessions.length > 0 &&
     (selectedSessionIds?.has(visibleSessions[0].id) ?? false)
   const folderCheckedNext = projectCheckedNext || firstVisibleSessionChecked
+
+  // 就地筛选：匹配项目名或已加载会话的标题/目录；无匹配的项目整体隐藏
+  const searchTerms = useMemo(
+    () => search.trim().toLowerCase().split(/\s+/).filter(Boolean),
+    [search],
+  )
+  const filteredSessions = useMemo(() => {
+    if (searchTerms.length === 0) return visibleSessions
+    return visibleSessions.filter(session =>
+      searchTerms.some(term => {
+        const title = (session.title || '').toLowerCase()
+        const dir = (session.directory || '').toLowerCase()
+        return title.includes(term) || dir.includes(term)
+      }),
+    )
+  }, [visibleSessions, searchTerms])
+  const projectMatchesSearch =
+    searchTerms.length === 0 ||
+    searchTerms.some(term => {
+      const name = projectName.toLowerCase()
+      const worktree = (project.worktree || '').toLowerCase()
+      return name.includes(term) || worktree.includes(term)
+    })
+  if (searchTerms.length > 0 && !projectMatchesSearch && filteredSessions.length === 0) return null
 
   return (
     <div ref={inViewRef}>
@@ -1102,6 +1133,7 @@ function FolderRecentSection({
                   workspaceDirectories={workspaceDirectories}
                   currentDirectory={currentDirectory}
                   selectedSessionId={selectedSessionId}
+                  search={search}
                   preferTouchUi={preferTouchUi}
                   showSessionDiffStats={showSessionDiffStats}
                   onSelectDirectory={onSelectDirectory}
@@ -1118,25 +1150,27 @@ function FolderRecentSection({
                   draggableWorkspaceDirectories={draggableWorkspaceDirectories}
                   onReorderWorkspace={onReorderWorkspace}
                 />
-              ) : visibleSessions.length === 0 ? (
+              ) : filteredSessions.length === 0 ? (
                 <div className="px-2 py-1 text-[length:var(--fs-xs)] text-text-400/50">
-                  {t('sidebar.noChatsInFolder')}
+                  {searchTerms.length > 0
+                    ? t('sidebar.searchNoMatches', { defaultValue: 'No matching chats' })
+                    : t('sidebar.noChatsInFolder')}
                 </div>
               ) : (
                 <>
-                  {visibleSessions.map((session, index) => {
+                  {filteredSessions.map((session, index) => {
                     const isChecked = selectedSessionIds?.has(session.id) ?? false
                     // 上：前一条 session，或（首条时）父文件夹已选中
                     const prevChecked =
                       isEditMode &&
                       (index > 0
-                        ? (selectedSessionIds?.has(visibleSessions[index - 1].id) ?? false)
+                        ? (selectedSessionIds?.has(filteredSessions[index - 1].id) ?? false)
                         : isProjectChecked)
                     // 下：下一条 session，或（末条时）下一个文件夹已选中
                     const nextChecked =
                       isEditMode &&
-                      (index < visibleSessions.length - 1
-                        ? (selectedSessionIds?.has(visibleSessions[index + 1].id) ?? false)
+                      (index < filteredSessions.length - 1
+                        ? (selectedSessionIds?.has(filteredSessions[index + 1].id) ?? false)
                         : nextProjectChecked)
                     return (
                     <div key={session.id}>
@@ -1236,6 +1270,8 @@ interface WorkspaceFolderListProps {
   folderStatusByWorkspaceDirectory?: Map<string, FolderStatus>
   draggableWorkspaceDirectories?: string[]
   onReorderWorkspace?: (draggedPath: string, targetPath: string) => void
+  /** 就地筛选（透传） */
+  search?: string
 }
 
 function WorkspaceFolderList({
@@ -1257,6 +1293,7 @@ function WorkspaceFolderList({
   folderStatusByWorkspaceDirectory,
   draggableWorkspaceDirectories,
   onReorderWorkspace,
+  search = '',
 }: WorkspaceFolderListProps) {
   const workspaceProjects = useMemo<FolderRecentProject[]>(() => {
     const draggableSet = new Set(
@@ -1325,6 +1362,7 @@ function WorkspaceFolderList({
             key={workspaceProject.id}
             project={workspaceProject}
             isExpanded={isWorkspaceExpanded}
+            search={search}
             folderStatus={
               draggedId === workspaceProject.id || isWorkspaceExpanded
                 ? null
