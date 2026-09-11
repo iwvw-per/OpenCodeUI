@@ -8,7 +8,8 @@
     "closeBottomPanel": "Close bottom panel",
     "openBottomPanel": "Open bottom panel",
     "closePanel": "Close panel",
-    "openPanel": "Open panel"
+    "openPanel": "Open panel",
+    "openProjectDirectory": "Open project directory"
   },
   "chatArea": {
     "loadingSession": "Loading session...",
@@ -120,11 +121,10 @@
   "sidebar": {
     "allProjects": "All projects",
     "global": "Global",
-    "globalProjectHint": "Non-Git workspace, usually where opencode started",
     "collapseSidebar": "Collapse sidebar",
     "expandSidebar": "Expand sidebar",
     "newChat": "New chat",
-    "addProject": "Add project...",
+    "newProject": "New project",
     "searchChats": "Search chats...",
     "clearSearch": "Clear search",
     "recents": "Recents",
@@ -132,8 +132,6 @@
     "noActiveSessions": "No active sessions",
     "notifications": "Notifications",
     "readAll": "Read all",
-    "removeProject": "Remove Project",
-    "removeProjectConfirm": "Remove this project folder from the list? Files won't be deleted.",
     "contextUsage": "Context Usage",
     "viewDetails": "View details",
     "appearance": "Appearance",
@@ -164,13 +162,16 @@
     "batchRemoveProjectsConfirm": "Remove {{count}} project(s) from the list? This only removes them from the sidebar — no sessions will be deleted and no files on disk will be affected.",
     "noSubscribedServers": "No servers subscribed yet",
     "openServerSettings": "Open Server Settings",
-    "focusServerHint": "Focused server · click a server node in the list to switch",
     "searchResults": "Search results",
     "searchHint": "Search by server, folder, or chat name",
     "searchFolderUnit": " folders",
     "searchSessionUnit": " chats",
     "searchServerMatchHint": "Server match · click the header to switch focus",
-    "searchingSessions": "Searching chats…"
+    "searchingSessions": "Searching chats…",
+    "group": "Group",
+    "project": "Project",
+    "groupByHost": "Group by server",
+    "projectByFolder": "Group by project"
   },
   "activeSession": {
     "awaitingPermission": "Awaiting Permission",

@@ -19,6 +19,7 @@ export function WorkspaceSettings() {
     sidebarFolderRecents,
     sidebarFolderRecentsShowDiff,
     sidebarShowChildSessions,
+    sidebarShowGlobal,
     terminalCopyOnSelect,
     terminalRightClickPaste,
     wakeLock,
@@ -130,6 +131,17 @@ export function WorkspaceSettings() {
           <Toggle
             enabled={sidebarShowChildSessions}
             onChange={() => layoutStore.setSidebarShowChildSessions(!sidebarShowChildSessions)}
+          />
+        </SettingRow>
+
+        <SettingRow
+          label={t('appearance.showGlobal')}
+          description={t('appearance.showGlobalDesc')}
+          onClick={() => layoutStore.setSidebarShowGlobal(!sidebarShowGlobal)}
+        >
+          <Toggle
+            enabled={sidebarShowGlobal}
+            onChange={() => layoutStore.setSidebarShowGlobal(!sidebarShowGlobal)}
           />
         </SettingRow>
       </SettingsSection>

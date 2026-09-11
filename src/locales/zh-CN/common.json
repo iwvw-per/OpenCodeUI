@@ -66,5 +66,11 @@
   "upDownSelect": "↑↓ 选择",
   "enterRun": "↵ 执行",
   "enterConfirmShort": "↵ 确认",
-  "escCancel": "Esc 取消"
+  "escCancel": "Esc 取消",
+  "relativeTime": {
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}}分钟前",
+    "hoursAgo": "{{count}}小时前",
+    "daysAgo": "{{count}}天前"
+  }
 }

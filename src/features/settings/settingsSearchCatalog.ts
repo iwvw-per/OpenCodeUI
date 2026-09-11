@@ -52,6 +52,7 @@ export const SETTINGS_SEARCH_DEFINITIONS: SettingsSearchDefinition[] = [
     'chat.outlineCurrentHighlight',
     'chat.actionsOnLatestAssistantOnly',
     'chat.desktopCollapsedInputDock',
+    'chat.sendMode',
     'chat.thinkingDisplay',
     'chat.latestOnly',
     'chat.agent',
@@ -82,6 +83,7 @@ export const SETTINGS_SEARCH_DEFINITIONS: SettingsSearchDefinition[] = [
     'appearance.folderStyleRecents',
     'appearance.folderStyleRecentsShowDiff',
     'appearance.showChildSessions',
+    'appearance.showGlobal',
   ]),
   ...definitions('appearance', [
     'appearance.themePresets',

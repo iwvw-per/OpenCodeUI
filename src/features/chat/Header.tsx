@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   PanelRightIcon,
@@ -8,6 +8,7 @@ import {
   SplitHorizontalIcon,
   MaximizeIcon,
   MinimizeIcon,
+  FolderIcon,
 } from '../../components/Icons'
 import { IconButton } from '../../components/ui'
 import { ModelSelector, type ModelSelectorHandle } from './ModelSelector'
@@ -19,6 +20,7 @@ import { updateSession } from '../../api'
 import { useDirectory } from '../../contexts/useDirectory'
 import { uiErrorHandler } from '../../utils'
 import { useChatViewport } from './chatViewport'
+import { isTauri, isTauriMobile } from '../../utils/tauri'
 import type { ModelInfo } from '../../api'
 
 interface HeaderProps {
@@ -45,6 +47,9 @@ interface SessionTitleControlProps {
   handleRename: () => void
   handleStartEdit: () => void
   onShare: () => void
+  /** 打开项目目录（Tauri 桌面端可用） */
+  onOpenDirectory?: () => void
+  openDirectoryTitle?: string
   clickToRenameTitle: string
   shareTitle: string
 }
@@ -60,6 +65,8 @@ function SessionTitleControl({
   handleRename,
   handleStartEdit,
   onShare,
+  onOpenDirectory,
+  openDirectoryTitle,
   clickToRenameTitle,
   shareTitle,
 }: SessionTitleControlProps) {
@@ -102,6 +109,17 @@ function SessionTitleControl({
       {!isEditingTitle && (
         <>
           <div className={dividerClass} />
+          {onOpenDirectory && (
+            <button
+              type="button"
+              className={shareButtonClass}
+              title={openDirectoryTitle}
+              aria-label={openDirectoryTitle}
+              onClick={onOpenDirectory}
+            >
+              <FolderIcon size={12} />
+            </button>
+          )}
           <button type="button" className={shareButtonClass} title={shareTitle} aria-label={shareTitle} onClick={onShare}>
             <ChevronDownIcon size={12} />
           </button>
@@ -178,6 +196,18 @@ export function Header({
     }
   }
 
+  const targetDirectory = sessionDirectory || currentDirectory
+  const canOpenDirectory = isTauri() && !isTauriMobile() && !!targetDirectory
+  const handleOpenDirectory = useCallback(async () => {
+    if (!targetDirectory) return
+    try {
+      const { openPath } = await import('@tauri-apps/plugin-opener')
+      await openPath(targetDirectory)
+    } catch (e) {
+      uiErrorHandler('open project directory', e)
+    }
+  }, [targetDirectory])
+
   const titleControl = (
     <SessionTitleControl
       compact={isCompact}
@@ -190,6 +220,8 @@ export function Header({
       handleRename={handleRename}
       handleStartEdit={handleStartEdit}
       onShare={() => setShareDialogOpen(true)}
+      onOpenDirectory={canOpenDirectory ? handleOpenDirectory : undefined}
+      openDirectoryTitle={t('header.openProjectDirectory')}
       clickToRenameTitle={t('header.clickToRename')}
       shareTitle={t('header.shareSession')}
     />
@@ -266,6 +298,17 @@ export function Header({
           >
             <PanelRightIcon size={16} />
           </IconButton>
+
+          {canOpenDirectory && (
+            <IconButton
+              aria-label={t('header.openProjectDirectory')}
+              title={t('header.openProjectDirectory')}
+              onClick={handleOpenDirectory}
+              className="transition-colors text-text-300 hover:text-text-100 hover:bg-bg-200/50"
+            >
+              <FolderIcon size={16} />
+            </IconButton>
+          )}
         </div>
       </div>
 

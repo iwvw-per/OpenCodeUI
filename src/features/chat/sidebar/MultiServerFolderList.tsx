@@ -1,14 +1,9 @@
 // ============================================
-// MultiServerFolderList - 多服务器模式的文件夹分组会话列表
+// MultiServerFolderList - 多服务器模式的会话列表
 //
-// 结构 = 文件夹模式 + 服务器层级：
-//   ● 服务器1（状态点 + 服务器名；行结构、拖拽方式、拖拽时自动收起与文件夹行完全一致）
-//      FolderRecentList（原封不动的文件夹模式：全局 + 工作区文件夹 → session）
-//   ● 服务器2
-//      ...
-//
-// 工作区数据统一复用 per-server storage 的 saved-directories（与单服务器模式
-// 完全相同的存储），多服务器只是显示层面的按服务器分组，不做独立存储。
+// 两种模式：
+//   - folders（默认）：服务器 → 文件夹（FolderRecentList）→ session
+//   - flat：服务器 → 扁平会话列表（分组视图使用）
 // ============================================
 
 import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
@@ -18,7 +13,7 @@ import { serverStore } from '../../../store/serverStore'
 import { multiServerStore } from '../../../store/multiServerStore'
 import { subscribeToServerConnectionState, getServerConnectionInfo, type ConnectionInfo } from '../../../api/events'
 import { ExpandableSection } from '../../../components/ui'
-import { GripVerticalIcon } from '../../../components/Icons'
+import { GripVerticalIcon, SpinnerIcon } from '../../../components/Icons'
 import { subscribePerServerStorageVersion, getStorageVersion } from '../../../utils/perServerStorage'
 import { useDirectory } from '../../../contexts/useDirectory'
 import {
@@ -30,6 +25,9 @@ import { deleteSession, updateSession, type ApiSession } from '../../../api'
 import { isSameDirectory } from '../../../utils'
 import { clearSessionRuntimeState } from '../../../utils/sessionLifecycle'
 import { uiErrorHandler } from '../../../utils'
+import { SessionListItem } from '../../sessions'
+import { useSessions } from '../../../hooks/useSessions'
+import { useInputCapabilities } from '../../../hooks/useInputCapabilities'
 import {
   FolderRecentList,
   createDirectoryProject,
@@ -45,6 +43,8 @@ interface MultiServerFolderListProps {
   onSelectSession: (session: ApiSession & { serverId?: string }) => void
   /** 点击服务器节点：切焦点服务器并进入该服务器的新建会话页 */
   onNewSession: () => void
+  /** flat 模式：块内直接渲染扁平会话列表（分组视图），不按文件夹分组 */
+  flat?: boolean
   /** 子会话展示（SidePanel 按选中/活跃计算；key 为原始 id，与列表 session.id 一致） */
   expandedChildSessionIds?: Set<string>
   inlineChildSessions?: Map<string, ApiSession[]>
@@ -91,6 +91,7 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
   onTouchDragStart,
   onTouchMove,
   onTouchEnd,
+  flat = false,
 }: {
   serverId: string
   selectedSessionId: string | null
@@ -108,6 +109,7 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
   onTouchDragStart: (e: React.TouchEvent) => void
   onTouchMove: (e: React.TouchEvent) => void
   onTouchEnd: (e: React.TouchEvent) => void
+  flat?: boolean
 }) {
   // 与 FolderRecentList / SidePanel 一致的 namespace，保证 t('sidebar.global') 等翻译正确
   const { t } = useTranslation(['chat', 'common'])
@@ -116,6 +118,13 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
   const health = getHealth(serverId)
   const connectionState = useServerConnectionState(serverId)
   const [expandedProjectIds, setExpandedProjectIds] = useState<string[]>([])
+  const { preferTouchUi } = useInputCapabilities()
+  // flat 模式：块内扁平会话列表（该服务器全部会话）
+  const { sessions, isLoading, loadMore, hasMore, isLoadingMore, removeLocalSession } = useSessions({
+    serverId,
+    pageSize: 30,
+    enabled: flat && isExpanded,
+  })
 
   // 该服务器的工作区 = 该服务器 per-server storage 的 saved-directories（与单服务器模式同一套存储）
   // 版本号在写入时递增 → 触发重渲染并重读数据
@@ -234,6 +243,75 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
 
       {/* 展开内容：文件夹缩进在服务器节点下（内容自然展开，随外层滚动） */}
       <ExpandableSection show={isExpanded}>
+        {flat ? (
+          <div className="pl-3 pb-1">
+            {isLoading && sessions.length === 0 ? (
+              <div className="flex items-center gap-2 px-2 py-1.5">
+                <SpinnerIcon size={12} className="animate-spin text-text-400" />
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="px-2 py-1 text-[length:var(--fs-xs)] text-text-400/50">
+                {t('sidebar.noChatsInFolder', { defaultValue: 'No conversations yet.' })}
+              </div>
+            ) : (
+              <>
+                <div className="space-y-0.5">
+                  {sessions.map(session => (
+                    <SessionListItem
+                      key={session.id}
+                      session={session}
+                      isSelected={!!localSelectedSessionId && session.id === localSelectedSessionId}
+                      onSelect={() => onSelectSession({ ...session, serverId } as ApiSession & { serverId?: string })}
+                      onDelete={async () => {
+                        try {
+                          await deleteSession(session.id, session.directory, serverId)
+                          clearSessionRuntimeState(`${serverId}::${session.id}`)
+                        } catch (e) {
+                          uiErrorHandler('delete session', e)
+                        }
+                      }}
+                      onRename={async newTitle => {
+                        try {
+                          await updateSession(session.id, { title: newTitle }, session.directory, serverId)
+                        } catch (e) {
+                          uiErrorHandler('rename session', e)
+                        }
+                      }}
+                      onArchive={async () => {
+                        try {
+                          await updateSession(
+                            session.id,
+                            { time: { archived: Date.now() } },
+                            session.directory,
+                            serverId,
+                          )
+                          removeLocalSession(session.id)
+                        } catch {
+                          // 归档失败静默（由列表刷新兜底）
+                        }
+                      }}
+                      preferTouchUi={preferTouchUi}
+                      density="minimal"
+                      showStats={false}
+                    />
+                  ))}
+                </div>
+                {hasMore && (
+                  <button
+                    type="button"
+                    onClick={() => void loadMore()}
+                    disabled={isLoadingMore}
+                    className="w-full px-2 py-1 text-left text-[length:var(--fs-xs)] text-text-400 hover:text-text-200 transition-colors"
+                  >
+                    {isLoadingMore
+                      ? t('common:loadingMore', { defaultValue: 'Loading more...' })
+                      : t('sidebar.loadMore', { defaultValue: 'Load more' })}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        ) : (
         <div className="pl-3">
           <FolderRecentList
             key={serverId}
@@ -271,6 +349,7 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
               pinnedSessions={[]}
             />
         </div>
+        )}
       </ExpandableSection>
     </div>
   )
@@ -290,6 +369,7 @@ export function MultiServerFolderList({
   expandedChildSessionIds,
   inlineChildSessions,
   onSelectChildSession,
+  flat = false,
 }: MultiServerFolderListProps) {
   // 服务器展开状态（父级管理，拖拽时自动收起/恢复 — 与文件夹模式对齐）
   const [expandedServerIds, setExpandedServerIds] = useState<string[]>(() => [...serverIds])
@@ -370,6 +450,7 @@ export function MultiServerFolderList({
           currentDirectory={serverId === focusedServerId ? currentDirectory : undefined}
           onSelectSession={onSelectSession}
           onNewSession={onNewSession}
+          flat={flat}
           isExpanded={expandedServerIds.includes(serverId)}
           onToggleExpanded={makeToggleExpanded(serverId)}
           isDragged={draggedId === serverId}

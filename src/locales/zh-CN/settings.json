@@ -111,6 +111,10 @@
     "actionsOnLatestAssistantOnlyDesc": "一轮对话里连续多条助手消息时，只在最后一条显示分叉和复制按钮",
     "desktopCollapsedInputDock": "桌面端输入框收起",
     "desktopCollapsedInputDockDesc": "上滚浏览历史时把输入框收成胶囊，点一下再展开；移动端始终启用，默认开启",
+    "sendMode": "发送消息",
+    "sendModeDesc": "选择 Enter 或 Shift+Enter 发送消息；另一个键插入换行。",
+    "sendModeEnter": "Enter 发送",
+    "sendModeShiftEnter": "Shift+Enter 发送",
     "descriptiveToolSteps": "描述型步骤",
     "descriptiveToolStepsDesc": "把普通 steps 计数改成带工具描述的摘要，并让单工具调用也显示步骤描述",
     "processCollapse": "过程折叠",
@@ -251,7 +255,9 @@
     "folderStyleRecentsShowDiff": "文件夹模式显示 Diff",
     "folderStyleRecentsShowDiffDesc": "在文件夹式最近记录中显示会话的增删和文件统计",
     "showChildSessions": "始终显示子会话",
-    "showChildSessionsDesc": "始终在父会话下列出子会话。关闭时仅显示活跃或正在查看的子会话"
+    "showChildSessionsDesc": "始终在父会话下列出子会话。关闭时仅显示活跃或正在查看的子会话",
+    "showGlobal": "显示全局对话",
+    "showGlobalDesc": "在侧栏显示「全局」分组（非 Git 工作区，通常是 opencode 启动目录）。默认关闭。"
   },
   "workspace": {
     "layout": "布局和阅读",

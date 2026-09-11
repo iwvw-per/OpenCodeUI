@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { PathAutoIcon, PathUnixIcon, PathWindowsIcon } from '../../../components/Icons'
 import { usePathMode, useTheme } from '../../../hooks'
 import { themeStore, type ReasoningDisplayMode, type CompletedAtFormat } from '../../../store/themeStore'
+import { useLayoutStore, layoutStore } from '../../../store/layoutStore'
 import { Toggle, SegmentedControl, SettingRow, SettingField, SettingsSection } from './SettingsUI'
 import type { PathMode } from '../../../utils/directoryUtils'
 
@@ -33,6 +34,7 @@ export function ChatSettings() {
     renderUserMarkdown,
     setRenderUserMarkdown,
   } = useTheme()
+  const { sendOnEnter } = useLayoutStore()
   const [collapseUserMessages, setCollapseUserMessages] = useState(themeStore.collapseUserMessages)
   const [stepFinishDisplay, setStepFinishDisplay] = useState(themeStore.stepFinishDisplay)
   const [completedAtFormat, setCompletedAtFormat] = useState(themeStore.completedAtFormat)
@@ -139,6 +141,19 @@ export function ChatSettings() {
             onChange={() => setDesktopCollapsedInputDock(!desktopCollapsedInputDock)}
           />
         </SettingRow>
+
+        <SettingField label={t('chat.sendMode')} description={t('chat.sendModeDesc')}>
+          <div className="w-full max-w-[320px]">
+            <SegmentedControl
+              value={sendOnEnter ? 'enter' : 'shiftEnter'}
+              options={[
+                { value: 'enter', label: t('chat.sendModeEnter') },
+                { value: 'shiftEnter', label: t('chat.sendModeShiftEnter') },
+              ]}
+              onChange={v => layoutStore.setSendOnEnter(v === 'enter')}
+            />
+          </div>
+        </SettingField>
 
         <SettingField label={t('chat.thinkingDisplay')} description={t('chat.thinkingDisplayDesc')}>
           <div className="w-full max-w-[320px]">
