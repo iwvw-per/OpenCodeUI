@@ -22,21 +22,53 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-function readSavedDirectories(): SavedDirectory[] {
-  const saved = serverStorage.getJSON<unknown>(STORAGE_KEY_SAVED)
-  if (!Array.isArray(saved)) return []
+// 项目目录列表跨服务器共享（用户目的：在远程无缝衔接当前窗口的工作）。
+// 不再按服务器隔离（旧格式 srv:{serverId}:{KEY}）；首次读取时自动合并旧数据。
+function parseSavedDirectoriesList(raw: string): SavedDirectory[] {
+  try {
+    const saved = JSON.parse(raw)
+    if (!Array.isArray(saved)) return []
+    return saved.flatMap(item => {
+      if (!isRecord(item) || typeof item.path !== 'string') return []
+      const path = item.path
+      return [
+        {
+          path,
+          name: typeof item.name === 'string' && item.name.trim() ? item.name : getDirectoryName(path) || path,
+          addedAt: typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
+        },
+      ]
+    })
+  } catch {
+    return []
+  }
+}
 
-  return saved.flatMap(item => {
-    if (!isRecord(item) || typeof item.path !== 'string') return []
-    const path = item.path
-    return [
-      {
-        path,
-        name: typeof item.name === 'string' && item.name.trim() ? item.name : getDirectoryName(path) || path,
-        addedAt: typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
-      },
-    ]
-  })
+function readSavedDirectories(): SavedDirectory[] {
+  const raw = localStorage.getItem(STORAGE_KEY_SAVED)
+  if (raw !== null) return parseSavedDirectoriesList(raw)
+
+  // 首次升级：把旧的 per-server 数据（srv:{serverId}:opencode-saved-directories）合并为共享列表
+  const seen = new Set<string>()
+  const merged: SavedDirectory[] = []
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (!key || !key.startsWith('srv:') || !key.endsWith(`:${STORAGE_KEY_SAVED}`)) continue
+    const legacy = localStorage.getItem(key)
+    if (!legacy) continue
+    for (const item of parseSavedDirectoriesList(legacy)) {
+      const normalized = normalizeToForwardSlash(item.path)
+      if (!normalized || seen.has(normalized)) continue
+      seen.add(normalized)
+      merged.push(item)
+    }
+  }
+  try {
+    localStorage.setItem(STORAGE_KEY_SAVED, JSON.stringify(merged))
+  } catch {
+    // ignore
+  }
+  return merged
 }
 
 function readRecentProjects(): RecentProjects {
@@ -86,9 +118,13 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
     getPath(pathServerId).then(setPathInfo).catch(handleError('get path info', 'api'))
   }, [pathServerId])
 
-  // 保存 savedDirectories 到 per-server storage
+  // 保存 savedDirectories 到共享存储（跨服务器一致，见 readSavedDirectories）
   useEffect(() => {
-    serverStorage.setJSON(STORAGE_KEY_SAVED, savedDirectories)
+    try {
+      localStorage.setItem(STORAGE_KEY_SAVED, JSON.stringify(savedDirectories))
+    } catch {
+      // ignore
+    }
   }, [savedDirectories])
 
   // 保存 recentProjects 到 per-server storage

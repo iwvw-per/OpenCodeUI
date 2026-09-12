@@ -3,8 +3,6 @@ import { useTranslation } from 'react-i18next'
 import { SidePanel } from './sidebar/SidePanel'
 import { ProjectDialog } from './ProjectDialog'
 import { useMultiServerStore, multiServerStore } from '../../store/multiServerStore'
-import { serverStore } from '../../store/serverStore'
-import { addServerWorkspace } from '../../utils/serverWorkspaces'
 import { useDirectory } from '../../hooks'
 import { isTauri, isTauriMobile } from '../../utils/tauri'
 import { type ApiSession } from '../../api'
@@ -68,21 +66,14 @@ export const Sidebar = memo(function Sidebar({
   const multiServerConfig = useMultiServerStore()
   const handleAddProject = useCallback(
     (path: string) => {
-      // 侧栏读取的是「活跃服务器」的 saved-directories（serverStorage 默认绑定活跃服务器），
-      // 多服务器模式下焦点服务器 ≠ 活跃服务器时额外写入焦点服务器，保证切换后也能看到。
+      // 项目目录列表跨服务器共享（saved-directories 不再按服务器隔离），
+      // 切到远程主机后同一份列表原样展示，实现无缝衔接
       addDirectory(path)
-      if (multiServerConfig.enabled) {
-        const focusedId = multiServerStore.getFocusedServerId()
-        const activeId = serverStore.getActiveServerId()
-        if (focusedId && focusedId !== activeId) {
-          addServerWorkspace(focusedId, path)
-        }
-      }
       if (!isOverlay) {
         onOpen()
       }
     },
-    [addDirectory, addServerWorkspace, isOverlay, onOpen, multiServerConfig.enabled],
+    [addDirectory, isOverlay, onOpen],
   )
 
   const openProjectDialog = useCallback(async () => {
