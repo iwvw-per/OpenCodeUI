@@ -22,7 +22,7 @@ import {
   reorderServerWorkspaces,
 } from '../../../utils/serverWorkspaces'
 import { deleteSession, getSessions, updateSession, type ApiSession } from '../../../api'
-import { isSameDirectory } from '../../../utils'
+import { isSameDirectory, normalizeToForwardSlash } from '../../../utils'
 import { clearSessionRuntimeState } from '../../../utils/sessionLifecycle'
 import { uiErrorHandler } from '../../../utils'
 import { SessionListItem } from '../../sessions'
@@ -143,15 +143,19 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
     return readServerWorkspaces(serverId)
   }, [serverId, storageVersion])
 
-  // 服务端全局列表只含服务器根目录的会话；已保存工作区目录里的会话需按目录查询。
-  // 这里合并各工作区目录的会话，保证分组视图与项目视图一致（新会话仍由 useSessions 事件实时补入）。
+  // 分组块 = 项目目录（已保存工作区）会话的汇总：合并各工作区目录的会话，
+  // 并过滤掉不属于任何项目目录的会话（服务器根目录自带的会话不展示）。
+  // useSessions 的根目录列表仅作为实时事件（新建/更新/删除）的载体。
   const [extraSessions, setExtraSessions] = useState<ApiSession[]>([])
+  const [extraSessionsLoaded, setExtraSessionsLoaded] = useState(false)
   useEffect(() => {
     if (!flat || !isExpanded) return
     let cancelled = false
+    setExtraSessionsLoaded(false)
     const workspaceDirectories = readServerWorkspaces(serverId)
     if (workspaceDirectories.length === 0) {
       setExtraSessions([])
+      setExtraSessionsLoaded(true)
       return
     }
     Promise.all(
@@ -166,24 +170,33 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
           }
         }
         setExtraSessions(Array.from(merged.values()))
+        setExtraSessionsLoaded(true)
       })
       .catch(() => {
-        if (!cancelled) setExtraSessions([])
+        if (!cancelled) {
+          setExtraSessions([])
+          setExtraSessionsLoaded(true)
+        }
       })
     return () => {
       cancelled = true
     }
   }, [flat, isExpanded, serverId, storageVersion])
 
-  // 根目录列表（含实时事件）+ 各工作区目录会话，按 id 去重合并
+  const projectDirectorySet = useMemo(
+    () => new Set(workspaces.map(dir => normalizeToForwardSlash(dir))),
+    [workspaces],
+  )
   const mergedSessions = useMemo(() => {
     const merged = new Map<string, ApiSession>()
     for (const session of sessions) merged.set(session.id, session)
     for (const session of extraSessions) {
       if (!merged.has(session.id)) merged.set(session.id, session)
     }
-    return Array.from(merged.values())
-  }, [sessions, extraSessions])
+    return Array.from(merged.values()).filter(
+      session => !!session.directory && projectDirectorySet.has(normalizeToForwardSlash(session.directory)),
+    )
+  }, [sessions, extraSessions, projectDirectorySet])
 
   // 展示顺序：global 固定第一，工作区按存储顺序
   const projects = useMemo<FolderRecentProject[]>(() => {
@@ -314,7 +327,7 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
       <ExpandableSection show={isExpanded}>
         {flat ? (
           <div className="pl-3 pb-1">
-            {isLoading && filteredSessions.length === 0 ? (
+            {(isLoading || !extraSessionsLoaded) && filteredSessions.length === 0 ? (
               <div className="flex items-center gap-2 px-2 py-1.5">
                 <SpinnerIcon size={12} className="animate-spin text-text-400" />
               </div>
