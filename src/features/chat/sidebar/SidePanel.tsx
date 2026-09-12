@@ -22,6 +22,8 @@ import {
   GlobeIcon,
 } from '../../../components/Icons'
 import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog } from '../../../hooks'
+import { useServerProjects } from '../../../hooks/useServerProjects'
+import { useServerGlobalSessionDirectories } from '../../../hooks/useServerGlobalSessionDirectories'
 import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore, childSessionStore } from '../../../store'
 import { useBusySessions } from '../../../store/activeSessionStore'
@@ -142,6 +144,13 @@ export function SidePanel({
   const catalogServerId = multiServerConfig.enabled
     ? (multiServerConfig.focusedServerId ?? activeServer?.id)
     : undefined
+  // 项目 tab 数据源 = 活动服务器（serverStorage 绑定）；发现其 git 项目与全局会话目录
+  const activeServerId = activeServer?.id ?? 'local'
+  const { projects: serverProjects, isLoading: isServerProjectsLoading } = useServerProjects(activeServerId, true)
+  const { groups: globalSessionGroups, isLoading: isGlobalGroupsLoading } = useServerGlobalSessionDirectories(
+    activeServerId,
+    true,
+  )
   const { catalog: gitWorkspaceCatalog, isLoading: isGitWorkspaceCatalogLoading } = useGitWorkspaceCatalog(
     catalogDirectories,
     catalogServerId,
@@ -626,6 +635,28 @@ export function SidePanel({
     }
   }, [pathInfo])
 
+  // 服务器侧发现的「已激活项目」：/project 返回的 git 项目 + 全局存储会话按 directory
+  // 分组的目录（如 work 主机的 D:\AAADATA\OneDrive - moi\TEMP\HYY）。全部标记 isDerived
+  // （不参与重排/移除；点其中会话后自动保存为真实工作区）
+  const discoveredProjectItems = useMemo<ProjectItem[]>(() => {
+    const items: ProjectItem[] = []
+    const pushWorktree = (worktree: string) => {
+      const normalized = normalizeToForwardSlash(worktree)
+      if (!normalized || normalized === '/') return
+      if (items.some(item => item.worktree === normalized)) return
+      items.push({
+        id: normalized,
+        worktree: normalized,
+        name: getDirectoryName(normalized) || normalized,
+        canReorder: false,
+        isDerived: true,
+      })
+    }
+    for (const project of serverProjects) pushWorktree(project.worktree || '')
+    for (const group of globalSessionGroups) pushWorktree(group.directory)
+    return items
+  }, [serverProjects, globalSessionGroups])
+
   const folderProjects = useMemo<ProjectItem[]>(() => {
     const list: ProjectItem[] = []
     // 已保存项目；根路径（global 项目，归一化后为空）不展示「全局」文件夹
@@ -638,6 +669,14 @@ export function SidePanel({
       list.push(serverCurrentProject)
     }
     list.push(...nonRootGroups)
+    // 服务器侧发现的项目/目录（与已保存项目按目录去重）
+    const knownWorktrees = new Set(list.map(project => normalizeToForwardSlash(project.worktree || '')))
+    for (const item of discoveredProjectItems) {
+      const worktree = normalizeToForwardSlash(item.worktree || '')
+      if (!worktree || knownWorktrees.has(worktree)) continue
+      knownWorktrees.add(worktree)
+      list.push(item)
+    }
 
     if (currentDirectory && !list.some(project => isSameDirectory(project.worktree, currentProject.worktree))) {
       list.push({ ...currentProject, canReorder: false })
@@ -653,6 +692,7 @@ export function SidePanel({
   }, [
     serverCurrentProject,
     folderProjectGroups,
+    discoveredProjectItems,
     currentDirectory,
     currentProject,
     globalFolderProject,
@@ -660,10 +700,10 @@ export function SidePanel({
     sidebarShowGlobal,
   ])
 
-  // 新添加的项目（含刚保存的目录 / 切换主机）自动展开，保证「新建项目」后立即可见
+  // 新添加/新保存的项目自动展开（服务器发现的 isDerived 项目不自动展开，避免一堆目录同时加载）
   const prevFolderProjectIdsRef = useRef<string[] | null>(null)
   useEffect(() => {
-    const ids = folderProjects.map(project => project.id)
+    const ids = folderProjects.filter(project => !project.isDerived).map(project => project.id)
     const prev = prevFolderProjectIdsRef.current
     prevFolderProjectIdsRef.current = ids
     if (!prev) return
@@ -697,6 +737,11 @@ export function SidePanel({
     currentProjectWorkspaceDirectories.length <= 1 &&
     !!normalizedCurrentDirectory &&
     !gitWorkspaceCatalog.has(normalizedCurrentDirectory)
+  // 服务器侧项目/目录发现中且还没有任何可展示项 → 转圈，避免空状态闪现
+  const isDiscoveringServerData =
+    (isServerProjectsLoading || isGlobalGroupsLoading) &&
+    folderProjectGroups.length === 0 &&
+    discoveredProjectItems.length === 0
 
   const allDisplayedProjects = useMemo(() => {
     return [...folderProjects]
@@ -1178,7 +1223,7 @@ export function SidePanel({
                   pinnedSessions={resolvedPinnedSessions}
                   unavailablePinnedEntries={unavailablePinnedEntries}
                 />
-              ) : shouldWaitForWorkspaceResolution ? (
+              ) : shouldWaitForWorkspaceResolution || isDiscoveringServerData ? (
                 <div className="flex h-full items-center justify-center text-text-400/70">
                   <SpinnerIcon size={14} className="animate-spin" />
                 </div>
