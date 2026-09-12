@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderRecentList, type FolderRecentProject } from './FolderRecentList'
+import { HostList } from './HostList'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
 import { getProjectGroupIdentity } from './projectGrouping'
@@ -8,6 +9,7 @@ import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { SidebarFooter } from './SidebarFooter'
 import {
   SidebarIcon,
+  FolderIcon,
   PlusIcon,
   NewChatIcon,
   TrashIcon,
@@ -17,6 +19,7 @@ import {
   FolderMinusIcon,
   CheckIcon,
   SpinnerIcon,
+  GlobeIcon,
 } from '../../../components/Icons'
 import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog } from '../../../hooks'
 import { useSessionContext } from '../../../contexts/useSessionContext'
@@ -154,6 +157,8 @@ export function SidePanel({
     [currentDirectory],
   )
   const [connectionState, setConnectionState] = useState<ConnectionInfo | null>(null)
+  // 侧栏视图：主机（切换后端）/ 项目（会话与项目）
+  const [sidebarTab, setSidebarTab] = useState<'hosts' | 'projects'>('projects')
   const [expandedRecentProjectIds, setExpandedRecentProjectIds] = useState<string[]>([])
 
   // ---- 编辑模式状态 ----
@@ -605,13 +610,13 @@ export function SidePanel({
     [t],
   )
 
-  // 当前激活项目 = 服务器当前 worktree（pathInfo）。连上主机后自动置顶展示；
-  // 根 worktree（global 项目；"/" 归一化后为空）用「全局」文件夹语义（会话 = 服务器全局会话）
+  // 当前激活项目 = 服务器当前 worktree（pathInfo）。仅当是真实目录时自动置顶；
+  // 根 worktree（global 项目）不展示 —— 用户明确不要「全局」文件夹
   const serverCurrentProject = useMemo<ProjectItem | null>(() => {
     const raw = pathInfo?.worktree
     if (!raw) return null
     const worktree = normalizeToForwardSlash(raw)
-    if (!worktree || worktree === '/') return globalFolderProject
+    if (!worktree || worktree === '/') return null
     return {
       id: worktree,
       worktree,
@@ -619,34 +624,26 @@ export function SidePanel({
       canReorder: false,
       isDerived: true,
     }
-  }, [pathInfo, globalFolderProject])
+  }, [pathInfo])
 
   const folderProjects = useMemo<ProjectItem[]>(() => {
     const list: ProjectItem[] = []
-    // 已保存项目；根路径（global 项目，归一化后为空）由「当前激活项目」置顶展示，不重复出现
+    // 已保存项目；根路径（global 项目，归一化后为空）不展示「全局」文件夹
     const nonRootGroups = folderProjectGroups.filter(project => normalizeToForwardSlash(project.worktree || '') !== '')
-    // 当前激活项目置顶（真实目录与已保存项目重复时不重复添加）
-    if (serverCurrentProject) {
-      const isRootNode = serverCurrentProject.id === 'global'
-      const alreadyCovered =
-        !isRootNode && nonRootGroups.some(project => isSameDirectory(project.worktree, serverCurrentProject.worktree))
-      if (!alreadyCovered) list.push(serverCurrentProject)
-    } else if (folderProjectGroups.length > nonRootGroups.length) {
-      // 只保存了根工作区（global 项目）、暂无 pathInfo → 用「全局」展示
-      list.push(globalFolderProject)
+    // 当前激活项目（真实目录）置顶，与已保存项目重复时不重复添加
+    if (
+      serverCurrentProject &&
+      !nonRootGroups.some(project => isSameDirectory(project.worktree, serverCurrentProject.worktree))
+    ) {
+      list.push(serverCurrentProject)
     }
     list.push(...nonRootGroups)
-
-    // 无任何项目（服务器不可达或新主机尚无 pathInfo）时兜底「全局」
-    if (list.length === 0) {
-      list.push(globalFolderProject)
-    }
 
     if (currentDirectory && !list.some(project => isSameDirectory(project.worktree, currentProject.worktree))) {
       list.push({ ...currentProject, canReorder: false })
     }
 
-    // 需求 1：全局对话开关（默认关闭）决定是否在指定位置额外插入「全局」；已在置顶位则跳过
+    // 需求 1：全局对话开关（默认关闭）决定是否插入「全局」文件夹；已在列表中则跳过
     if (!sidebarShowGlobal || list.some(project => project.id === 'global')) return list
 
     const insertAt = Math.min(Math.max(globalFolderIndex, 0), list.length)
@@ -1108,51 +1105,95 @@ export function SidePanel({
               </>
             ) : (
               <>
-                {/* 管理按钮：常驻，进入批量管理模式 */}
-                <button
-                  type="button"
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={enterEditMode}
-                  aria-label={t('sidebar.manageSessions')}
-                  className="ml-auto shrink-0 p-1 rounded-md text-text-500 hover:text-text-300 hover:bg-bg-200/50 transition-colors duration-150"
-                  title={t('sidebar.manageSessions')}
-                >
-                  <ListFilterIcon size={14} />
-                </button>
+                {/* 视图切换：主机（切换后端）/ 项目（会话与项目） */}
+                <div className="flex items-center gap-0.5 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSidebarTab('hosts')
+                      if (sidebarTab !== 'hosts') exitEditMode()
+                    }}
+                    className={`flex flex-1 min-w-0 items-center justify-center gap-1 pl-[6px] pr-2 py-1.5 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 rounded-md ${
+                      sidebarTab === 'hosts'
+                        ? 'bg-bg-200/70 text-text-100'
+                        : 'text-text-500 hover:text-text-300 hover:bg-bg-200/30'
+                    }`}
+                    title={t('sidebar.hostsHint', { defaultValue: 'Switch between hosts' })}
+                  >
+                    <GlobeIcon size={13} />
+                    <span className="truncate">{t('sidebar.hosts', { defaultValue: 'Hosts' })}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSidebarTab('projects')
+                      if (sidebarTab !== 'projects') exitEditMode()
+                    }}
+                    className={`flex flex-1 min-w-0 items-center justify-center gap-1 pl-[6px] pr-2 py-1.5 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 rounded-md ${
+                      sidebarTab === 'projects'
+                        ? 'bg-bg-200/70 text-text-100'
+                        : 'text-text-500 hover:text-text-300 hover:bg-bg-200/30'
+                    }`}
+                    title={t('sidebar.projectByFolder', { defaultValue: 'Group by project' })}
+                  >
+                    <FolderIcon size={13} />
+                    <span className="truncate">{t('sidebar.project', { defaultValue: 'Project' })}</span>
+                  </button>
+                </div>
+                {/* 管理按钮：仅项目视图（批量管理会话/项目） */}
+                {sidebarTab === 'projects' && (
+                  <button
+                    type="button"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={enterEditMode}
+                    aria-label={t('sidebar.manageSessions')}
+                    className="shrink-0 p-1 rounded-md text-text-500 hover:text-text-300 hover:bg-bg-200/50 transition-colors duration-150"
+                    title={t('sidebar.manageSessions')}
+                  >
+                    <ListFilterIcon size={14} />
+                  </button>
+                )}
               </>
             )}
           </div>
 
-          {/* 会话列表：当前激活项目 + 已保存项目文件夹（统一按目录查询） */}
-          <div
-            ref={recentsSelectionRootRef}
-            className={`flex-1 overflow-hidden ${isEditMode ? 'select-none' : ''}`}
-          >
-            {search ? (
-              /* 搜索：文件夹 + session 就地筛选 */
-              <FolderRecentList
-                projects={folderProjects}
-                {...commonFolderRecentListProps}
-                onReorderProject={handleReorderProjectGroup}
-                workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
-                pinnedSessions={resolvedPinnedSessions}
-                unavailablePinnedEntries={unavailablePinnedEntries}
-              />
-            ) : shouldWaitForWorkspaceResolution ? (
-              <div className="flex h-full items-center justify-center text-text-400/70">
-                <SpinnerIcon size={14} className="animate-spin" />
-              </div>
-            ) : (
-              <FolderRecentList
-                projects={folderProjects}
-                {...commonFolderRecentListProps}
-                onReorderProject={handleReorderProjectGroup}
-                workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
-                pinnedSessions={resolvedPinnedSessions}
-                unavailablePinnedEntries={unavailablePinnedEntries}
-              />
-            )}
-          </div>
+          {/* 主机 tab：切换后端 */}
+          {sidebarTab === 'hosts' ? (
+            <div ref={recentsSelectionRootRef} className="flex-1 overflow-hidden">
+              <HostList onActivate={() => setSidebarTab('projects')} onOpenSettings={onOpenSettings} />
+            </div>
+          ) : (
+            /* 项目 tab：已保存项目文件夹树（统一按目录查询） */
+            <div
+              ref={recentsSelectionRootRef}
+              className={`flex-1 overflow-hidden ${isEditMode ? 'select-none' : ''}`}
+            >
+              {search ? (
+                /* 搜索：文件夹 + session 就地筛选 */
+                <FolderRecentList
+                  projects={folderProjects}
+                  {...commonFolderRecentListProps}
+                  onReorderProject={handleReorderProjectGroup}
+                  workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
+                  pinnedSessions={resolvedPinnedSessions}
+                  unavailablePinnedEntries={unavailablePinnedEntries}
+                />
+              ) : shouldWaitForWorkspaceResolution ? (
+                <div className="flex h-full items-center justify-center text-text-400/70">
+                  <SpinnerIcon size={14} className="animate-spin" />
+                </div>
+              ) : (
+                <FolderRecentList
+                  projects={folderProjects}
+                  {...commonFolderRecentListProps}
+                  onReorderProject={handleReorderProjectGroup}
+                  workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
+                  pinnedSessions={resolvedPinnedSessions}
+                  unavailablePinnedEntries={unavailablePinnedEntries}
+                />
+              )}
+            </div>
+          )}
         </div>
       </div>
 

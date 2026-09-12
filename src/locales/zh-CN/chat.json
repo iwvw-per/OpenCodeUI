@@ -176,6 +176,8 @@
     "searchNoMatches": "没有匹配的会话",
     "group": "分组",
     "project": "项目",
+    "hosts": "主机",
+    "hostsHint": "切换后端主机",
     "groupByHost": "按主机分组",
     "projectByFolder": "按项目分组"
   },
