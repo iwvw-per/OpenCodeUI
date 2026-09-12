@@ -145,12 +145,7 @@ export function SidePanel({
     catalogDirectories,
     catalogServerId,
   )
-  const { sidebarShowChildSessions, sidebarShowGlobal } = useLayoutStore()
-  const [globalFolderIndex, setGlobalFolderIndex] = useState<number>(() => {
-    const saved = localStorage.getItem('opencode-sidebar-global-folder-index')
-    const parsed = saved ? Number.parseInt(saved, 10) : 0
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
-  })
+  const { sidebarShowChildSessions } = useLayoutStore()
   const normalizedCurrentDirectory = useMemo(
     () => (currentDirectory ? normalizeToForwardSlash(currentDirectory) : undefined),
     [currentDirectory],
@@ -604,11 +599,6 @@ export function SidePanel({
     }
   }, [currentDirectory, folderProjectGroups, gitWorkspaceCatalog, globalProject, normalizedCurrentDirectory])
 
-  const globalFolderProject = useMemo<ProjectItem>(
-    () => ({ id: 'global', worktree: '', name: t('sidebar.global'), canReorder: true }),
-    [t],
-  )
-
   // 当前激活项目 = 服务器当前 worktree（pathInfo）。仅当是真实目录时自动置顶；
   // 根 worktree（global 项目）不展示 —— 用户明确不要「全局」文件夹
   const serverCurrentProject = useMemo<ProjectItem | null>(() => {
@@ -642,22 +632,9 @@ export function SidePanel({
       list.push({ ...currentProject, canReorder: false })
     }
 
-    // 需求 1：全局对话开关（默认关闭）决定是否插入「全局」文件夹；已在列表中则跳过
-    if (!sidebarShowGlobal || list.some(project => project.id === 'global')) return list
-
-    const insertAt = Math.min(Math.max(globalFolderIndex, 0), list.length)
-    const next = [...list]
-    next.splice(insertAt, 0, globalFolderProject)
-    return next
-  }, [
-    serverCurrentProject,
-    folderProjectGroups,
-    currentDirectory,
-    currentProject,
-    globalFolderProject,
-    globalFolderIndex,
-    sidebarShowGlobal,
-  ])
+    // 不展示「全局」文件夹：全局把所有会话堆在一起条目多且卡，用户只按项目打开会话
+    return list
+  }, [serverCurrentProject, folderProjectGroups, currentDirectory, currentProject])
 
   // 新添加/新保存的项目自动展开，保证「新建项目」后立即可见
   const prevFolderProjectIdsRef = useRef<string[] | null>(null)
@@ -719,41 +696,13 @@ export function SidePanel({
       const targetIdx = folderProjects.findIndex(project => project.id === targetId)
       if (draggedIdx === -1 || targetIdx === -1 || draggedIdx === targetIdx) return
 
-      const draggedIsGlobal = folderProjects[draggedIdx].id === 'global'
-      const targetIsGlobal = folderProjects[targetIdx].id === 'global'
-
-      if (draggedIsGlobal) {
-        // 全局移到 target 位置：globalFolderIndex 直接等于 targetIdx
-        if (targetIdx !== globalFolderIndex) {
-          setGlobalFolderIndex(targetIdx)
-          localStorage.setItem('opencode-sidebar-global-folder-index', String(targetIdx))
-        }
-        return
-      }
-
-      if (targetIsGlobal) {
-        // 普通目录拖到全局位置 = 交换：全局到普通目录原位，普通目录移到全局旁
-        const adjacentIdx = draggedIdx < targetIdx ? targetIdx - 1 : targetIdx + 1
-        if (draggedIdx !== adjacentIdx) {
-          const draggedReorderPath = folderProjects[draggedIdx].reorderPath
-          const adjacentReorderPath = folderProjects[adjacentIdx].reorderPath
-          if (draggedReorderPath && adjacentReorderPath) {
-            reorderDirectories(draggedReorderPath, adjacentReorderPath)
-          }
-        }
-        if (draggedIdx !== globalFolderIndex) {
-          setGlobalFolderIndex(draggedIdx)
-          localStorage.setItem('opencode-sidebar-global-folder-index', String(draggedIdx))
-        }
-        return
-      }
-
+      // 不展示「全局」文件夹，故不存在全局行拖拽分支
       const draggedReorderPath = folderProjects[draggedIdx].reorderPath
       const targetReorderPath = folderProjects[targetIdx].reorderPath
       if (!draggedReorderPath || !targetReorderPath) return
       reorderDirectories(draggedReorderPath, targetReorderPath)
     },
-    [folderProjects, reorderDirectories, globalFolderIndex],
+    [folderProjects, reorderDirectories],
   )
 
   const handleSelectActive = useCallback(
