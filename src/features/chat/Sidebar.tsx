@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect, useRef, memo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { SidePanel } from './sidebar/SidePanel'
 import { ProjectDialog } from './ProjectDialog'
 import { useMultiServerStore, multiServerStore } from '../../store/multiServerStore'
 import { addServerWorkspace } from '../../utils/serverWorkspaces'
 import { useDirectory } from '../../hooks'
+import { isTauri, isTauriMobile } from '../../utils/tauri'
 import { type ApiSession } from '../../api'
 import { useChatViewport } from './chatViewport'
 
@@ -45,6 +47,7 @@ export const Sidebar = memo(function Sidebar({
   onProjectDialogClose,
   mobileInline = false,
 }: SidebarProps) {
+  const { t } = useTranslation(['chat', 'common'])
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false)
   const [projectDialogKey, setProjectDialogKey] = useState(0)
   const { addDirectory, pathInfo, currentDirectory } = useDirectory()
@@ -77,10 +80,27 @@ export const Sidebar = memo(function Sidebar({
     [addDirectory, isOverlay, onOpen, multiServerConfig.enabled],
   )
 
-  const openProjectDialog = useCallback(() => {
+  const openProjectDialog = useCallback(async () => {
+    // 桌面客户端：优先弹系统文件夹选择器（Tauri dialog 插件）；浏览器/移动端/插件失败时回退内置 ProjectDialog
+    if (isTauri() && !isTauriMobile()) {
+      try {
+        const { open } = await import('@tauri-apps/plugin-dialog')
+        const selected = await open({
+          directory: true,
+          multiple: false,
+          title: t('sidebar.addProject', { defaultValue: 'Add project…' }),
+        })
+        if (typeof selected === 'string' && selected) {
+          handleAddProject(selected)
+        }
+        return
+      } catch {
+        // 回退到内置 ProjectDialog
+      }
+    }
     setProjectDialogKey(key => key + 1)
     setIsProjectDialogOpen(true)
-  }, [])
+  }, [handleAddProject, t])
 
   const closeProjectDialog = useCallback(() => {
     setIsProjectDialogOpen(false)
