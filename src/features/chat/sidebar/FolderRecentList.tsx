@@ -37,6 +37,8 @@ export interface FolderRecentProject {
   canReorder?: boolean
   memberDirectories?: string[]
   sectionKind?: 'project' | 'workspace'
+  /** 推导项目（无已保存工作区时自动生成）：隐藏移除按钮，避免对未存储目录执行无效移除 */
+  isDerived?: boolean
 }
 
 interface FolderRecentListProps {
@@ -1095,8 +1097,8 @@ function FolderRecentSection({
               <PlusIcon size={13} />
             </button>
           )}
-          {/* 移除项目：hover 显示（有目录时才可移除；全局项不显示） */}
-          {!isEditMode && onRemoveProject && project.worktree && (
+          {/* 移除项目：hover 显示（有目录且非推导项目时才可移除；全局项不显示） */}
+          {!isEditMode && onRemoveProject && project.worktree && !project.isDerived && (
             <button
               type="button"
               onClick={e => {

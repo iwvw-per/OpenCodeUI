@@ -22,6 +22,7 @@ import {
   HashIcon,
 } from '../../../components/Icons'
 import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog } from '../../../hooks'
+import { useServerWorkspaceDirectories } from '../../../hooks/useServerWorkspaceDirectories'
 import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore, childSessionStore } from '../../../store'
 import { useBusySessions } from '../../../store/activeSessionStore'
@@ -71,6 +72,8 @@ interface ProjectItem {
   reorderPath?: string
   workspaceDirectories?: string[]
   sectionKind?: 'project' | 'workspace'
+  /** 推导项目（无已保存工作区时从服务器会话自动生成）：不参与重排/移除 */
+  isDerived?: boolean
 }
 
 function getSelectionRange(visibleIds: string[], anchorId: string, targetId: string) {
@@ -533,7 +536,7 @@ export function SidePanel({
   ])
 
   const buildProjectGroups = useCallback(
-    (directories: typeof savedDirectories): ProjectItem[] => {
+    (directories: typeof savedDirectories, isDerived = false): ProjectItem[] => {
       const savedNameByPath = new Map(
         directories.map(directory => [normalizeToForwardSlash(directory.path), directory.name]),
       )
@@ -558,7 +561,8 @@ export function SidePanel({
           id: projectId,
           worktree: projectId,
           name: savedNameByPath.get(projectId) ?? getDirectoryName(projectId),
-          canReorder: true,
+          canReorder: !isDerived,
+          isDerived: isDerived || undefined,
           memberDirectories: [directory.path],
           reorderPath: directory.path,
           workspaceDirectories,
@@ -585,9 +589,27 @@ export function SidePanel({
     [gitWorkspaceCatalog],
   )
 
+  // 项目视图数据源 = savedDirectories 绑定的活动服务器；无已保存项目（如远程主机）时
+  // 用服务器会话推导的目录兜底展示（不写存储；选中其中的会话后自动转为真实工作区）
+  const activeServerId = activeServer?.id ?? 'local'
+  const {
+    directories: derivedWorkspaceDirs,
+    hasSavedWorkspaces: hasSavedProjects,
+    isLoading: isDiscoveringProjects,
+  } = useServerWorkspaceDirectories(activeServerId, sidebarView === 'project')
+
+  const folderProjectDirectories = useMemo((): typeof savedDirectories => {
+    if (savedDirectories.length > 0) return savedDirectories
+    return derivedWorkspaceDirs.map(directory => ({
+      path: directory,
+      name: getDirectoryName(directory) || directory,
+      addedAt: 0,
+    }))
+  }, [savedDirectories, derivedWorkspaceDirs])
+
   const folderProjectGroups = useMemo<ProjectItem[]>(() => {
-    return buildProjectGroups(savedDirectories)
-  }, [buildProjectGroups, savedDirectories])
+    return buildProjectGroups(folderProjectDirectories, !hasSavedProjects)
+  }, [buildProjectGroups, folderProjectDirectories, hasSavedProjects])
 
   const globalProject = useMemo<ProjectItem>(
     () => ({
@@ -614,6 +636,7 @@ export function SidePanel({
       worktree: projectId,
       name: getDirectoryName(projectId),
       canReorder: false,
+      isDerived: true,
       memberDirectories: [],
       workspaceDirectories,
     }
@@ -1175,7 +1198,7 @@ export function SidePanel({
                   pinnedSessions={resolvedPinnedSessions}
                   unavailablePinnedEntries={unavailablePinnedEntries}
                 />
-              ) : shouldWaitForWorkspaceResolution ? (
+              ) : shouldWaitForWorkspaceResolution || (isDiscoveringProjects && folderProjectDirectories.length === 0) ? (
                 <div className="flex h-full items-center justify-center text-text-400/70">
                   <SpinnerIcon size={14} className="animate-spin" />
                 </div>
