@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FolderRecentList } from './FolderRecentList'
+import { FolderRecentList, type FolderRecentProject } from './FolderRecentList'
 import { MultiServerFolderList } from './MultiServerFolderList'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
@@ -180,6 +180,11 @@ export function SidePanel({
   const [batchDeleteSessionConfirm, setBatchDeleteSessionConfirm] = useState(false)
   const [batchRemoveProjectConfirm, setBatchRemoveProjectConfirm] = useState(false)
   const [isBatchDeleting, setIsBatchDeleting] = useState(false)
+  // 单个项目移除确认（项目行 hover 的删除按钮）
+  const [projectRemoveConfirm, setProjectRemoveConfirm] = useState<{ isOpen: boolean; project: FolderRecentProject | null }>({
+    isOpen: false,
+    project: null,
+  })
 
   const getVisibleSelectionIds = useCallback((kind: 'session' | 'project') => {
     const root = recentsSelectionRootRef.current
@@ -813,6 +818,17 @@ export function SidePanel({
     setBatchRemoveProjectConfirm(false)
   }, [getProjectDirectoriesToRemove, selectedProjectIds, removeDirectory])
 
+  // 单个项目移除：弹确认框 → 从列表移除该项目的所有目录（不删文件）
+  const handleRemoveProjectClick = useCallback((project: FolderRecentProject) => {
+    setProjectRemoveConfirm({ isOpen: true, project })
+  }, [])
+  const handleConfirmRemoveProject = useCallback(() => {
+    const project = projectRemoveConfirm.project
+    if (!project) return
+    getProjectDirectoriesToRemove(project.id).forEach(directory => removeDirectory(directory))
+    setProjectRemoveConfirm({ isOpen: false, project: null })
+  }, [projectRemoveConfirm.project, getProjectDirectoriesToRemove, removeDirectory])
+
   // 需求 4：在指定项目目录下新建会话 —— 先切目录上下文，再走全局新建
   const handleNewSessionInDirectory = useCallback(
     (directory: string) => {
@@ -835,6 +851,7 @@ export function SidePanel({
     onRenameSession: handleRenameFolderSession,
     onDeleteSession: handleDeleteFolderSession,
     onNewSessionInDirectory: handleNewSessionInDirectory,
+    onRemoveProject: handleRemoveProjectClick,
     expandedChildSessionIds,
     inlineChildSessions,
     onSelectChildSession: handleSelectActive,
@@ -1208,6 +1225,17 @@ export function SidePanel({
         description={t('sidebar.batchRemoveProjectsConfirm', { count: selectedProjectIds.size })}
         confirmText={t('common:remove')}
         variant="warning"
+      />
+
+      {/* 单个项目移除确认弹窗 */}
+      <ConfirmDialog
+        isOpen={projectRemoveConfirm.isOpen}
+        onClose={() => setProjectRemoveConfirm({ isOpen: false, project: null })}
+        onConfirm={handleConfirmRemoveProject}
+        title={t('sidebar.removeProject')}
+        description={t('sidebar.removeProjectConfirm')}
+        confirmText={t('common:remove')}
+        variant="danger"
       />
     </div>
   )

@@ -11,6 +11,7 @@ import {
   SpinnerIcon,
   ChevronDownIcon,
   PlusIcon,
+  TrashIcon,
 } from '../../../components/Icons'
 import { ExpandableSection } from '../../../components/ui'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
@@ -55,6 +56,8 @@ interface FolderRecentListProps {
   onReorderProject: (draggedPath: string, targetPath: string) => void
   /** 项目行 hover 的 + 按钮：在该项目目录下新建会话（无目录的项目（全局）不显示） */
   onNewSessionInDirectory?: (directory: string) => void
+  /** 移除项目（从侧栏列表移除，不删文件） */
+  onRemoveProject?: (project: FolderRecentProject) => void
   expandedChildSessionIds?: Set<string>
   inlineChildSessions?: Map<string, ApiSession[]>
   onSelectChildSession?: (session: ApiSession) => void
@@ -436,6 +439,7 @@ export function FolderRecentList({
   onDeleteSession,
   onReorderProject,
   onNewSessionInDirectory,
+  onRemoveProject,
   expandedChildSessionIds,
   inlineChildSessions,
   onSelectChildSession,
@@ -602,6 +606,7 @@ export function FolderRecentList({
                   onSelectProject={() => handleSelectDirectory(project.worktree, project.sectionKind)}
                   onSelectDirectory={handleSelectDirectory}
                   onNewSessionInDirectory={onNewSessionInDirectory}
+                  onRemoveProject={onRemoveProject}
                   onToggle={() => handleToggleProject(project.id)}
                   onSelectSession={onSelectSession}
                   onRenameSession={onRenameSession}
@@ -812,6 +817,8 @@ interface FolderRecentSectionProps {
   onSelectProject: () => void
   onSelectDirectory: (directory: string, sectionKind?: FolderRecentProject['sectionKind']) => void
   onNewSessionInDirectory?: (directory: string) => void
+  /** 移除项目（从侧栏列表移除，不删文件）；无目录的项目（全局）不显示按钮 */
+  onRemoveProject?: (project: FolderRecentProject) => void
   onToggle: () => void
   onSelectSession: (session: ApiSession) => void
   onRenameSession: (session: ApiSession, newTitle: string) => Promise<void>
@@ -857,6 +864,7 @@ function FolderRecentSection({
   onSelectProject,
   onSelectDirectory,
   onNewSessionInDirectory,
+  onRemoveProject,
   onToggle,
   onSelectSession,
   onRenameSession,
@@ -1085,6 +1093,21 @@ function FolderRecentSection({
               aria-label={t('sidebar.newTaskInDirectory', { defaultValue: 'New conversation here' })}
             >
               <PlusIcon size={13} />
+            </button>
+          )}
+          {/* 移除项目：hover 显示（有目录时才可移除；全局项不显示） */}
+          {!isEditMode && onRemoveProject && project.worktree && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation()
+                onRemoveProject(project)
+              }}
+              className="shrink-0 flex items-center justify-center w-6 h-6 mr-0.5 rounded-full text-text-400 opacity-0 group-hover/folder:opacity-100 hover:text-danger-100 hover:bg-danger-100/10 transition-all"
+              title={t('sidebar.removeProject')}
+              aria-label={t('sidebar.removeProject')}
+            >
+              <TrashIcon size={12} />
             </button>
           )}
           {/* 管理模式下保留展开/收起，否则选不了内部会话 */}

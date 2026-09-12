@@ -153,6 +153,8 @@
     "selectItems": "点选要管理的项",
     "manageSessions": "管理",
     "doneManaging": "完成",
+    "removeProject": "移除项目",
+    "removeProjectConfirm": "确定从列表中移除此项目文件夹？文件不会被删除。",
     "deleteSessionsWithCount": "删除 {{count}} 个会话",
     "removeProjectsWithCount": "移除 {{count}} 个项目",
     "batchDeleteSessions": "删除 {{count}} 个会话",
