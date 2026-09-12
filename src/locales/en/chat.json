@@ -176,6 +176,8 @@
     "searchNoMatches": "No matching chats",
     "group": "Group",
     "project": "Project",
+    "hosts": "Hosts",
+    "hostsHint": "Switch between hosts",
     "groupByHost": "Group by server",
     "projectByFolder": "Group by project"
   },
