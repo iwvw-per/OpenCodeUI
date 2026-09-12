@@ -22,7 +22,6 @@ import {
   HashIcon,
 } from '../../../components/Icons'
 import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog } from '../../../hooks'
-import { useServerWorkspaceDirectories } from '../../../hooks/useServerWorkspaceDirectories'
 import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore, childSessionStore } from '../../../store'
 import { useBusySessions } from '../../../store/activeSessionStore'
@@ -589,27 +588,9 @@ export function SidePanel({
     [gitWorkspaceCatalog],
   )
 
-  // 项目视图数据源 = savedDirectories 绑定的活动服务器；无已保存项目（如远程主机）时
-  // 用服务器会话推导的目录兜底展示（不写存储；选中其中的会话后自动转为真实工作区）
-  const activeServerId = activeServer?.id ?? 'local'
-  const {
-    directories: derivedWorkspaceDirs,
-    hasSavedWorkspaces: hasSavedProjects,
-    isLoading: isDiscoveringProjects,
-  } = useServerWorkspaceDirectories(activeServerId, sidebarView === 'project')
-
-  const folderProjectDirectories = useMemo((): typeof savedDirectories => {
-    if (savedDirectories.length > 0) return savedDirectories
-    return derivedWorkspaceDirs.map(directory => ({
-      path: directory,
-      name: getDirectoryName(directory) || directory,
-      addedAt: 0,
-    }))
-  }, [savedDirectories, derivedWorkspaceDirs])
-
   const folderProjectGroups = useMemo<ProjectItem[]>(() => {
-    return buildProjectGroups(folderProjectDirectories, !hasSavedProjects)
-  }, [buildProjectGroups, folderProjectDirectories, hasSavedProjects])
+    return buildProjectGroups(savedDirectories)
+  }, [buildProjectGroups, savedDirectories])
 
   const globalProject = useMemo<ProjectItem>(
     () => ({
@@ -648,6 +629,20 @@ export function SidePanel({
   )
 
   const folderProjects = useMemo<ProjectItem[]>(() => {
+    // 无已保存项目（典型：远程主机）：只保留「全局」一行直接展示服务器根会话，
+    // 连上远程后显示它实际有的会话（与原版「全局文件夹永远可见」语义一致）
+    const fallbackGlobal = folderProjectGroups.length === 0
+    if (fallbackGlobal) {
+      const list = [globalFolderProject]
+      if (
+        currentDirectory &&
+        !list.some(project => isSameDirectory(project.worktree, currentProject.worktree))
+      ) {
+        list.push({ ...currentProject, canReorder: false })
+      }
+      return list
+    }
+
     const list = [...folderProjectGroups]
 
     if (currentDirectory && !list.some(project => isSameDirectory(project.worktree, currentProject.worktree))) {
@@ -1198,7 +1193,7 @@ export function SidePanel({
                   pinnedSessions={resolvedPinnedSessions}
                   unavailablePinnedEntries={unavailablePinnedEntries}
                 />
-              ) : shouldWaitForWorkspaceResolution || (isDiscoveringProjects && folderProjectDirectories.length === 0) ? (
+              ) : shouldWaitForWorkspaceResolution ? (
                 <div className="flex h-full items-center justify-center text-text-400/70">
                   <SpinnerIcon size={14} className="animate-spin" />
                 </div>
