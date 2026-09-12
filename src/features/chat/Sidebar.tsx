@@ -51,8 +51,6 @@ export const Sidebar = memo(function Sidebar({
   const { t } = useTranslation(['chat', 'common'])
   const [isProjectDialogOpen, setIsProjectDialogOpen] = useState(false)
   const [projectDialogKey, setProjectDialogKey] = useState(0)
-  // 添加项目后的版本号：递增时通知 SidePanel 切到「项目」视图
-  const [projectAddVersion, setProjectAddVersion] = useState(0)
   const { addDirectory, pathInfo, currentDirectory } = useDirectory()
   // 已在项目里时，从当前项目路径起步，方便加相邻目录；否则回落 home
   const projectDialogInitialPath = currentDirectory || pathInfo?.home
@@ -70,9 +68,8 @@ export const Sidebar = memo(function Sidebar({
   const multiServerConfig = useMultiServerStore()
   const handleAddProject = useCallback(
     (path: string) => {
-      // 侧栏「项目」视图读取的是「活跃服务器」的 saved-directories（serverStorage 默认绑定活跃服务器），
-      // 而分组视图按「焦点服务器」分块。因此一律先写入活跃服务器（保证项目视图立即可见），
-      // 多服务器模式下焦点服务器 ≠ 活跃服务器时再额外写入焦点服务器（分组视图也能看到）。
+      // 侧栏读取的是「活跃服务器」的 saved-directories（serverStorage 默认绑定活跃服务器），
+      // 多服务器模式下焦点服务器 ≠ 活跃服务器时额外写入焦点服务器，保证切换后也能看到。
       addDirectory(path)
       if (multiServerConfig.enabled) {
         const focusedId = multiServerStore.getFocusedServerId()
@@ -81,8 +78,6 @@ export const Sidebar = memo(function Sidebar({
           addServerWorkspace(focusedId, path)
         }
       }
-      // 通知 SidePanel 切到「项目」视图，让新添加的项目立即可见（分组视图看不到空项目）
-      setProjectAddVersion(version => version + 1)
       if (!isOverlay) {
         onOpen()
       }
@@ -326,7 +321,6 @@ export const Sidebar = memo(function Sidebar({
               onCloseMobile={onClose}
               selectedSessionId={selectedSessionId}
               onAddProject={openProjectDialog}
-              projectAddVersion={projectAddVersion}
               isMobile={true}
               isExpanded={true}
               onToggleSidebar={onClose}
@@ -383,7 +377,6 @@ export const Sidebar = memo(function Sidebar({
             onCloseMobile={onClose}
             selectedSessionId={selectedSessionId}
             onAddProject={openProjectDialog}
-              projectAddVersion={projectAddVersion}
             isMobile={true}
             isExpanded={true}
             onToggleSidebar={onClose}
@@ -421,7 +414,6 @@ export const Sidebar = memo(function Sidebar({
           onCloseMobile={onClose}
           selectedSessionId={selectedSessionId}
           onAddProject={openProjectDialog}
-              projectAddVersion={projectAddVersion}
           isMobile={false}
           isExpanded={isOpen}
           onToggleSidebar={handleToggle}
