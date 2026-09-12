@@ -58,6 +58,8 @@ interface SidePanelProps {
   onToggleSidebar: () => void
   contextLimit?: number
   onOpenSettings?: () => void
+  /** 添加项目后递增：切换侧栏到「项目」视图，让新项目立即可见 */
+  projectAddVersion?: number
 }
 
 interface ProjectItem {
@@ -111,6 +113,7 @@ export function SidePanel({
   onToggleSidebar,
   contextLimit = 200000,
   onOpenSettings,
+  projectAddVersion = 0,
 }: SidePanelProps) {
   const { t } = useTranslation(['chat', 'common'])
   const {
@@ -166,6 +169,13 @@ export function SidePanel({
   const [connectionState, setConnectionState] = useState<ConnectionInfo | null>(null)
   const [sidebarView, setSidebarView] = useState<'group' | 'project'>('group')
   const [expandedRecentProjectIds, setExpandedRecentProjectIds] = useState<string[]>([])
+
+  // 添加项目后切到「项目」视图：新项目（可能为空目录）在分组视图没有任何可展示内容
+  useEffect(() => {
+    if (projectAddVersion > 0) {
+      setSidebarView('project')
+    }
+  }, [projectAddVersion])
 
   // ---- 编辑模式状态 ----
   const [isEditMode, setIsEditMode] = useState(false)
