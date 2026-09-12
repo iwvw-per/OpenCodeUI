@@ -13,7 +13,7 @@ import {
 import { IconButton } from '../../components/ui'
 import { ModelSelector, type ModelSelectorHandle } from './ModelSelector'
 import { ShareDialog } from './ShareDialog'
-import { messageStore, useHeaderSessionMeta } from '../../store'
+import { messageStore, useHeaderSessionMeta, notificationStore } from '../../store'
 import { useLayoutStore, layoutStore } from '../../store/layoutStore'
 import { useSessionContext } from '../../contexts/useSessionContext'
 import { updateSession } from '../../api'
@@ -205,8 +205,11 @@ export function Header({
       await openPath(targetDirectory)
     } catch (e) {
       uiErrorHandler('open project directory', e)
+      // 客户端上错误原本不可见（production 不输出日志），弹出错误提示便于定位
+      const message = e instanceof Error ? e.message : String(e)
+      notificationStore.push('error', t('header.openProjectDirectory'), message, sessionId ?? '')
     }
-  }, [targetDirectory])
+  }, [targetDirectory, sessionId, t])
 
   const titleControl = (
     <SessionTitleControl
