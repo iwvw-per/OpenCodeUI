@@ -127,17 +127,17 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
     const expandedMetaClassName = [
       'inline-block text-[length:var(--fs-sm)] leading-5',
       isMarkdownMode ? '' : 'italic',
-      isPartStreaming ? 'reasoning-shimmer-text' : 'text-text-400',
+      isPartStreaming ? 'reasoning-shimmer-text' : 'text-text-500',
     ]
       .filter(Boolean)
       .join(' ')
     const summaryClassName = isPartStreaming
-      ? 'text-[length:var(--fs-sm)] leading-5 text-text-200 whitespace-nowrap overflow-hidden text-ellipsis'
-      : 'text-[length:var(--fs-sm)] leading-5 text-text-300 whitespace-nowrap overflow-hidden text-ellipsis'
+      ? 'text-[length:var(--fs-sm)] leading-5 text-text-300 whitespace-nowrap overflow-hidden text-ellipsis'
+      : 'text-[length:var(--fs-sm)] leading-5 text-text-400 whitespace-nowrap overflow-hidden text-ellipsis'
     // 折叠态 markdown：只渲染第一行 + 单行省略号（对齐斜体）
     const collapsedMarkdownClassName = [
       'h-5 max-h-5 overflow-hidden whitespace-nowrap text-ellipsis',
-      isPartStreaming ? 'text-text-200' : 'text-text-300',
+      isPartStreaming ? 'text-text-300' : 'text-text-400',
       isPartStreaming ? 'reasoning-shimmer-text' : '',
       // 第一行 markdown 压成单行，才能吃到 text-ellipsis
       '[&_.markdown-stream-block]:!my-0 [&_.markdown-stream-block]:inline',
@@ -210,7 +210,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
                 <MarkdownRenderer content={displayText} variant="reasoning" isStreaming={isPartStreaming} />
               </div>
             ) : (
-              <div className={`${MSG_SPACING.body} text-[length:var(--fs-sm)] leading-6 italic whitespace-pre-wrap break-words overflow-x-hidden text-text-300`}>
+              <div className={`${MSG_SPACING.body} text-[length:var(--fs-sm)] leading-6 italic whitespace-pre-wrap break-words overflow-x-hidden text-text-400`}>
                 {displayText}
               </div>
             ))}
@@ -221,7 +221,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
         {isMarkdownMode ? (
           <MarkdownRenderer content={displayText} variant="reasoning" isStreaming={isPartStreaming} />
         ) : (
-          <span className="block min-w-0 text-[length:var(--fs-sm)] leading-5 italic whitespace-pre-wrap break-words text-text-300">
+          <span className="block min-w-0 text-[length:var(--fs-sm)] leading-5 italic whitespace-pre-wrap break-words text-text-400">
             {displayText}
           </span>
         )}
@@ -269,7 +269,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
         ref={headerRef}
         onClick={toggleExpanded}
         disabled={!hasContent && !isPartStreaming}
-        className={`w-full grid grid-cols-[auto_minmax(0,1fr)_12px] items-center gap-x-1.5 px-2 py-2 text-text-400 hover:bg-bg-200/50 transition-colors ${
+        className={`w-full grid grid-cols-[auto_minmax(0,1fr)_12px] items-center gap-x-1.5 px-2 py-2 text-text-500 hover:bg-bg-200/50 transition-colors ${
           !hasContent ? 'cursor-default' : ''
         }`}
       >
@@ -291,7 +291,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
       <MessageExpandPanel open={expanded} clip>
         {shouldRenderBody && (
           <ScrollArea ref={scrollAreaRef} maxHeight={192} className="border-t border-border-300/20 bg-bg-200/30">
-            <div className="px-2 py-2 text-text-300 text-[length:var(--fs-sm)] font-mono whitespace-pre-wrap break-words overflow-x-hidden">
+            <div className="px-2 py-2 text-text-400 text-[length:var(--fs-sm)] font-mono whitespace-pre-wrap break-words overflow-x-hidden">
               {displayText}
             </div>
           </ScrollArea>

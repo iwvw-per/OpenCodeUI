@@ -1080,7 +1080,7 @@ function FolderRecentSection({
               </span>
             )}
           </button>
-          {/* 项目行 hover 的 + 按钮：在该项目目录下新建会话（全局/无目录项目不显示） */}
+          {/* 项目行 hover 的 + 按钮：在该项目目录下新建会话（全局/无目录项目不显示）；hover 才显示，与移除按钮一致 */}
           {!isEditMode && onNewSessionInDirectory && project.worktree && (
             <button
               type="button"
@@ -1088,7 +1088,7 @@ function FolderRecentSection({
                 e.stopPropagation()
                 onNewSessionInDirectory(project.worktree)
               }}
-              className="shrink-0 flex items-center justify-center w-6 h-6 mr-0.5 rounded-full text-accent-main-100 hover:bg-accent-main-100/10 hover:text-accent-main-200 transition-colors"
+              className="shrink-0 flex items-center justify-center w-6 h-6 mr-0.5 rounded-full text-accent-main-100 hover:bg-accent-main-100/10 hover:text-accent-main-200 opacity-0 group-hover/folder:opacity-100 transition-all"
               title={t('sidebar.newTaskInDirectory', { defaultValue: 'New conversation here' })}
               aria-label={t('sidebar.newTaskInDirectory', { defaultValue: 'New conversation here' })}
             >

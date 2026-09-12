@@ -1542,7 +1542,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
 
   return (
     <div
-      className={`markdown-content ${isReasoning ? 'text-[length:var(--fs-sm)] leading-5 text-text-400' : 'text-[length:var(--fs-base)] leading-relaxed text-text-100'} break-words min-w-0 overflow-hidden ${className}`}
+      className={`markdown-content ${isReasoning ? 'text-[length:var(--fs-sm)] leading-5 text-text-500' : 'text-[length:var(--fs-base)] leading-relaxed text-text-100'} break-words min-w-0 overflow-hidden ${className}`}
     >
       {streamBlocks.map(block => (
         <MarkdownStreamBlock
