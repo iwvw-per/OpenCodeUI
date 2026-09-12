@@ -27,7 +27,6 @@ import { clearSessionRuntimeState } from '../../../utils/sessionLifecycle'
 import { uiErrorHandler } from '../../../utils'
 import { SessionListItem } from '../../sessions'
 import { useSessions } from '../../../hooks/useSessions'
-import { useServerWorkspaceDirectories } from '../../../hooks/useServerWorkspaceDirectories'
 import { useInputCapabilities } from '../../../hooks/useInputCapabilities'
 import {
   FolderRecentList,
@@ -144,9 +143,10 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
     return readServerWorkspaces(serverId)
   }, [serverId, storageVersion])
 
-  // 无已保存工作区（典型：远程主机）时，从服务器会话自动推导目录与会话全集（不写存储）
-  const { discoveredSessions, hasSavedWorkspaces, isLoading: discoveringWorkspaces } =
-    useServerWorkspaceDirectories(serverId, flat && isExpanded)
+  // 是否有已保存工作区。「分组」视图只在有工作区时按项目目录过滤会话；
+  // 无任何已保存工作区（典型：刚连接的远程主机）直接展示服务器根会话，
+  // 避免列表恒为空 —— 与原版侧栏「全局文件夹永远可见」的语义一致。
+  const hasSavedWorkspaces = workspaces.length > 0
 
   // 分组块 = 项目目录（已保存工作区）会话的汇总：合并各工作区目录的会话，
   // 并过滤掉不属于任何项目目录的会话（服务器根目录自带的会话不展示）。
@@ -198,19 +198,15 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
     for (const session of extraSessions) {
       if (!merged.has(session.id)) merged.set(session.id, session)
     }
-    // 无已保存工作区时并入推导会话（远程主机默认展示服务器全部可发现会话）
-    for (const session of discoveredSessions) {
-      if (!merged.has(session.id)) merged.set(session.id, session)
-    }
     return Array.from(merged.values()).filter(session => {
       // 分组视图扁平列表不显示子会话（parentID 会话）
       if (session.parentID) return false
       // 有已保存工作区：只保留项目目录里的顶层会话；
-      // 无任何已保存工作区（如刚连接的远程主机）：不过滤，否则列表恒为空
+      // 无任何已保存工作区（如刚连接的远程主机）：不过滤，直接展示服务器根会话
       if (!hasSavedWorkspaces) return true
       return !!session.directory && projectDirectorySet.has(normalizeToForwardSlash(session.directory))
     })
-  }, [sessions, extraSessions, discoveredSessions, hasSavedWorkspaces, projectDirectorySet])
+  }, [sessions, extraSessions, hasSavedWorkspaces, projectDirectorySet])
 
   // 展示顺序：global 固定第一，工作区按存储顺序
   const projects = useMemo<FolderRecentProject[]>(() => {
@@ -341,7 +337,7 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
       <ExpandableSection show={isExpanded}>
         {flat ? (
           <div className="pl-3 pb-1">
-            {(isLoading || discoveringWorkspaces || !extraSessionsLoaded) && filteredSessions.length === 0 ? (
+            {(isLoading || !extraSessionsLoaded) && filteredSessions.length === 0 ? (
               <div className="flex items-center gap-2 px-2 py-1.5">
                 <SpinnerIcon size={12} className="animate-spin text-text-400" />
               </div>
@@ -539,30 +535,33 @@ export function MultiServerFolderList({
   return (
     // 根容器与 FolderRecentList 相同的 px-1.5 内边距，保证服务器行图标与文件夹图标对齐
     <div className="h-full overflow-y-auto custom-scrollbar px-1.5">
-      {displayOrder.map(serverId => (
-        <ServerFolderGroup
-          key={serverId}
-          serverId={serverId}
-          selectedSessionId={selectedSessionId}
-          // 非焦点服务器不传全局 currentDirectory：避免 reconcile effect 强制展开/高亮同路径文件夹，
-          // 同时让 memo 对非焦点组保持 currentDirectory 恒 undefined（父级重渲染时跳过）
-          currentDirectory={serverId === focusedServerId ? currentDirectory : undefined}
-          onSelectSession={onSelectSession}
-          onNewSession={onNewSession}
-          flat={flat}
-          search={search}
-          isExpanded={expandedServerIds.includes(serverId)}
-          onToggleExpanded={makeToggleExpanded(serverId)}
-          isDragged={draggedId === serverId}
-          registerRef={makeRegisterRef(serverId)}
-          onDragStart={makeDragStart(serverId)}
-          onTouchDragStart={makeTouchDragStart(serverId)}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          expandedChildSessionIds={expandedChildSessionIds}
-          inlineChildSessions={inlineChildSessions}
-          onSelectChildSession={onSelectChildSession}
-        />
+      {displayOrder.map((serverId, index) => (
+        <div key={serverId}>
+          {/* 不同主机之间的分割线 */}
+          {index > 0 && <div className="mx-1.5 my-1 h-px bg-border-200/40" aria-hidden="true" />}
+          <ServerFolderGroup
+            serverId={serverId}
+            selectedSessionId={selectedSessionId}
+            // 非焦点服务器不传全局 currentDirectory：避免 reconcile effect 强制展开/高亮同路径文件夹，
+            // 同时让 memo 对非焦点组保持 currentDirectory 恒 undefined（父级重渲染时跳过）
+            currentDirectory={serverId === focusedServerId ? currentDirectory : undefined}
+            onSelectSession={onSelectSession}
+            onNewSession={onNewSession}
+            flat={flat}
+            search={search}
+            isExpanded={expandedServerIds.includes(serverId)}
+            onToggleExpanded={makeToggleExpanded(serverId)}
+            isDragged={draggedId === serverId}
+            registerRef={makeRegisterRef(serverId)}
+            onDragStart={makeDragStart(serverId)}
+            onTouchDragStart={makeTouchDragStart(serverId)}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            expandedChildSessionIds={expandedChildSessionIds}
+            inlineChildSessions={inlineChildSessions}
+            onSelectChildSession={onSelectChildSession}
+          />
+        </div>
       ))}
     </div>
   )
