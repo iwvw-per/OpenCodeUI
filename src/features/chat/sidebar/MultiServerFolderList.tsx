@@ -193,8 +193,10 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
     for (const session of extraSessions) {
       if (!merged.has(session.id)) merged.set(session.id, session)
     }
+    // 分组视图扁平列表不显示子会话（parentID 会话），只显示项目目录里的顶层会话
     return Array.from(merged.values()).filter(
-      session => !!session.directory && projectDirectorySet.has(normalizeToForwardSlash(session.directory)),
+      session =>
+        !session.parentID && !!session.directory && projectDirectorySet.has(normalizeToForwardSlash(session.directory)),
     )
   }, [sessions, extraSessions, projectDirectorySet])
 
