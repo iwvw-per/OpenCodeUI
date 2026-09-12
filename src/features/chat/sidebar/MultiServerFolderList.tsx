@@ -27,6 +27,7 @@ import { clearSessionRuntimeState } from '../../../utils/sessionLifecycle'
 import { uiErrorHandler } from '../../../utils'
 import { SessionListItem } from '../../sessions'
 import { useSessions } from '../../../hooks/useSessions'
+import { useServerWorkspaceDirectories } from '../../../hooks/useServerWorkspaceDirectories'
 import { useInputCapabilities } from '../../../hooks/useInputCapabilities'
 import {
   FolderRecentList,
@@ -143,6 +144,10 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
     return readServerWorkspaces(serverId)
   }, [serverId, storageVersion])
 
+  // 无已保存工作区（典型：远程主机）时，从服务器会话自动推导目录与会话全集（不写存储）
+  const { discoveredSessions, hasSavedWorkspaces, isLoading: discoveringWorkspaces } =
+    useServerWorkspaceDirectories(serverId, flat && isExpanded)
+
   // 分组块 = 项目目录（已保存工作区）会话的汇总：合并各工作区目录的会话，
   // 并过滤掉不属于任何项目目录的会话（服务器根目录自带的会话不展示）。
   // useSessions 的根目录列表仅作为实时事件（新建/更新/删除）的载体。
@@ -193,12 +198,19 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
     for (const session of extraSessions) {
       if (!merged.has(session.id)) merged.set(session.id, session)
     }
-    // 分组视图扁平列表不显示子会话（parentID 会话），只显示项目目录里的顶层会话
-    return Array.from(merged.values()).filter(
-      session =>
-        !session.parentID && !!session.directory && projectDirectorySet.has(normalizeToForwardSlash(session.directory)),
-    )
-  }, [sessions, extraSessions, projectDirectorySet])
+    // 无已保存工作区时并入推导会话（远程主机默认展示服务器全部可发现会话）
+    for (const session of discoveredSessions) {
+      if (!merged.has(session.id)) merged.set(session.id, session)
+    }
+    return Array.from(merged.values()).filter(session => {
+      // 分组视图扁平列表不显示子会话（parentID 会话）
+      if (session.parentID) return false
+      // 有已保存工作区：只保留项目目录里的顶层会话；
+      // 无任何已保存工作区（如刚连接的远程主机）：不过滤，否则列表恒为空
+      if (!hasSavedWorkspaces) return true
+      return !!session.directory && projectDirectorySet.has(normalizeToForwardSlash(session.directory))
+    })
+  }, [sessions, extraSessions, discoveredSessions, hasSavedWorkspaces, projectDirectorySet])
 
   // 展示顺序：global 固定第一，工作区按存储顺序
   const projects = useMemo<FolderRecentProject[]>(() => {
@@ -329,7 +341,7 @@ const ServerFolderGroup = memo(function ServerFolderGroup({
       <ExpandableSection show={isExpanded}>
         {flat ? (
           <div className="pl-3 pb-1">
-            {(isLoading || !extraSessionsLoaded) && filteredSessions.length === 0 ? (
+            {(isLoading || discoveringWorkspaces || !extraSessionsLoaded) && filteredSessions.length === 0 ? (
               <div className="flex items-center gap-2 px-2 py-1.5">
                 <SpinnerIcon size={12} className="animate-spin text-text-400" />
               </div>
