@@ -709,7 +709,13 @@ export function SessionListItem({
             e.stopPropagation()
             handleClick(e)
           }}
-          className="peer flex min-w-0 flex-1 items-center gap-1.5 bg-transparent border-none p-0 text-left select-none"
+          className={`peer flex min-w-0 flex-1 items-center gap-1.5 bg-transparent border-none p-0 text-left select-none ${
+            !isEditMode && onArchive
+              ? actionsVisible
+                ? 'pr-7'
+                : 'group-hover:pr-7 group-focus-within:pr-7'
+              : ''
+          }`}
         >
           <AutoScrollTitle text={session.title || t('sessions.untitledChat')} />
 
@@ -718,8 +724,8 @@ export function SessionListItem({
               className={`shrink-0 flex items-center gap-1.5 text-[length:var(--fs-xxs)] text-text-500 transition-opacity duration-150 ${
                 !isEditMode && onArchive
                   ? actionsVisible
-                    ? 'opacity-0'
-                    : 'group-hover:opacity-0 group-focus-within:opacity-0'
+                    ? 'hidden'
+                    : 'group-hover:hidden group-focus-within:hidden'
                   : ''
               }`}
             >

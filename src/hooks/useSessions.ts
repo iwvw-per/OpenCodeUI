@@ -217,6 +217,13 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
       onSessionUpdated: session => {
         if (session.parentID) return
 
+        // 归档会话直接从列表移除：getSessions 的 archived 过滤只覆盖全量拉取，
+        // 若不处理，session.updated 会把刚归档的会话重新插回列表（归档后"没刷新"的根因）
+        if (session.time?.archived) {
+          setSessions(prev => prev.filter(item => item.id !== session.id))
+          return
+        }
+
         if (searchRef.current) {
           if (matchesDirectory(session)) {
             void fetchSessionsRef.current({ search: searchRef.current || undefined })

@@ -3,12 +3,12 @@ import { useTranslation } from 'react-i18next'
 import {
   PanelRightIcon,
   PanelBottomIcon,
-  ChevronDownIcon,
   SidebarIcon,
   SplitHorizontalIcon,
   MaximizeIcon,
   MinimizeIcon,
   FolderIcon,
+  ShareIcon,
 } from '../../components/Icons'
 import { IconButton } from '../../components/ui'
 import { ShareDialog } from './ShareDialog'
@@ -39,12 +39,7 @@ interface SessionTitleControlProps {
   setIsEditingTitle: (value: boolean) => void
   handleRename: () => void
   handleStartEdit: () => void
-  onShare: () => void
-  /** 打开项目目录（Tauri 桌面端可用） */
-  onOpenDirectory?: () => void
-  openDirectoryTitle?: string
   clickToRenameTitle: string
-  shareTitle: string
 }
 
 function SessionTitleControl({
@@ -57,28 +52,18 @@ function SessionTitleControl({
   setIsEditingTitle,
   handleRename,
   handleStartEdit,
-  onShare,
-  onOpenDirectory,
-  openDirectoryTitle,
   clickToRenameTitle,
-  shareTitle,
 }: SessionTitleControlProps) {
   const inputClass = compact
     ? 'px-2 py-1.5 text-[length:var(--fs-base)] font-medium text-text-100 bg-transparent border-none outline-none w-[160px] h-full'
-    : 'px-3 py-1.5 text-[length:var(--fs-base)] font-medium text-text-100 bg-transparent border-none outline-none w-[200px] lg:w-[300px] h-full text-center'
+    : 'px-3 py-1.5 text-[length:var(--fs-base)] font-medium text-text-100 bg-transparent border-none outline-none w-[200px] lg:w-[300px] h-full'
   const buttonClass = compact
     ? 'px-2 py-1.5 text-[length:var(--fs-base)] font-medium text-text-200 hover:text-text-100 transition-colors truncate max-w-[200px] cursor-text select-none'
-    : 'px-3 py-1.5 text-[length:var(--fs-base)] font-medium text-text-200 hover:text-text-100 transition-colors truncate max-w-[300px] cursor-text select-none text-center'
-  const dividerClass = compact
-    ? 'w-[1.5px] h-3 bg-border-200/50 mx-0.5 shrink-0'
-    : 'w-[1.5px] h-3 bg-border-200/50 mx-0.5 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(any-pointer:coarse)]:opacity-100 transition-opacity'
-  const shareButtonClass = compact
-    ? 'p-1 text-text-400 hover:text-text-100 transition-colors rounded-md hover:bg-bg-300/50 shrink-0'
-    : 'p-1 text-text-400 hover:text-text-100 transition-colors rounded-md hover:bg-bg-300/50 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(any-pointer:coarse)]:opacity-100 shrink-0'
+    : 'px-3 py-1.5 text-[length:var(--fs-base)] font-medium text-text-200 hover:text-text-100 transition-colors truncate max-w-[300px] cursor-text select-none'
 
   return (
     <div
-      className={`flex items-center group ${isEditingTitle ? 'bg-bg-200/50 ring-1 ring-accent-main-100' : 'bg-transparent hover:bg-bg-200/50 border border-transparent hover:border-border-200/50'} rounded-lg transition-all duration-200 p-0.5 min-w-0 shrink`}
+      className={`flex items-center ${isEditingTitle ? 'bg-bg-200/50 ring-1 ring-accent-main-100' : 'bg-transparent hover:bg-bg-200/50 border border-transparent hover:border-border-200/50'} rounded-lg transition-all duration-200 p-0.5 min-w-0 shrink`}
     >
       {isEditingTitle ? (
         <input
@@ -97,26 +82,6 @@ function SessionTitleControl({
           <button type="button" onClick={handleStartEdit} className={buttonClass} title={clickToRenameTitle}>
             {sessionTitle}
           </button>
-      )}
-
-      {!isEditingTitle && (
-        <>
-          <div className={dividerClass} />
-          {onOpenDirectory && (
-            <button
-              type="button"
-              className={shareButtonClass}
-              title={openDirectoryTitle}
-              aria-label={openDirectoryTitle}
-              onClick={onOpenDirectory}
-            >
-              <FolderIcon size={12} />
-            </button>
-          )}
-          <button type="button" className={shareButtonClass} title={shareTitle} aria-label={shareTitle} onClick={onShare}>
-            <ChevronDownIcon size={12} />
-          </button>
-        </>
       )}
     </div>
   )
@@ -210,11 +175,7 @@ export function Header({
       setIsEditingTitle={setIsEditingTitle}
       handleRename={handleRename}
       handleStartEdit={handleStartEdit}
-      onShare={() => setShareDialogOpen(true)}
-      onOpenDirectory={canOpenDirectory ? handleOpenDirectory : undefined}
-      openDirectoryTitle={t('header.openProjectDirectory')}
       clickToRenameTitle={t('header.clickToRename')}
-      shareTitle={t('header.shareSession')}
     />
   )
 
@@ -233,10 +194,8 @@ export function Header({
           </IconButton>
         )}
 
-        {isCompact && <div className="min-w-0">{titleControl}</div>}
+        <div className="min-w-0">{titleControl}</div>
       </div>
-
-      {!isCompact && <div className="absolute left-1/2 -translate-x-1/2 flex z-20">{titleControl}</div>}
 
       <div className="flex items-center gap-1 pointer-events-auto shrink-0 z-20">
         <div className="flex items-center gap-0.5">
@@ -288,6 +247,18 @@ export function Header({
               className="transition-colors text-text-300 hover:text-text-100 hover:bg-bg-200/50"
             >
               <FolderIcon size={16} />
+            </IconButton>
+          )}
+
+          {/* 分享会话：与标题分离，作为常规操作按钮（仅有会话时显示） */}
+          {sessionId && (
+            <IconButton
+              aria-label={t('header.shareSession')}
+              title={t('header.shareSession')}
+              onClick={() => setShareDialogOpen(true)}
+              className="transition-colors text-text-300 hover:text-text-100 hover:bg-bg-200/50"
+            >
+              <ShareIcon size={16} />
             </IconButton>
           )}
         </div>

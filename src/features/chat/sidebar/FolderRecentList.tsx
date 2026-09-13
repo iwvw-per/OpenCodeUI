@@ -1095,7 +1095,7 @@ function FolderRecentSection({
               onSelectProject()
               onToggle()
             }}
-            className="flex flex-1 min-w-0 items-center gap-2 pl-2 pr-2 py-1.5 text-left cursor-default select-none"
+            className="flex flex-1 min-w-0 items-center gap-1 pl-2 pr-2 py-1.5 text-left cursor-default select-none"
             title={project.worktree}
           >
             <span className="size-5 shrink-0 flex items-center justify-center">
@@ -1108,17 +1108,6 @@ function FolderRecentSection({
             >
               {projectName}
             </span>
-            {folderStatus && (
-              <span
-                className="relative shrink-0 flex items-center justify-center w-3 h-3"
-                title={folderStatus.count ? `${folderStatus.label} (${folderStatus.count})` : folderStatus.label}
-              >
-                <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot}`} />
-                {folderStatus.pulse && (
-                  <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot} animate-ping opacity-50`} />
-                )}
-              </span>
-            )}
           </button>
           {/* 项目行 hover 的 + 按钮：在该项目目录下新建会话（全局/无目录项目不显示）；hover 才显示，与移除按钮一致 */}
           {!isEditMode && onNewSessionInDirectory && project.worktree && (
@@ -1175,6 +1164,18 @@ function FolderRecentSection({
                 className={`transition-transform duration-150 ${isExpanded ? '' : '-rotate-90'}`}
               />
             </button>
+          )}
+          {/* 状态点紧挨时间：放在主按钮内会被 hover 按钮的透明占位隔开，位置看着不对；hover 时随时间一起隐藏 */}
+          {folderStatus && (
+            <span
+              className="relative shrink-0 flex items-center justify-center w-3 h-3 group-hover/folder:hidden"
+              title={folderStatus.count ? `${folderStatus.label} (${folderStatus.count})` : folderStatus.label}
+            >
+              <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot}`} />
+              {folderStatus.pulse && (
+                <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot} animate-ping opacity-50`} />
+              )}
+            </span>
           )}
           {/* 最后使用时间放行尾；hover 时隐藏，给 + / 移除按钮让位 */}
           {lastUsedAt ? (

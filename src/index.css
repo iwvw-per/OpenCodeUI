@@ -1254,6 +1254,12 @@ body {
   overflow: hidden;
   white-space: nowrap;
 }
+/* 滚动进行时左右渐隐：标题滑过边缘不再生硬裁切（静止时不加，避免首尾字符被淡化） */
+.marquee-title:hover,
+.marquee-title:focus-within {
+  mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
+}
 .marquee-title:hover .marquee-title-inner,
 .marquee-title:focus-within .marquee-title-inner {
   animation: marquee-scroll var(--marquee-duration, 4s) linear infinite;
