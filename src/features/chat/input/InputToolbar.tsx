@@ -307,23 +307,9 @@ export function InputToolbar({
 
   return (
     <div className="flex items-center justify-between px-3 pb-3 relative">
-      {/* Left side: Model (mobile) + Agent + Variant selectors */}
+      {/* Left side: Model + Agent + Variant selectors */}
       <div className={`flex items-center min-w-0 ${isCompact ? 'gap-1' : 'gap-2'}`}>
-        {/* Model Selector — 移动端显示在最左边 */}
-        {isCompact && onModelChange && (
-          <ModelSelector
-            ref={modelSelectorRef}
-            models={models}
-            selectedModelKey={selectedModelKey}
-            onSelect={onModelChange}
-            isLoading={modelsLoading}
-            position="top"
-            trigger="toolbar"
-            constrainToRef={inputContainerRef}
-          />
-        )}
-
-        {/* Agent Selector */}
+        {/* Agent Selector（模式选择） */}
         <AnimatedPresence show={selectableAgents.length > 1} className={isCompact ? 'shrink-0' : ''}>
           <div className="relative">
             <button
@@ -402,6 +388,20 @@ export function InputToolbar({
             </DropdownMenu>
           </div>
         </AnimatedPresence>
+
+        {/* Model Selector — 放在模式选择后面（桌面 + 移动端） */}
+        {onModelChange && (
+          <ModelSelector
+            ref={modelSelectorRef}
+            models={models}
+            selectedModelKey={selectedModelKey}
+            onSelect={onModelChange}
+            isLoading={modelsLoading}
+            position="top"
+            trigger="toolbar"
+            constrainToRef={inputContainerRef}
+          />
+        )}
 
         {/* Variant Selector */}
         <AnimatedPresence show={variants.length > 0} className={isCompact ? 'shrink-0' : ''}>

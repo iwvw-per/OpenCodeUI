@@ -11,7 +11,6 @@ import {
   FolderIcon,
 } from '../../components/Icons'
 import { IconButton } from '../../components/ui'
-import { ModelSelector, type ModelSelectorHandle } from './ModelSelector'
 import { ShareDialog } from './ShareDialog'
 import { messageStore, useHeaderSessionMeta, notificationStore } from '../../store'
 import { useLayoutStore, layoutStore } from '../../store/layoutStore'
@@ -21,19 +20,13 @@ import { useDirectory } from '../../contexts/useDirectory'
 import { uiErrorHandler } from '../../utils'
 import { useChatViewport } from './chatViewport'
 import { isTauri, isTauriMobile } from '../../utils/tauri'
-import type { ModelInfo } from '../../api'
 
 interface HeaderProps {
-  models: ModelInfo[]
-  modelsLoading: boolean
-  selectedModelKey: string | null
-  onModelChange: (modelKey: string, model: ModelInfo) => void
   onOpenSidebar?: () => void
   onToggleRightPanel?: () => void
   onSplitPane?: () => void
   isPaneFullscreen?: boolean
   onTogglePaneFullscreen?: () => void
-  modelSelectorRef?: React.RefObject<ModelSelectorHandle | null>
 }
 
 interface SessionTitleControlProps {
@@ -130,16 +123,11 @@ function SessionTitleControl({
 }
 
 export function Header({
-  models,
-  modelsLoading,
-  selectedModelKey,
-  onModelChange,
   onOpenSidebar,
   onToggleRightPanel,
   onSplitPane,
   isPaneFullscreen = false,
   onTogglePaneFullscreen,
-  modelSelectorRef,
 }: HeaderProps) {
   const { t } = useTranslation('chat')
   const { sessionId, sessionDirectory, sessionTitle: currentSessionTitle } = useHeaderSessionMeta()
@@ -243,16 +231,6 @@ export function Header({
           >
             <SidebarIcon size={16} />
           </IconButton>
-        )}
-
-        {!isCompact && (
-          <ModelSelector
-            ref={modelSelectorRef}
-            models={models}
-            selectedModelKey={selectedModelKey}
-            onSelect={onModelChange}
-            isLoading={modelsLoading}
-          />
         )}
 
         {isCompact && <div className="min-w-0">{titleControl}</div>}

@@ -22,6 +22,9 @@ import {
   GlobeIcon,
 } from '../../../components/Icons'
 import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog } from '../../../hooks'
+import { useServerProjects } from '../../../hooks/useServerProjects'
+import { useServerGlobalSessionDirectories } from '../../../hooks/useServerGlobalSessionDirectories'
+import { useProjectLastUsedAt } from '../../../hooks/useProjectLastUsedAt'
 import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore, childSessionStore } from '../../../store'
 import { useBusySessions } from '../../../store/activeSessionStore'
@@ -83,6 +86,45 @@ function getSelectionRange(visibleIds: string[], anchorId: string, targetId: str
   return visibleIds.slice(from, to + 1)
 }
 
+const HIDDEN_DIRECTORIES_KEY = 'opencode-hidden-directories'
+const PROJECT_ORDER_KEY = 'opencode-project-order'
+
+function readHiddenDirectories(serverId: string): string[] {
+  try {
+    const raw = localStorage.getItem(`srv:${serverId}:${HIDDEN_DIRECTORIES_KEY}`)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writeHiddenDirectories(serverId: string, directories: string[]): void {
+  try {
+    localStorage.setItem(`srv:${serverId}:${HIDDEN_DIRECTORIES_KEY}`, JSON.stringify(directories))
+  } catch {
+    // ignore
+  }
+}
+
+function readProjectOrder(serverId: string): string[] {
+  try {
+    const raw = localStorage.getItem(`srv:${serverId}:${PROJECT_ORDER_KEY}`)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writeProjectOrder(serverId: string, order: string[]): void {
+  try {
+    localStorage.setItem(`srv:${serverId}:${PROJECT_ORDER_KEY}`, JSON.stringify(order))
+  } catch {
+    // ignore
+  }
+}
+
 function findProjectGroupForDirectory(projects: ProjectItem[], directory: string) {
   return projects.find(project => {
     if (isSameDirectory(project.id, directory) || isSameDirectory(project.worktree, directory)) {
@@ -119,9 +161,9 @@ export function SidePanel({
     savedDirectories,
     setCurrentDirectory,
     removeDirectory,
-    addDirectory,
     reorderDirectories,
     pathInfo,
+    recentProjects,
   } = useDirectory()
   const catalogDirectories = useMemo(
     () =>
@@ -141,6 +183,13 @@ export function SidePanel({
   const catalogServerId = multiServerConfig.enabled
     ? (multiServerConfig.focusedServerId ?? activeServer?.id)
     : undefined
+  // 项目 tab 数据源 = 活动服务器（per-server 存储）；同时发现其服务端项目/目录
+  const activeServerId = activeServer?.id ?? 'local'
+  const { projects: serverProjects, isLoading: isServerProjectsLoading } = useServerProjects(activeServerId, true)
+  const { groups: globalSessionGroups, isLoading: isGlobalGroupsLoading } = useServerGlobalSessionDirectories(
+    activeServerId,
+    true,
+  )
   const { catalog: gitWorkspaceCatalog, isLoading: isGitWorkspaceCatalogLoading } = useGitWorkspaceCatalog(
     catalogDirectories,
     catalogServerId,
@@ -168,11 +217,17 @@ export function SidePanel({
   const [batchDeleteSessionConfirm, setBatchDeleteSessionConfirm] = useState(false)
   const [batchRemoveProjectConfirm, setBatchRemoveProjectConfirm] = useState(false)
   const [isBatchDeleting, setIsBatchDeleting] = useState(false)
-  // 单个项目移除确认（项目行 hover 的删除按钮）
-  const [projectRemoveConfirm, setProjectRemoveConfirm] = useState<{ isOpen: boolean; project: FolderRecentProject | null }>({
-    isOpen: false,
-    project: null,
-  })
+
+  // 已隐藏的服务器发现目录（每主机独立；"移除"发现项目 = 加入隐藏列表，不再展示）
+  const [hiddenDirectories, setHiddenDirectories] = useState<Set<string>>(() => new Set(readHiddenDirectories(activeServerId)))
+  useEffect(() => {
+    setHiddenDirectories(new Set(readHiddenDirectories(activeServerId)))
+  }, [activeServerId])
+  // 项目显示顺序（每主机独立；拖拽重排后持久化，覆盖已保存 + 发现项目）
+  const [projectOrder, setProjectOrder] = useState<string[]>(() => readProjectOrder(activeServerId))
+  useEffect(() => {
+    setProjectOrder(readProjectOrder(activeServerId))
+  }, [activeServerId])
 
   const getVisibleSelectionIds = useCallback((kind: 'session' | 'project') => {
     const root = recentsSelectionRootRef.current
@@ -615,9 +670,32 @@ export function SidePanel({
     }
   }, [pathInfo])
 
+  // 服务器侧发现的「项目」：/project 的 git 项目 + 全局存储会话按 directory 分组的目录
+  // （如 work 主机的 D:\AAADATA\OneDrive - moi\TEMP\HYY）。标记 isDerived（不参与重排；
+  // 点其中会话后自动保存为该主机的真实工作区；「移除」= 加入隐藏列表不再展示）
+  const discoveredProjectItems = useMemo<ProjectItem[]>(() => {
+    const items: ProjectItem[] = []
+    const pushWorktree = (worktree: string) => {
+      const normalized = normalizeToForwardSlash(worktree)
+      if (!normalized || normalized === '/') return
+      if (hiddenDirectories.has(normalized)) return
+      if (items.some(item => item.worktree === normalized)) return
+      items.push({
+        id: normalized,
+        worktree: normalized,
+        name: getDirectoryName(normalized) || normalized,
+        canReorder: true,
+        isDerived: true,
+      })
+    }
+    for (const project of serverProjects) pushWorktree(project.worktree || '')
+    for (const group of globalSessionGroups) pushWorktree(group.directory)
+    return items
+  }, [serverProjects, globalSessionGroups, hiddenDirectories])
+
   const folderProjects = useMemo<ProjectItem[]>(() => {
     const list: ProjectItem[] = []
-    // 已保存项目（跨服务器共享列表）；根路径（global 项目，归一化后为空）不展示「全局」文件夹
+    // 已保存项目（当前主机的 per-server 列表）；根路径（global 项目，归一化后为空）不展示「全局」文件夹
     const nonRootGroups = folderProjectGroups.filter(project => normalizeToForwardSlash(project.worktree || '') !== '')
     // 当前激活项目（真实目录）置顶，与已保存项目重复时不重复添加
     if (
@@ -627,19 +705,50 @@ export function SidePanel({
       list.push(serverCurrentProject)
     }
     list.push(...nonRootGroups)
+    // 服务器侧发现的项目/目录（与已保存项目按目录去重；切换主机即显示对应主机的项目）
+    const knownWorktrees = new Set(list.map(project => normalizeToForwardSlash(project.worktree || '')))
+    for (const item of discoveredProjectItems) {
+      const worktree = normalizeToForwardSlash(item.worktree || '')
+      if (!worktree || knownWorktrees.has(worktree)) continue
+      knownWorktrees.add(worktree)
+      list.push(item)
+    }
 
     if (currentDirectory && !list.some(project => isSameDirectory(project.worktree, currentProject.worktree))) {
       list.push({ ...currentProject, canReorder: false })
     }
 
+    // 应用每主机拖拽保存的显示顺序：在顺序列表中的项按顺序排前，其余追加在后
+    if (projectOrder.length > 0) {
+      const byWorktree = new Map(list.map(project => [normalizeToForwardSlash(project.worktree || ''), project]))
+      const ordered: ProjectItem[] = []
+      const seen = new Set<string>()
+      for (const path of projectOrder) {
+        const normalized = normalizeToForwardSlash(path)
+        const project = byWorktree.get(normalized)
+        if (project && !seen.has(normalized)) {
+          ordered.push(project)
+          seen.add(normalized)
+        }
+      }
+      for (const project of list) {
+        const normalized = normalizeToForwardSlash(project.worktree || '')
+        if (!seen.has(normalized)) {
+          ordered.push(project)
+          seen.add(normalized)
+        }
+      }
+      list = ordered
+    }
+
     // 不展示「全局」文件夹：全局把所有会话堆在一起条目多且卡，用户只按项目打开会话
     return list
-  }, [serverCurrentProject, folderProjectGroups, currentDirectory, currentProject])
+  }, [serverCurrentProject, folderProjectGroups, discoveredProjectItems, projectOrder, currentDirectory, currentProject])
 
-  // 新添加/新保存的项目自动展开，保证「新建项目」后立即可见
+  // 新添加/新保存的项目自动展开（服务器发现的 isDerived 项目不自动展开，避免一堆目录同时加载）
   const prevFolderProjectIdsRef = useRef<string[] | null>(null)
   useEffect(() => {
-    const ids = folderProjects.map(project => project.id)
+    const ids = folderProjects.filter(project => !project.isDerived).map(project => project.id)
     const prev = prevFolderProjectIdsRef.current
     prevFolderProjectIdsRef.current = ids
     if (!prev) return
@@ -673,10 +782,42 @@ export function SidePanel({
     currentProjectWorkspaceDirectories.length <= 1 &&
     !!normalizedCurrentDirectory &&
     !gitWorkspaceCatalog.has(normalizedCurrentDirectory)
+  // 服务器侧项目/目录发现中且还没有任何可展示项 → 转圈，避免空状态闪现
+  const isDiscoveringServerData =
+    (isServerProjectsLoading || isGlobalGroupsLoading) &&
+    folderProjectGroups.length === 0 &&
+    discoveredProjectItems.length === 0
 
   const allDisplayedProjects = useMemo(() => {
     return [...folderProjects]
   }, [folderProjects])
+
+  // ---- 项目行「最后使用时间」----
+  // 来源：全局会话列表已含非 git 目录（TEMP 等）的会话时间（0 额外请求）；
+  // git worktree 的会话按目录存储，单独拉取；本地点击记录（recentProjects）作兜底。
+  const globalProjectLastUsed = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const group of globalSessionGroups) {
+      if (group.lastUsedAt) map[normalizeToForwardSlash(group.directory)] = group.lastUsedAt
+    }
+    return map
+  }, [globalSessionGroups])
+
+  const uncoveredProjectWorktrees = useMemo(
+    () =>
+      allDisplayedProjects
+        .map(project => normalizeToForwardSlash(project.worktree || ''))
+        .filter(worktree => !!worktree && !globalProjectLastUsed[worktree]),
+    [allDisplayedProjects, globalProjectLastUsed],
+  )
+  const fetchedProjectLastUsed = useProjectLastUsedAt(activeServerId, uncoveredProjectWorktrees, true)
+
+  const projectLastUsedAt = useMemo(() => {
+    const map: Record<string, number> = { ...recentProjects }
+    for (const [directory, updated] of Object.entries(globalProjectLastUsed)) map[directory] = updated
+    for (const [directory, updated] of Object.entries(fetchedProjectLastUsed)) map[directory] = updated
+    return map
+  }, [recentProjects, globalProjectLastUsed, fetchedProjectLastUsed])
 
   // 需求 3：点击项目目录/名称不跳转（只展开/收起），只有点击会话才导航。
   // 保持签名兼容 FolderRecentList 的 onSelectProject 调用，但不再 setCurrentDirectory。
@@ -707,16 +848,14 @@ export function SidePanel({
 
   const handleSelectActive = useCallback(
     (session: ApiSession & { serverId?: string }) => {
-      // 项目目录列表跨服务器共享：无论 session 属于哪个服务器，都写入同一份共享列表
-      if (session.directory) {
-        addDirectory(session.directory)
-      }
+      // 只导航，不自动保存目录到项目列表：目录由 URL（?dir=）派生，currentDirectory 自动跟随；
+      // 若在此 addDirectory，点一次会话就把项目塞进已保存列表，触发列表重建 + 自动展开级联。
       onSelectSession(session)
       if (window.innerWidth < 768 && onCloseMobile) {
         onCloseMobile()
       }
     },
-    [addDirectory, onSelectSession, onCloseMobile],
+    [onSelectSession, onCloseMobile],
   )
 
   const handleRenameFolderSession = useCallback(
@@ -798,16 +937,23 @@ export function SidePanel({
     setBatchRemoveProjectConfirm(false)
   }, [getProjectDirectoriesToRemove, selectedProjectIds, removeDirectory])
 
-  // 单个项目移除：弹确认框 → 从列表移除该项目的所有目录（不删文件）
-  const handleRemoveProjectClick = useCallback((project: FolderRecentProject) => {
-    setProjectRemoveConfirm({ isOpen: true, project })
-  }, [])
-  const handleConfirmRemoveProject = useCallback(() => {
-    const project = projectRemoveConfirm.project
-    if (!project) return
-    getProjectDirectoriesToRemove(project.id).forEach(directory => removeDirectory(directory))
-    setProjectRemoveConfirm({ isOpen: false, project: null })
-  }, [projectRemoveConfirm.project, getProjectDirectoriesToRemove, removeDirectory])
+  // 单个项目移除：二次点击防误触（按钮层），这里直接执行。
+  // 已保存项目 = 从列表移除（不删文件）；服务器发现项目 = 加入该主机隐藏列表（不再展示）
+  const handleRemoveProjectClick = useCallback(
+    (project: FolderRecentProject) => {
+      if (project.isDerived) {
+        const normalized = normalizeToForwardSlash(project.worktree || '')
+        if (!normalized) return
+        const next = new Set(hiddenDirectories)
+        next.add(normalized)
+        setHiddenDirectories(next)
+        writeHiddenDirectories(activeServerId, Array.from(next))
+        return
+      }
+      getProjectDirectoriesToRemove(project.id).forEach(directory => removeDirectory(directory))
+    },
+    [hiddenDirectories, activeServerId, getProjectDirectoriesToRemove, removeDirectory],
+  )
 
   // 需求 4：在指定项目目录下新建会话 —— 先切目录上下文，再走全局新建
   const handleNewSessionInDirectory = useCallback(
@@ -841,6 +987,7 @@ export function SidePanel({
     selectedProjectIds,
     onToggleSessionSelection: toggleSessionSelection,
     onToggleProjectSelection: toggleProjectSelection,
+    projectLastUsedAt,
   }
 
   // 统一的结构，通过 CSS 控制显示/隐藏
@@ -1048,18 +1195,18 @@ export function SidePanel({
               </>
             ) : (
               <>
-                {/* 视图切换：主机（切换后端）/ 项目（会话与项目） */}
-                <div className="flex items-center gap-0.5 flex-1">
+                {/* 视图切换：主机/项目 — 紧凑分段控件（带边框背景，与侧栏区分） */}
+                <div className="inline-flex items-center gap-0.5 rounded-lg border border-border-200/60 bg-bg-200/40 p-0.5">
                   <button
                     type="button"
                     onClick={() => {
                       setSidebarTab('hosts')
                       if (sidebarTab !== 'hosts') exitEditMode()
                     }}
-                    className={`flex flex-1 min-w-0 items-center justify-center gap-1 pl-[6px] pr-2 py-1.5 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 rounded-md ${
+                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 ${
                       sidebarTab === 'hosts'
-                        ? 'bg-bg-200/70 text-text-100'
-                        : 'text-text-500 hover:text-text-300 hover:bg-bg-200/30'
+                        ? 'bg-accent-main-100 text-white shadow-sm'
+                        : 'text-text-500 hover:text-text-300'
                     }`}
                     title={t('sidebar.hostsHint', { defaultValue: 'Switch between hosts' })}
                   >
@@ -1072,10 +1219,10 @@ export function SidePanel({
                       setSidebarTab('projects')
                       if (sidebarTab !== 'projects') exitEditMode()
                     }}
-                    className={`flex flex-1 min-w-0 items-center justify-center gap-1 pl-[6px] pr-2 py-1.5 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 rounded-md ${
+                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 ${
                       sidebarTab === 'projects'
-                        ? 'bg-bg-200/70 text-text-100'
-                        : 'text-text-500 hover:text-text-300 hover:bg-bg-200/30'
+                        ? 'bg-accent-main-100 text-white shadow-sm'
+                        : 'text-text-500 hover:text-text-300'
                     }`}
                     title={t('sidebar.projectByFolder', { defaultValue: 'Group by project' })}
                   >
@@ -1090,7 +1237,7 @@ export function SidePanel({
                     onMouseDown={e => e.preventDefault()}
                     onClick={enterEditMode}
                     aria-label={t('sidebar.manageSessions')}
-                    className="shrink-0 p-1 rounded-md text-text-500 hover:text-text-300 hover:bg-bg-200/50 transition-colors duration-150"
+                    className="ml-auto shrink-0 p-1 rounded-md text-text-500 hover:text-text-300 hover:bg-bg-200/50 transition-colors duration-150"
                     title={t('sidebar.manageSessions')}
                   >
                     <ListFilterIcon size={14} />
@@ -1121,7 +1268,9 @@ export function SidePanel({
                   pinnedSessions={resolvedPinnedSessions}
                   unavailablePinnedEntries={unavailablePinnedEntries}
                 />
-              ) : shouldWaitForWorkspaceResolution ? (
+              ) : isDiscoveringServerData || (shouldWaitForWorkspaceResolution && folderProjects.length === 0) ? (
+                /* 首次加载/无任何项目可展示时才整列表转圈；已有项目时保持列表，
+                   当前项目的工作区解析用文件夹内的局部 spinner 过渡，避免打开会话导致侧栏整体重载 */
                 <div className="flex h-full items-center justify-center text-text-400/70">
                   <SpinnerIcon size={14} className="animate-spin" />
                 </div>
@@ -1181,17 +1330,6 @@ export function SidePanel({
         description={t('sidebar.batchRemoveProjectsConfirm', { count: selectedProjectIds.size })}
         confirmText={t('common:remove')}
         variant="warning"
-      />
-
-      {/* 单个项目移除确认弹窗 */}
-      <ConfirmDialog
-        isOpen={projectRemoveConfirm.isOpen}
-        onClose={() => setProjectRemoveConfirm({ isOpen: false, project: null })}
-        onConfirm={handleConfirmRemoveProject}
-        title={t('sidebar.removeProject')}
-        description={t('sidebar.removeProjectConfirm')}
-        confirmText={t('common:remove')}
-        variant="danger"
       />
     </div>
   )
