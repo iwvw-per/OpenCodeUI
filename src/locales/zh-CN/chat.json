@@ -107,7 +107,8 @@
     "allDone": "全部完成",
     "tasksCount": "{{done}}/{{total}} 个任务",
     "greatWork": "干得漂亮!",
-    "inProgress": "{{count}} 个进行中"
+    "inProgress": "{{count}} 个进行中",
+    "tokenRate": "最后一轮生成速率"
   },
   "inputActions": {
     "scrollToBottom": "滚动到底部",

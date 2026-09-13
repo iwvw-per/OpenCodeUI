@@ -5,6 +5,7 @@ import { CheckIcon, ClockIcon, CircleIcon, CloseIcon, FastForwardIcon } from '..
 import { CircularProgress } from '../../../components/CircularProgress'
 import { useTodos, useTodoStats, useCurrentTask, todoStore } from '../../../store'
 import { getSessionTodos } from '../../../api/session'
+import { useTokenRate } from '../../../hooks/useTokenRate'
 import { autoApproveStore, type FullAutoMode } from '../../../store/autoApproveStore'
 import type { TodoItem } from '../../../types/api/event'
 
@@ -20,6 +21,12 @@ function useFullAutoMode(paneId: string): FullAutoMode {
 }
 
 const TODO_SWAP_DURATION_MS = 260
+
+/** 生成速率显示：<10 保留一位小数，其余取整，空闲显示 0 */
+function formatTokenRate(rate: number): string {
+  if (rate < 0.05) return '0 tok/s'
+  return `${rate < 10 ? rate.toFixed(1) : Math.round(rate)} tok/s`
+}
 
 // ============================================
 // InputFooter - disclaimer + todo progress + full auto toggle
@@ -42,6 +49,7 @@ export const InputFooter = memo(function InputFooter({
   const todos = useTodos(sessionId ?? null)
   const stats = useTodoStats(sessionId ?? null)
   const currentTask = useCurrentTask(sessionId ?? null)
+  const { tokensPerSec } = useTokenRate(sessionId ?? null)
   const [panelState, setPanelState] = useState<'closed' | 'opening' | 'open' | 'closing'>('closed')
   const popoverRef = useRef<HTMLDivElement>(null)
   const loadedRef = useRef<string | null>(null)
@@ -249,9 +257,10 @@ export const InputFooter = memo(function InputFooter({
 
           <span className="text-text-500/30 shrink-0">·</span>
 
-          <button onClick={onNewChat} className="hover:text-text-300 transition-colors shrink-0">
-            {t('sidebar.newChat')}
-          </button>
+          {/* 最后一轮生成速率（纯显示，不可点击） */}
+          <span className="shrink-0 tabular-nums" title={t('inputFooter.tokenRate', { defaultValue: '最后一轮生成速率' })}>
+            {formatTokenRate(tokensPerSec)}
+          </span>
         </>
       )}
 
