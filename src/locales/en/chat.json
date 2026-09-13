@@ -107,7 +107,8 @@
     "allDone": "All Done",
     "tasksCount": "{{done}} of {{total}} tasks",
     "greatWork": "Great work!",
-    "inProgress": "{{count}} in progress"
+    "inProgress": "{{count}} in progress",
+    "tokenRate": "Last turn generation rate"
   },
   "inputActions": {
     "scrollToBottom": "Scroll to bottom",
