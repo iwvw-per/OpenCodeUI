@@ -18,3 +18,24 @@ export function formatRelativeTime(timestamp: number): string {
 
   return new Date(timestamp).toLocaleDateString(i18n.language)
 }
+
+/**
+ * 按「自然日」边界的相对时间：今天 / 昨天 / 前天 / 3天前 …（与 formatRelativeTime 的
+ * 小时粒度不同，用于项目行的最后使用时间展示）
+ */
+export function formatRelativeDay(timestamp: number): string {
+  if (!timestamp) return ''
+
+  const now = new Date()
+  const date = new Date(timestamp)
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const startOfTarget = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const dayDiff = Math.round((startOfToday - startOfTarget) / MS_PER_DAY)
+
+  if (dayDiff <= 0) return i18n.t('common:relativeTime.today')
+  if (dayDiff === 1) return i18n.t('common:relativeTime.yesterday')
+  if (dayDiff === 2) return i18n.t('common:relativeTime.dayBeforeYesterday')
+  if (dayDiff < 7) return i18n.t('common:relativeTime.daysAgo', { count: dayDiff })
+
+  return new Date(timestamp).toLocaleDateString(i18n.language)
+}

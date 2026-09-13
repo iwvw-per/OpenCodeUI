@@ -6,19 +6,21 @@ import {
   FolderOpenIcon,
   GitBranchIcon,
   GlobeIcon,
-  GripVerticalIcon,
   PinIcon,
   SpinnerIcon,
   ChevronDownIcon,
   PlusIcon,
   TrashIcon,
+  CheckIcon,
 } from '../../../components/Icons'
 import { ExpandableSection } from '../../../components/ui'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { useDelayedRender, useSessions, useVcsInfo } from '../../../hooks'
 import { useInputCapabilities } from '../../../hooks/useInputCapabilities'
 import { useInView } from '../../../hooks/useInView'
+import { useDirectory } from '../../../contexts/useDirectory'
 import { getDirectoryName, isSameDirectory, normalizeToForwardSlash } from '../../../utils'
+import { formatRelativeDay } from '../../../utils/dateUtils'
 import { useLayoutStore } from '../../../store'
 import { useBusySessions } from '../../../store/activeSessionStore'
 import { splitSessionKey } from '../../../utils/sessionKey'
@@ -60,6 +62,8 @@ interface FolderRecentListProps {
   onNewSessionInDirectory?: (directory: string) => void
   /** 移除项目（从侧栏列表移除，不删文件） */
   onRemoveProject?: (project: FolderRecentProject) => void
+  /** worktree → 最后使用时间戳（服务端会话数据 + 本地记录合并）；缺省退回 useDirectory 的 recentProjects */
+  projectLastUsedAt?: Record<string, number>
   expandedChildSessionIds?: Set<string>
   inlineChildSessions?: Map<string, ApiSession[]>
   onSelectChildSession?: (session: ApiSession) => void
@@ -442,6 +446,7 @@ export function FolderRecentList({
   onReorderProject,
   onNewSessionInDirectory,
   onRemoveProject,
+  projectLastUsedAt,
   expandedChildSessionIds,
   inlineChildSessions,
   onSelectChildSession,
@@ -609,6 +614,7 @@ export function FolderRecentList({
                   onSelectDirectory={handleSelectDirectory}
                   onNewSessionInDirectory={onNewSessionInDirectory}
                   onRemoveProject={onRemoveProject}
+                  projectLastUsedAt={projectLastUsedAt}
                   onToggle={() => handleToggleProject(project.id)}
                   onSelectSession={onSelectSession}
                   onRenameSession={onRenameSession}
@@ -821,6 +827,8 @@ interface FolderRecentSectionProps {
   onNewSessionInDirectory?: (directory: string) => void
   /** 移除项目（从侧栏列表移除，不删文件）；无目录的项目（全局）不显示按钮 */
   onRemoveProject?: (project: FolderRecentProject) => void
+  /** worktree → 最后使用时间戳；缺省退回本机 recentProjects 记录 */
+  projectLastUsedAt?: Record<string, number>
   onToggle: () => void
   onSelectSession: (session: ApiSession) => void
   onRenameSession: (session: ApiSession, newTitle: string) => Promise<void>
@@ -867,6 +875,7 @@ function FolderRecentSection({
   onSelectDirectory,
   onNewSessionInDirectory,
   onRemoveProject,
+  projectLastUsedAt,
   onToggle,
   onSelectSession,
   onRenameSession,
@@ -903,6 +912,34 @@ function FolderRecentSection({
   const { vcsInfo, isLoading: isBranchLoading } = useVcsInfo(
     isRemoteServer ? undefined : sectionKind === 'workspace' ? project.worktree : undefined,
   )
+  const { recentProjects } = useDirectory()
+  const normalizedWorktree = normalizeToForwardSlash(project.worktree || '')
+  const lastUsedAt = projectLastUsedAt?.[normalizedWorktree] ?? recentProjects[normalizedWorktree]
+  // 移除按钮二次点击防误触：第一次点击进入确认态，3 秒内再点才真正移除
+  const [removeArmed, setRemoveArmed] = useState(false)
+  const removeTimerRef = useRef<number | null>(null)
+  useEffect(() => {
+    return () => {
+      if (removeTimerRef.current) clearTimeout(removeTimerRef.current)
+    }
+  }, [])
+  const handleRemoveClick = useCallback(() => {
+    if (removeArmed) {
+      if (removeTimerRef.current) clearTimeout(removeTimerRef.current)
+      removeTimerRef.current = null
+      setRemoveArmed(false)
+      onRemoveProject(project)
+      return
+    }
+    setRemoveArmed(true)
+    if (removeTimerRef.current) clearTimeout(removeTimerRef.current)
+    removeTimerRef.current = window.setTimeout(() => setRemoveArmed(false), 3000)
+  }, [removeArmed, onRemoveProject, project])
+  const disarmRemove = useCallback(() => {
+    if (removeTimerRef.current) clearTimeout(removeTimerRef.current)
+    removeTimerRef.current = null
+    setRemoveArmed(false)
+  }, [])
 
   useEffect(() => {
     if (isExpanded && inView) {
@@ -1021,8 +1058,9 @@ function FolderRecentSection({
             : ''
         }`}
       >
-        {/* 文件夹行 — 选中用圆角底，连续选中拼成一条 */}
+        {/* 文件夹行 — 选中用圆角底，连续选中拼成一条；整行可直接拖拽重排（点击仍是展开/收起） */}
         <div
+          onPointerDown={canDrag ? onDragStart : undefined}
           className={`relative flex w-full items-center transition-colors duration-150 select-none ${getSelectionRoundClass(
             isEditMode && isProjectChecked,
             projectCheckedPrev,
@@ -1086,6 +1124,7 @@ function FolderRecentSection({
           {!isEditMode && onNewSessionInDirectory && project.worktree && (
             <button
               type="button"
+              onPointerDown={e => e.stopPropagation()}
               onClick={e => {
                 e.stopPropagation()
                 onNewSessionInDirectory(project.worktree)
@@ -1097,25 +1136,32 @@ function FolderRecentSection({
               <PlusIcon size={13} />
             </button>
           )}
-          {/* 移除项目：hover 显示（有目录且非推导项目时才可移除；全局项不显示） */}
-          {!isEditMode && onRemoveProject && project.worktree && !project.isDerived && (
+          {/* 移除项目：hover 显示；二次点击防误触（已保存=移除，服务器发现=隐藏；全局项不显示） */}
+          {!isEditMode && onRemoveProject && project.worktree && (
             <button
               type="button"
+              onPointerDown={e => e.stopPropagation()}
               onClick={e => {
                 e.stopPropagation()
-                onRemoveProject(project)
+                handleRemoveClick()
               }}
-              className="shrink-0 flex items-center justify-center w-6 h-6 mr-0.5 rounded-full text-text-400 opacity-0 group-hover/folder:opacity-100 hover:text-danger-100 hover:bg-danger-100/10 transition-all"
-              title={t('sidebar.removeProject')}
-              aria-label={t('sidebar.removeProject')}
+              onMouseLeave={disarmRemove}
+              className={`shrink-0 flex items-center justify-center w-6 h-6 mr-0.5 rounded-full transition-all ${
+                removeArmed
+                  ? 'bg-danger-100/15 text-danger-100'
+                  : 'text-text-400 opacity-0 group-hover/folder:opacity-100 hover:text-danger-100 hover:bg-danger-100/10'
+              }`}
+              title={removeArmed ? t('sidebar.removeProjectConfirmClick', { defaultValue: '再次点击确认移除' }) : t('sidebar.removeProject')}
+              aria-label={removeArmed ? t('sidebar.removeProjectConfirmClick', { defaultValue: '再次点击确认移除' }) : t('sidebar.removeProject')}
             >
-              <TrashIcon size={12} />
+              {removeArmed ? <CheckIcon size={12} /> : <TrashIcon size={12} />}
             </button>
           )}
           {/* 管理模式下保留展开/收起，否则选不了内部会话 */}
           {isEditMode && (
             <button
               type="button"
+              onPointerDown={e => e.stopPropagation()}
               onClick={e => {
                 e.stopPropagation()
                 onToggle()
@@ -1130,17 +1176,15 @@ function FolderRecentSection({
               />
             </button>
           )}
-          {/* 拖拽把手 — 默认 w-0 隐藏，hover 时 w-5 展开挤压圆点 */}
-          {canDrag && (
+          {/* 最后使用时间放行尾；hover 时隐藏，给 + / 移除按钮让位 */}
+          {lastUsedAt ? (
             <span
-              data-drag-handle
-              onPointerDown={onDragStart}
-              className="shrink-0 flex items-center justify-center w-0 group-hover/folder:w-5 overflow-hidden cursor-grab active:cursor-grabbing text-text-500 opacity-0 group-hover/folder:opacity-60 hover:!opacity-100 transition-all duration-150 touch-none"
-              title={t('sidebar.dragToReorder', { defaultValue: 'Drag to reorder' })}
+              className="shrink-0 pl-1 pr-1.5 text-[length:var(--fs-xxs)] text-text-500 group-hover/folder:hidden"
+              title={new Date(lastUsedAt).toLocaleString()}
             >
-              <GripVerticalIcon size={12} />
+              {formatRelativeDay(lastUsedAt)}
             </span>
-          )}
+          ) : null}
         </div>
 
         {/* Session 列表 */}

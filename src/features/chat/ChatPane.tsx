@@ -844,16 +844,11 @@ export const ChatPane = memo(function ChatPane({
         <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
           <div className="pointer-events-auto">
             <Header
-              models={visibleModels}
-              modelsLoading={modelsLoading}
-              selectedModelKey={selectedModelKey}
-              onModelChange={handleModelChange}
               onOpenSidebar={onOpenSidebar}
               onToggleRightPanel={onToggleRightPanel}
               onSplitPane={onSplitPane}
               isPaneFullscreen={isPaneFullscreen}
               onTogglePaneFullscreen={onTogglePaneFullscreen}
-              modelSelectorRef={modelSelectorRef}
             />
           </div>
         </div>
