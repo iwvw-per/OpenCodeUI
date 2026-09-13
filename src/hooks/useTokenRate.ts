@@ -1,8 +1,10 @@
 // ============================================
 // useTokenRate - 最后一轮对话的生成速率（tok/s）
 //
-// 用最后一条「已完成」助手消息的精确数据计算：tokens.output / 生成时长
-// （time.completed - time.created）。SSE 流没有逐 chunk token 计数，不做实时估算；
+// 取最后一条「已完成」助手消息，按单个请求的实际生成速度计算：
+//   (tokens.output + tokens.reasoning) / 合并后的文本+推理时间窗口
+// 分母排除工具调用与排队等待（按整条消息时长算会把多步任务的 TPS 摊薄）。
+// part 缺少时间窗口时退回整条消息时长。SSE 流没有逐 chunk token 计数，
 // 当前轮生成期间保持显示上一轮的值，完成后随 message.updated 自动刷新。
 // ============================================
 
@@ -35,7 +37,42 @@ export function useTokenRate(sessionId: string | null): TokenRateState {
         const created = info.time.created
         const completed = info.time.completed
         if (!created || !completed || completed <= created) continue
-        const tokensPerSec = info.tokens.output > 0 ? info.tokens.output / ((completed - created) / 1000) : 0
+
+        // 速率分母只算实际生成时间：合并文本/推理 part 各自的时间窗口，
+        // 排除工具调用与排队等待——按整条消息时长算会把多步任务的 TPS 摊薄
+        const tokens = info.tokens.output + info.tokens.reasoning
+        const intervals: { start: number; end: number }[] = []
+        for (const part of message.parts) {
+          if (part.type !== 'text' && part.type !== 'reasoning') continue
+          const start = part.time?.start
+          const end = part.time?.end
+          if (!start || !end || end <= start) continue
+          intervals.push({ start, end })
+        }
+
+        let tokensPerSec = 0
+        if (intervals.length > 0) {
+          intervals.sort((a, b) => a.start - b.start)
+          let totalMs = 0
+          let segmentStart = intervals[0].start
+          let segmentEnd = intervals[0].end
+          for (let j = 1; j < intervals.length; j++) {
+            const interval = intervals[j]
+            if (interval.start <= segmentEnd) {
+              segmentEnd = Math.max(segmentEnd, interval.end)
+            } else {
+              totalMs += segmentEnd - segmentStart
+              segmentStart = interval.start
+              segmentEnd = interval.end
+            }
+          }
+          totalMs += segmentEnd - segmentStart
+          if (totalMs > 0) tokensPerSec = tokens / (totalMs / 1000)
+        } else {
+          // part 缺少时间窗口时的兜底：整条消息时长
+          tokensPerSec = tokens / ((completed - created) / 1000)
+        }
+
         setState({ tokensPerSec, hasData: true })
         return
       }

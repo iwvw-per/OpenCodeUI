@@ -171,6 +171,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       onSessionUpdated: session => {
         if (session.parentID) return
 
+        // 归档会话直接从列表移除：session.updated 若不处理会把刚归档的会话插回列表
+        if (session.time?.archived) {
+          setSessions(prev => prev.filter(s => s.id !== session.id))
+          return
+        }
+
         if (searchRef.current) {
           if (matchesCurrentDirectory(session)) {
             fetchSessionsRef.current()
