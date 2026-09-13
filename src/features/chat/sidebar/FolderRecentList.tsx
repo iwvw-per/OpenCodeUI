@@ -928,7 +928,7 @@ function FolderRecentSection({
       if (removeTimerRef.current) clearTimeout(removeTimerRef.current)
       removeTimerRef.current = null
       setRemoveArmed(false)
-      onRemoveProject(project)
+      onRemoveProject?.(project)
       return
     }
     setRemoveArmed(true)

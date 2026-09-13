@@ -117,14 +117,6 @@ function readProjectOrder(serverId: string): string[] {
   }
 }
 
-function writeProjectOrder(serverId: string, order: string[]): void {
-  try {
-    localStorage.setItem(`srv:${serverId}:${PROJECT_ORDER_KEY}`, JSON.stringify(order))
-  } catch {
-    // ignore
-  }
-}
-
 function findProjectGroupForDirectory(projects: ProjectItem[], directory: string) {
   return projects.find(project => {
     if (isSameDirectory(project.id, directory) || isSameDirectory(project.worktree, directory)) {
@@ -694,7 +686,7 @@ export function SidePanel({
   }, [serverProjects, globalSessionGroups, hiddenDirectories])
 
   const folderProjects = useMemo<ProjectItem[]>(() => {
-    const list: ProjectItem[] = []
+    let list: ProjectItem[] = []
     // 已保存项目（当前主机的 per-server 列表）；根路径（global 项目，归一化后为空）不展示「全局」文件夹
     const nonRootGroups = folderProjectGroups.filter(project => normalizeToForwardSlash(project.worktree || '') !== '')
     // 当前激活项目（真实目录）置顶，与已保存项目重复时不重复添加
