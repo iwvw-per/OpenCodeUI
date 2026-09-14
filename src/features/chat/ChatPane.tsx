@@ -105,6 +105,9 @@ const PANE_VIEWPORT: ChatViewportValue = {
   },
 }
 
+/** 子任务分屏叠加的上限，超出后改为替换当前 pane */
+const MAX_SUBTASK_SPLIT_PANES = 3
+
 let splitSessionNavigationToken = 0
 
 function scheduleSplitSessionNavigation(callback: () => void) {
@@ -229,18 +232,45 @@ export const ChatPane = memo(function ChatPane({
   )
 
   /**
-   * 子任务「在分屏中打开」：未分屏且视口支持分屏时，向右侧新开 pane 打开子会话（父会话保留）；
-   * 已分屏 / 不支持分屏 / 无 session 时返回 false，调用方回退到 navigateToSession。
+   * 子任务「在分屏中打开」：
+   * 1. 若已有 pane 正在展示该子会话，直接聚焦它，避免同一子会话重复出现；
+   * 2. 未分屏且视口支持分屏时，向右侧新开 pane 打开子会话（父会话保留）；
+   * 3. 已分屏时继续向右侧叠加，达到上限则替换当前 pane；
+   * 4. 不支持分屏 / 无 session 时返回 false，调用方回退到 navigateToSession。
    */
   const openSessionInSplit = useCallback(
     (sid: string, directory?: string): boolean => {
       if (!splitPaneEnabled) return false
-      if (paneLayoutStore.getSnapshot().isSplit) return false
 
       const sessionKey = normalizeSessionKey(sid)
+
+      // 同一子会话只占一个 pane：已存在则聚焦，不重复打开
+      const existing = paneLayoutStore.findPaneBySession(sessionKey)
+      if (existing) {
+        paneLayoutStore.markSubtaskSession(sessionKey)
+        paneLayoutStore.focusPane(existing.id)
+        return true
+      }
+
       const previousFocusedPaneId = paneLayoutStore.getFocusedPaneId()
+      const isSplit = paneLayoutStore.getSnapshot().isSplit
+
+      // 已分屏且 pane 数达上限时，替换一个已有的子任务 pane 而不是继续叠加；
+      // 优先替换非当前 pane，避免把用户正在看的主会话顶掉
+      if (isSplit && paneLayoutStore.getSnapshot().paneCount >= MAX_SUBTASK_SPLIT_PANES) {
+        const subtaskLeaf = paneLayoutStore
+          .allLeaves()
+          .find(leaf => leaf.id !== paneId && leaf.sessionId && paneLayoutStore.isSubtaskSession(leaf.sessionId))
+        const targetPaneId = subtaskLeaf?.id ?? paneId
+        if (!paneLayoutStore.findLeaf(targetPaneId)) return false
+        paneLayoutStore.markSubtaskSession(sessionKey)
+        navigatePaneToSession(targetPaneId, sessionKey, directory)
+        return true
+      }
+
       const newPaneId = paneLayoutStore.splitPaneToSide(paneId, 'right', null)
       if (!newPaneId) return false
+      paneLayoutStore.markSubtaskSession(sessionKey)
 
       // 焦点保持在原 pane（用户在主任务视图继续操作）；新 pane 只负责展示子会话
       if (previousFocusedPaneId && paneLayoutStore.findLeaf(previousFocusedPaneId)) {

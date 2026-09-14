@@ -545,6 +545,8 @@ export function useGlobalEvents(directories?: string[]) {
           const scopedId = scope(data.sessionID)
           messageStore.handleSessionIdle(scopedId)
           childSessionStore.markIdle(scopedId)
+          // 子 agent 运行结束：自动关闭其分屏 pane
+          paneLayoutStore.closeSubtaskSession(scopedId)
           dispatchToConsumers(scopedId, cb => cb.onSessionIdle?.(scopedId))
         },
 
@@ -559,6 +561,10 @@ export function useGlobalEvents(directories?: string[]) {
           const scopedId = scope(error.sessionID)
           messageStore.handleSessionError(scopedId)
           childSessionStore.markError(scopedId)
+          // 子 agent 以错误结束时同样自动关闭其分屏 pane（主动中止除外）
+          if (!isAbort) {
+            paneLayoutStore.closeSubtaskSession(scopedId)
+          }
           if (!isAbort) {
             // 从 Working 列表移除
             activeSessionStore.updateStatus(scopedId, { type: 'idle' })
