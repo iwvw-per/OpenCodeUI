@@ -1,8 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getCurrentProject, listWorktrees } from '../api'
+import { getCurrentProject, listWorktrees, type ApiProject } from '../api'
 import { subscribeToEvents } from '../api/events'
 import { serverStore } from '../store/serverStore'
 import { normalizeToForwardSlash } from '../utils'
+import { ttlCacheGet, ttlCacheSet, ttlCacheInvalidate } from '../utils/ttlCache'
+
+/** 单目录的 getCurrentProject / listWorktrees 按 serverId+目录缓存：切换主机回来不重拉 */
+const CACHE_TTL_MS = 60_000
+
+async function getCurrentProjectCached(directory: string, serverId?: string): Promise<ApiProject> {
+  const key = `git-cat-project:${serverId ?? ''}:${directory}`
+  const cached = ttlCacheGet<ApiProject>(key, CACHE_TTL_MS)
+  if (cached) return cached
+  const project = await getCurrentProject(directory, serverId)
+  ttlCacheSet(key, project)
+  return project
+}
+
+async function listWorktreesCached(rootDirectory: string, serverId?: string) {
+  const key = `git-cat-worktrees:${serverId ?? ''}:${rootDirectory}`
+  const cached = ttlCacheGet<string[]>(key, CACHE_TTL_MS)
+  if (cached) return cached
+  const worktrees = await listWorktrees(rootDirectory, serverId)
+  ttlCacheSet(key, worktrees)
+  return worktrees
+}
 
 export interface GitWorkspaceMeta {
   isGit: boolean
@@ -53,7 +75,7 @@ export function useGitWorkspaceCatalog(directories: string[], serverId?: string)
       const projectResults = await Promise.allSettled(
         normalizedDirectories.map(async directory => ({
           directory,
-          project: await getCurrentProject(directory, serverId),
+          project: await getCurrentProjectCached(directory, serverId),
         })),
       )
 
@@ -107,7 +129,7 @@ export function useGitWorkspaceCatalog(directories: string[], serverId?: string)
       const workspaceResults = await Promise.allSettled(
         rootDirectoryList.map(async rootDirectory => ({
           rootDirectory,
-          worktrees: await listWorktrees(rootDirectory, serverId),
+          worktrees: await listWorktreesCached(rootDirectory, serverId),
         })),
       )
 
@@ -155,17 +177,30 @@ export function useGitWorkspaceCatalog(directories: string[], serverId?: string)
   }, [refresh])
 
   useEffect(() => {
+    // worktree 就绪/失败意味着服务器侧目录结构变化：失效缓存后重拉，保证拿到新数据
     return subscribeToEvents({
-      onWorktreeReady: () => void refresh(),
-      onWorktreeFailed: () => void refresh(),
+      onWorktreeReady: () => {
+        ttlCacheInvalidate('git-cat-')
+        void refresh()
+      },
+      onWorktreeFailed: () => {
+        ttlCacheInvalidate('git-cat-')
+        void refresh()
+      },
       onReconnected: reason => {
-        if (reason !== 'server-switch') void refresh()
+        if (reason !== 'server-switch') {
+          ttlCacheInvalidate('git-cat-')
+          void refresh()
+        }
       },
     })
   }, [refresh])
 
   useEffect(() => {
-    const listener = () => void refresh()
+    const listener = () => {
+      ttlCacheInvalidate('git-cat-')
+      void refresh()
+    }
     refreshListeners.add(listener)
     return () => {
       refreshListeners.delete(listener)
