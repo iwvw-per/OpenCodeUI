@@ -9,7 +9,8 @@
     "openBottomPanel": "打开底部面板",
     "closePanel": "关闭面板",
     "openPanel": "打开面板",
-    "openProjectDirectory": "打开项目目录"
+    "openProjectDirectory": "打开项目目录",
+    "mcpStatus": "MCP 连接状态"
   },
   "chatArea": {
     "loadingSession": "加载会话中...",

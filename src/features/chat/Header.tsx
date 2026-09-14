@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, Suspense, lazy } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   PanelRightIcon,
@@ -9,8 +9,10 @@ import {
   MinimizeIcon,
   FolderIcon,
   ShareIcon,
+  PlugIcon,
+  SpinnerIcon,
 } from '../../components/Icons'
-import { IconButton } from '../../components/ui'
+import { Dialog, IconButton } from '../../components/ui'
 import { ShareDialog } from './ShareDialog'
 import { messageStore, useHeaderSessionMeta, notificationStore } from '../../store'
 import { useLayoutStore, layoutStore } from '../../store/layoutStore'
@@ -28,6 +30,9 @@ interface HeaderProps {
   isPaneFullscreen?: boolean
   onTogglePaneFullscreen?: () => void
 }
+
+/** MCP 面板较重（拉状态 + resources）：仅在打开弹窗时才加载 */
+const McpPanel = lazy(() => import('../../components/McpPanel').then(module => ({ default: module.McpPanel })))
 
 interface SessionTitleControlProps {
   compact: boolean
@@ -102,6 +107,7 @@ export function Header({
   const { presentation, interaction } = useChatViewport()
 
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
+  const [mcpDialogOpen, setMcpDialogOpen] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -250,6 +256,16 @@ export function Header({
             </IconButton>
           )}
 
+          {/* MCP 连接状态与开关：弹窗内嵌 McpPanel（懒加载） */}
+          <IconButton
+            aria-label={t('header.mcpStatus')}
+            title={t('header.mcpStatus')}
+            onClick={() => setMcpDialogOpen(true)}
+            className="transition-colors text-text-300 hover:text-text-100 hover:bg-bg-200/50"
+          >
+            <PlugIcon size={16} />
+          </IconButton>
+
           {/* 分享会话：与标题分离，作为常规操作按钮（仅有会话时显示） */}
           {sessionId && (
             <IconButton
@@ -265,6 +281,30 @@ export function Header({
       </div>
 
       <ShareDialog isOpen={shareDialogOpen} onClose={() => setShareDialogOpen(false)} />
+
+      {/* MCP 服务器状态与开关。
+          高度：McpPanel 根节点是 h-full，弹窗必须给出确定高度，否则内部列表的 overflow-auto 不生效；
+          这里让它按内容自适应、上限 70vh（Dialog 的 inline max-height:100% 需用 important 覆盖）。 */}
+      <Dialog
+        isOpen={mcpDialogOpen}
+        onClose={() => setMcpDialogOpen(false)}
+        title={t('header.mcpStatus')}
+        width="min(560px, calc(100vw - 24px))"
+        className="max-h-[70vh]!"
+        rawContent
+      >
+        {mcpDialogOpen && (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center py-12 text-text-400">
+                <SpinnerIcon size={16} className="animate-spin" />
+              </div>
+            }
+          >
+            <McpPanel onClose={() => setMcpDialogOpen(false)} />
+          </Suspense>
+        )}
+      </Dialog>
 
       <div data-chat-header-shadow className="absolute top-full left-0 right-0 h-8 bg-gradient-to-b from-bg-100 to-transparent pointer-events-none z-10" />
     </div>
