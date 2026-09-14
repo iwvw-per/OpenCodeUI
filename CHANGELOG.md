@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.6.70] - 2026-09-14
+
+- fix(pane): 子任务分屏同一会话去重 + 结束自动关闭 (c3e29c5)
+
 ## [v0.6.69] - 2026-09-14
 
 - feat(header): add MCP status dialog to top toolbar (7f4db8b)
