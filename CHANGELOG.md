@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.6.69] - 2026-09-14
+
+- feat(header): add MCP status dialog to top toolbar (7f4db8b)
+
 ## [v0.6.45] - 2026-08-29
 
 - fix(session): bound getLastTurnDiff to latest page instead of full message fetch (7c7a47ef)
