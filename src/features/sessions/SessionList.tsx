@@ -997,7 +997,9 @@ function AutoScrollTitle({ text }: { text: string }) {
   return (
     <span
       ref={outerRef}
-      className={`min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[length:var(--fs-sm)] ${overflow ? 'marquee-title' : 'truncate'}`}
+      className={`min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[length:var(--fs-sm)] ${
+        overflow ? 'marquee-title name-fade-right' : 'truncate'
+      }`}
       title={text}
     >
       <span
