@@ -1260,6 +1260,12 @@ body {
   mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
   -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 12px), transparent 100%);
 }
+
+/* 长项目名右侧渐隐（未 hover 时的静态截断）：替代生硬的 ellipsis */
+.name-fade-right {
+  mask-image: linear-gradient(to left, transparent 0, #000 14px);
+  -webkit-mask-image: linear-gradient(to left, transparent 0, #000 14px);
+}
 .marquee-title:hover .marquee-title-inner,
 .marquee-title:focus-within .marquee-title-inner {
   animation: marquee-scroll var(--marquee-duration, 4s) linear infinite;

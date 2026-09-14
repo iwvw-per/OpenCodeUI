@@ -8,14 +8,40 @@
 // ============================================
 
 import { useEffect, useState } from 'react'
-import { getSessions } from '../api'
+import { getSessions, type ApiSession } from '../api'
 import { normalizeToForwardSlash } from '../utils'
+import { ttlCacheGet, ttlCacheSet } from '../utils/ttlCache'
+
+/** 结果按 serverId 缓存：切换主机回来直接复用，避免全量重拉（这是最重的一个发现请求） */
+const CACHE_TTL_MS = 60_000
+const cacheKey = (serverId: string) => `global-session-groups:${serverId}`
 
 export interface GlobalSessionGroup {
   directory: string
   count: number
   /** 该目录下会话的最大更新时间（即项目最后使用时间，毫秒时间戳） */
   lastUsedAt?: number
+}
+
+function buildGroups(list: ApiSession[]): GlobalSessionGroup[] {
+  const countMap = new Map<string, number>()
+  const lastUsedMap = new Map<string, number>()
+  for (const session of list) {
+    if (!session.directory) continue
+    const directory = normalizeToForwardSlash(session.directory)
+    if (!directory || directory === '/') continue
+    countMap.set(directory, (countMap.get(directory) || 0) + 1)
+    const updated = session.time?.updated
+    if (updated && updated > (lastUsedMap.get(directory) || 0)) {
+      lastUsedMap.set(directory, updated)
+    }
+  }
+  // 会话多的目录排前面（主体项目优先展示）
+  return Array.from(countMap.entries()).map(([directory, count]) => ({
+    directory,
+    count,
+    lastUsedAt: lastUsedMap.get(directory),
+  }))
 }
 
 export function useServerGlobalSessionDirectories(
@@ -28,30 +54,20 @@ export function useServerGlobalSessionDirectories(
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
+
+    const cached = ttlCacheGet<GlobalSessionGroup[]>(cacheKey(serverId), CACHE_TTL_MS)
+    if (cached) {
+      setGroups(cached)
+      return
+    }
+
     setIsLoading(true)
     getSessions({ roots: false, limit: 500 }, serverId)
       .then(list => {
         if (cancelled) return
-        const countMap = new Map<string, number>()
-        const lastUsedMap = new Map<string, number>()
-        for (const session of list) {
-          if (!session.directory) continue
-          const directory = normalizeToForwardSlash(session.directory)
-          if (!directory || directory === '/') continue
-          countMap.set(directory, (countMap.get(directory) || 0) + 1)
-          const updated = session.time?.updated
-          if (updated && updated > (lastUsedMap.get(directory) || 0)) {
-            lastUsedMap.set(directory, updated)
-          }
-        }
-        // 会话多的目录排前面（主体项目优先展示）
-        setGroups(
-          Array.from(countMap.entries()).map(([directory, count]) => ({
-            directory,
-            count,
-            lastUsedAt: lastUsedMap.get(directory),
-          })),
-        )
+        const built = buildGroups(list)
+        ttlCacheSet(cacheKey(serverId), built)
+        setGroups(built)
       })
       .catch(() => {
         if (!cancelled) setGroups([])

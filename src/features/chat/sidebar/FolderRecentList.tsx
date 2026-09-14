@@ -32,6 +32,33 @@ import { SessionChildrenSlot } from './SessionChildrenSlot'
 
 const DIRECTORY_PAGE_SIZE = 5
 
+/** 长项目名：溢出时右侧渐隐（替代生硬的 ellipsis 截断），不 hover 也生效 */
+function ProjectNameTitle({ text, className = '' }: { text: string; className?: string }) {
+  const spanRef = useRef<HTMLSpanElement>(null)
+  const [overflows, setOverflows] = useState(false)
+
+  useEffect(() => {
+    const el = spanRef.current
+    if (!el) return
+    const measure = () => setOverflows(el.scrollWidth > el.clientWidth)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [text])
+
+  return (
+    <span
+      ref={spanRef}
+      className={`min-w-0 flex-1 whitespace-nowrap text-[length:var(--fs-sm)] font-medium ${
+        overflows ? 'name-fade-right overflow-hidden' : 'truncate'
+      } ${className}`}
+    >
+      {text}
+    </span>
+  )
+}
+
 export interface FolderRecentProject {
   id: string
   name: string
@@ -1101,13 +1128,10 @@ function FolderRecentSection({
             <span className="size-5 shrink-0 flex items-center justify-center">
               <FolderDisplayIcon size={15} className="text-text-400" />
             </span>
-            <span
-              className={`min-w-0 flex-1 truncate text-[length:var(--fs-sm)] font-medium ${
-                isEditMode && isProjectChecked ? 'text-text-100' : 'text-text-300'
-              }`}
-            >
-              {projectName}
-            </span>
+            <ProjectNameTitle
+              text={projectName}
+              className={isEditMode && isProjectChecked ? 'text-text-100' : 'text-text-300'}
+            />
           </button>
           {/* 项目行 hover 的 + 按钮：在该项目目录下新建会话（全局/无目录项目不显示）；hover 才显示，与移除按钮一致 */}
           {!isEditMode && onNewSessionInDirectory && project.worktree && (
@@ -1118,7 +1142,7 @@ function FolderRecentSection({
                 e.stopPropagation()
                 onNewSessionInDirectory(project.worktree)
               }}
-              className="shrink-0 flex items-center justify-center w-6 h-6 mr-0.5 rounded-full text-accent-main-100 hover:bg-accent-main-100/10 hover:text-accent-main-200 opacity-0 group-hover/folder:opacity-100 transition-all"
+              className="shrink-0 flex items-center justify-center h-6 rounded-full overflow-hidden text-accent-main-100 hover:bg-accent-main-100/10 hover:text-accent-main-200 w-0 mr-0 opacity-0 transition-all group-hover/folder:w-6 group-hover/folder:mr-0.5 group-hover/folder:opacity-100"
               title={t('sidebar.newTaskInDirectory', { defaultValue: 'New conversation here' })}
               aria-label={t('sidebar.newTaskInDirectory', { defaultValue: 'New conversation here' })}
             >
@@ -1135,10 +1159,10 @@ function FolderRecentSection({
                 handleRemoveClick()
               }}
               onMouseLeave={disarmRemove}
-              className={`shrink-0 flex items-center justify-center w-6 h-6 mr-0.5 rounded-full transition-all ${
+              className={`shrink-0 flex items-center justify-center h-6 rounded-full overflow-hidden transition-all ${
                 removeArmed
-                  ? 'bg-danger-100/15 text-danger-100'
-                  : 'text-text-400 opacity-0 group-hover/folder:opacity-100 hover:text-danger-100 hover:bg-danger-100/10'
+                  ? 'w-6 mr-0.5 bg-danger-100/15 text-danger-100'
+                  : 'w-0 mr-0 text-text-400 opacity-0 group-hover/folder:w-6 group-hover/folder:mr-0.5 group-hover/folder:opacity-100 hover:text-danger-100 hover:bg-danger-100/10'
               }`}
               title={removeArmed ? t('sidebar.removeProjectConfirmClick', { defaultValue: '再次点击确认移除' }) : t('sidebar.removeProject')}
               aria-label={removeArmed ? t('sidebar.removeProjectConfirmClick', { defaultValue: '再次点击确认移除' }) : t('sidebar.removeProject')}
