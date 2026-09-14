@@ -24,7 +24,7 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
   const [expanded, setExpanded] = useUiDisclosureState(`message:${part.messageID}:subtask:${part.id}`, false)
   const shouldRenderBody = useMessageExpandRender(expanded)
   const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
-  const { navigateToSession } = useSessionNavigation()
+  const { navigateToSession, openSessionInSplit } = useSessionNavigation()
 
   // 获取子 session 信息（如果已创建）
   // 注意：part.sessionID 是父 session，我们需要找到这个 subtask 创建的子 session
@@ -38,9 +38,10 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
   const status = childSession?.status ?? 'running'
   const isRunning = status === 'running'
 
-  // 进入子 session
+  // 进入子 session：未分屏时优先在分屏视图中打开
   const handleEnter = () => {
     if (childSession) {
+      if (openSessionInSplit?.(childSession.id)) return
       navigateToSession(childSession.id)
     }
   }

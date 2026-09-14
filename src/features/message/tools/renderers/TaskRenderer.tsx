@@ -194,7 +194,7 @@ export const TaskHeader = memo(function TaskHeader({
   onStop,
 }: TaskHeaderProps) {
   const { t } = useTranslation('message')
-  const { navigateToSession, currentSessionId, currentDirectory } = useSessionNavigation()
+  const { navigateToSession, openSessionInSplit, currentSessionId, currentDirectory } = useSessionNavigation()
   const handleOpenSession = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -209,9 +209,11 @@ export const TaskHeader = memo(function TaskHeader({
       const parentState = parentSessionId ? messageStore.getSessionState(parentSessionId) : null
       const directory = parentState?.directory || currentDirectory || ''
 
+      // 未分屏时优先在分屏视图中打开子会话（父会话保留在当前 pane）
+      if (openSessionInSplit?.(sessionId, directory || undefined)) return
       navigateToSession(sessionId, directory || undefined)
     },
-    [sessionId, navigateToSession, currentSessionId, currentDirectory],
+    [sessionId, navigateToSession, openSessionInSplit, currentSessionId, currentDirectory],
   )
 
   const isRunning = status === 'running' || status === 'pending'

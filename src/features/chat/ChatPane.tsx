@@ -228,6 +228,34 @@ export const ChatPane = memo(function ChatPane({
     [paneId, navigatePaneToSession, normalizeSessionKey],
   )
 
+  /**
+   * 子任务「在分屏中打开」：未分屏且视口支持分屏时，向右侧新开 pane 打开子会话（父会话保留）；
+   * 已分屏 / 不支持分屏 / 无 session 时返回 false，调用方回退到 navigateToSession。
+   */
+  const openSessionInSplit = useCallback(
+    (sid: string, directory?: string): boolean => {
+      if (!splitPaneEnabled) return false
+      if (paneLayoutStore.getSnapshot().isSplit) return false
+
+      const sessionKey = normalizeSessionKey(sid)
+      const previousFocusedPaneId = paneLayoutStore.getFocusedPaneId()
+      const newPaneId = paneLayoutStore.splitPaneToSide(paneId, 'right', null)
+      if (!newPaneId) return false
+
+      // 焦点保持在原 pane（用户在主任务视图继续操作）；新 pane 只负责展示子会话
+      if (previousFocusedPaneId && paneLayoutStore.findLeaf(previousFocusedPaneId)) {
+        paneLayoutStore.focusPane(previousFocusedPaneId)
+      }
+
+      scheduleSplitSessionNavigation(() => {
+        if (!paneLayoutStore.findLeaf(newPaneId)) return
+        navigatePaneToSession(newPaneId, sessionKey, directory)
+      })
+      return true
+    },
+    [splitPaneEnabled, paneId, normalizeSessionKey, navigatePaneToSession],
+  )
+
   const navigateHome = useCallback(() => {
     navigatePaneHome(paneId)
   }, [paneId, navigatePaneHome])
@@ -391,8 +419,13 @@ export const ChatPane = memo(function ChatPane({
   }, [activeServer, activeServerHealth])
 
   const navigationCtx = useMemo(
-    () => ({ navigateToSession, currentSessionId: routeSessionId, currentDirectory: effectiveDirectory }),
-    [navigateToSession, routeSessionId, effectiveDirectory],
+    () => ({
+      navigateToSession,
+      openSessionInSplit,
+      currentSessionId: routeSessionId,
+      currentDirectory: effectiveDirectory,
+    }),
+    [navigateToSession, openSessionInSplit, routeSessionId, effectiveDirectory],
   )
 
   // ============================================

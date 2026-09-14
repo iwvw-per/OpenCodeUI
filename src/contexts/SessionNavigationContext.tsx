@@ -14,6 +14,11 @@ import { createContext, useContext } from 'react'
 export interface SessionNavigationContextValue {
   /** 导航到指定 session */
   navigateToSession: (sessionId: string, directory?: string) => void
+  /**
+   * 在分屏视图中打开会话（未分屏且视口支持分屏时新开右侧 pane）。
+   * 返回 true 表示已由分屏处理；返回 false 或未提供时调用方回退到 navigateToSession。
+   */
+  openSessionInSplit?: (sessionId: string, directory?: string) => boolean
   /** 当前 pane / 视图正在查看的 session */
   currentSessionId?: string | null
   /** 当前 pane / 视图的有效目录 */
