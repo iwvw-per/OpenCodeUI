@@ -187,6 +187,8 @@ function createPaneLayoutStore() {
   let _focusedPaneId: string | null = _root.id
   let _fullscreenPaneId: string | null = null
   const _listeners = new Set<Listener>()
+  /** Sessions opened via the sub agent split flow; auto-closed when they finish. */
+  const _subtaskSessions = new Set<string>()
 
   function _notify() {
     for (const fn of _listeners) fn()
@@ -253,6 +255,32 @@ function createPaneLayoutStore() {
       return allLeaves(_root)
     },
 
+    /** Find the first leaf displaying the given session, if any. */
+    findPaneBySession(sessionId: string) {
+      return allLeaves(_root).find(leaf => leaf.sessionId === sessionId) ?? null
+    },
+
+    /** Mark a session as opened by the sub agent split flow (eligible for auto-close). */
+    markSubtaskSession(sessionId: string) {
+      _subtaskSessions.add(sessionId)
+    },
+
+    isSubtaskSession(sessionId: string) {
+      return _subtaskSessions.has(sessionId)
+    },
+
+    forgetSubtaskSession(sessionId: string) {
+      _subtaskSessions.delete(sessionId)
+    },
+
+    /** Close the pane for a finished sub agent session (no-op unless it occupies a pane). */
+    closeSubtaskSession(sessionId: string): boolean {
+      if (!_subtaskSessions.has(sessionId)) return false
+      const closed = this.closePaneBySession(sessionId)
+      _subtaskSessions.delete(sessionId)
+      return closed
+    },
+
     /** Whether the given pane is the only leaf (i.e. no split active). */
     isSinglePane() {
       return _root.type === 'leaf'
@@ -306,6 +334,7 @@ function createPaneLayoutStore() {
     },
 
     clearSession(sessionId: string) {
+      _subtaskSessions.delete(sessionId)
       const result = clearSessionFromNode(_root, sessionId)
       if (!result.changed) return
       _root = result.node
@@ -384,10 +413,14 @@ function createPaneLayoutStore() {
     closePane(paneId: string) {
       if (_root.type === 'leaf') {
         // Single pane — just clear its session
+        if (_root.sessionId) _subtaskSessions.delete(_root.sessionId)
         _root = { ..._root, sessionId: null }
         _refreshSnapshot()
         return
       }
+
+      const closingLeaf = findLeaf(_root, paneId)
+      if (closingLeaf?.sessionId) _subtaskSessions.delete(closingLeaf.sessionId)
 
       const focusReplacement = _focusedPaneId === paneId ? findReplacementForRemovedLeaf(_root, paneId) : null
       const result = removeLeaf(_root, paneId)
@@ -406,6 +439,18 @@ function createPaneLayoutStore() {
       }
 
       _refreshSnapshot()
+    },
+
+    /**
+     * Close the pane displaying the given session. No-op when that session is
+     * the only pane (avoids wiping the single-pane surface). Returns true if closed.
+     */
+    closePaneBySession(sessionId: string): boolean {
+      if (_root.type === 'leaf') return false
+      const leaf = allLeaves(_root).find(l => l.sessionId === sessionId)
+      if (!leaf) return false
+      this.closePane(leaf.id)
+      return true
     },
 
     /**
@@ -464,6 +509,7 @@ function createPaneLayoutStore() {
       _root = { type: 'leaf', id: genPaneId(), sessionId: null }
       _focusedPaneId = _root.id
       _fullscreenPaneId = null
+      _subtaskSessions.clear()
       _refreshSnapshot()
     },
 

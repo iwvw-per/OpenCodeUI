@@ -110,6 +110,7 @@ vi.mock('../store', () => ({
   paneLayoutStore: {
     getFocusedSessionId: getFocusedSessionIdMock,
     clearSession: clearPaneSessionMock,
+    closeSubtaskSession: vi.fn(),
     allLeaves: () => [],
     subscribe: () => () => {},
   },
