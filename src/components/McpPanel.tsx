@@ -50,9 +50,11 @@ interface ServerEntry {
 
 interface McpPanelProps {
   isResizing?: boolean
+  /** 作为弹窗内容使用时传入，在面板头部右侧显示关闭按钮（rawContent 弹窗没有自带标题栏） */
+  onClose?: () => void
 }
 
-export const McpPanel = memo(function McpPanel({ isResizing: _isResizing }: McpPanelProps) {
+export const McpPanel = memo(function McpPanel({ isResizing: _isResizing, onClose }: McpPanelProps) {
   const { t } = useTranslation(['components', 'common'])
   const { currentDirectory } = useDirectory()
   const [servers, setServers] = useState<ServerEntry[]>([])
@@ -200,7 +202,7 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing }: McpP
   // ============================================
 
   return (
-    <div className="flex flex-col h-full bg-bg-100">
+    <div className="flex flex-col h-full min-h-0 bg-bg-100">
       {/* Header */}
       <div className="relative flex h-10 items-center justify-between px-3">
         <div className="flex h-6 min-w-0 items-center gap-1.5 text-text-100 text-[length:var(--fs-xs)] font-medium">
@@ -228,6 +230,17 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing }: McpP
           >
             <RetryIcon size={12} className={loading ? 'animate-spin' : ''} />
           </button>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t('common:close')}
+              className="inline-flex h-6 w-6 items-center justify-center hover:bg-bg-200/50 rounded-md text-text-300 hover:text-text-100 transition-colors"
+              title={t('common:close')}
+            >
+              <CloseIcon size={12} />
+            </button>
+          )}
         </div>
         <div className="pointer-events-none absolute inset-x-3 bottom-0 h-px bg-border-200/30" />
       </div>

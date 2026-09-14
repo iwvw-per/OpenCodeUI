@@ -9,7 +9,8 @@
     "openBottomPanel": "Open bottom panel",
     "closePanel": "Close panel",
     "openPanel": "Open panel",
-    "openProjectDirectory": "Open project directory"
+    "openProjectDirectory": "Open project directory",
+    "mcpStatus": "MCP connection status"
   },
   "chatArea": {
     "loadingSession": "Loading session...",
