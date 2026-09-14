@@ -1,6 +1,6 @@
 {
   "name": "opencodeui",
-  "version": "0.6.69",
+  "version": "0.6.70",
   "description": "A third-party web frontend for OpenCode",
   "license": "GPL-3.0-only",
   "type": "module",
