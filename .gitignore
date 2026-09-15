@@ -40,3 +40,6 @@ public/material-icons/
 *.njsproj
 *.sln
 *.sw?
+
+# Agent tooling scratch (ZCode plan/context artifacts)
+.zcode/
