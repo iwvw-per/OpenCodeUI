@@ -234,38 +234,36 @@ export const InputFooter = memo(function InputFooter({
 
       <span className="text-text-500/30 shrink-0">·</span>
 
-      {/* disclaimer / todos */}
+      {/* disclaimer / todos：两者互斥，TPS 在两种情况下都显示 */}
       {!hasTodos ? (
-        <button onClick={onNewChat} className="hover:text-text-300 transition-colors">
+        <button onClick={onNewChat} className="min-w-0 truncate hover:text-text-300 transition-colors">
           {t('inputFooter.pleaseVerify')}
         </button>
       ) : (
-        <>
-          <button
-            onClick={togglePanel}
-            className={`flex items-center gap-1.5 min-w-0 hover:text-text-300 transition-colors ${
-              panelOpen ? 'text-text-300' : ''
-            }`}
-          >
-            <MiniProgress size={11} progress={progress} done={isAllDone} />
-            <span className="tabular-nums shrink-0">
-              {stats.completed}/{stats.total}
-            </span>
-            <span className="text-text-500/50 shrink-0">·</span>
-            <span className="truncate max-w-[120px] sm:max-w-[200px]">{taskLabel}</span>
-          </button>
-
-          <span className="text-text-500/30 shrink-0">·</span>
-
-          {/* 最后一轮输出速率（仅输出 token，纯显示，不可点击） */}
-          <span
-            className="shrink-0 tabular-nums"
-            title={t('inputFooter.tokenRate', { defaultValue: '最后一轮输出速率（仅输出 token）' })}
-          >
-            {formatTokenRate(tokensPerSec)}
+        <button
+          onClick={togglePanel}
+          className={`flex items-center gap-1.5 min-w-0 hover:text-text-300 transition-colors ${
+            panelOpen ? 'text-text-300' : ''
+          }`}
+        >
+          <MiniProgress size={11} progress={progress} done={isAllDone} />
+          <span className="tabular-nums shrink-0">
+            {stats.completed}/{stats.total}
           </span>
-        </>
+          <span className="text-text-500/50 shrink-0">·</span>
+          <span className="truncate max-w-[120px] sm:max-w-[200px]">{taskLabel}</span>
+        </button>
       )}
+
+      <span className="text-text-500/30 shrink-0">·</span>
+
+      {/* 最后一轮输出速率（仅输出 token，纯显示，不可点击） */}
+      <span
+        className="shrink-0 tabular-nums"
+        title={t('inputFooter.tokenRate', { defaultValue: '最后一轮输出速率（仅输出 token）' })}
+      >
+        {formatTokenRate(tokensPerSec)}
+      </span>
 
       {/* Todo Swap Panel */}
       {panelState !== 'closed' && (
