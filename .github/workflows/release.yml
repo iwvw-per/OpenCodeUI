@@ -125,7 +125,12 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      # packages 默认值是 'tools platform-tools'，而 Google 已把 'tools' 从 SDK
+      # 仓库移除 → sdkmanager 报 "Failed to find package 'tools'" 直接失败。
+      # 这里只装 platform-tools，NDK 由下一步显式安装。
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - run: sdkmanager "ndk;29.0.14206865"
 
