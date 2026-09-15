@@ -22,7 +22,7 @@ function useFullAutoMode(paneId: string): FullAutoMode {
 
 const TODO_SWAP_DURATION_MS = 260
 
-/** 生成速率显示：<10 保留一位小数，其余取整，空闲显示 0 */
+/** 输出速率显示：<10 保留一位小数，其余取整，空闲显示 0 */
 function formatTokenRate(rate: number): string {
   if (rate < 0.05) return '0 tok/s'
   return `${rate < 10 ? rate.toFixed(1) : Math.round(rate)} tok/s`
@@ -257,8 +257,11 @@ export const InputFooter = memo(function InputFooter({
 
           <span className="text-text-500/30 shrink-0">·</span>
 
-          {/* 最后一轮生成速率（纯显示，不可点击） */}
-          <span className="shrink-0 tabular-nums" title={t('inputFooter.tokenRate', { defaultValue: '最后一轮生成速率' })}>
+          {/* 最后一轮输出速率（仅输出 token，纯显示，不可点击） */}
+          <span
+            className="shrink-0 tabular-nums"
+            title={t('inputFooter.tokenRate', { defaultValue: '最后一轮输出速率（仅输出 token）' })}
+          >
             {formatTokenRate(tokensPerSec)}
           </span>
         </>

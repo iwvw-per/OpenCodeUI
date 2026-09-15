@@ -109,7 +109,7 @@
     "tasksCount": "{{done}}/{{total}} 个任务",
     "greatWork": "干得漂亮!",
     "inProgress": "{{count}} 个进行中",
-    "tokenRate": "最后一轮生成速率"
+    "tokenRate": "最后一轮输出速率（仅输出 token）"
   },
   "inputActions": {
     "scrollToBottom": "滚动到底部",
