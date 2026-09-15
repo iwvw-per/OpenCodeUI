@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.6.72] - 2026-09-15
+
+- chore: ignore .zcode/ agent scratch dir (6c398fa)
+- feat(sidebar): 会话排序（更新时间/创建时间 + 正倒序）+ 修复并行会话位置来回跳 (be595d7)
+
 ## [v0.6.71] - 2026-09-15
 
 - fix(input): 收起胶囊动画逐帧平滑 + 修复移动端模型选择被隐形胶囊遮挡 (d43583f)
