@@ -125,10 +125,14 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
       }
 
       try {
+        // 多取一条用于判断是否还有更多：仅凭 data.length >= limit 无法区分
+        // 「刚好这么多」和「还有更多」——会话数正好等于 pageSize 时会多出一个
+        // 点了没反应的「展开更多会话」按钮（取回同样条数后 hasMore 立刻变 false）。
+        const requestedLimit = currentLimitRef.current
         const data = await getSessions(
           {
             roots: rootsOnly,
-            limit: currentLimitRef.current,
+            limit: requestedLimit + 1,
             directory: normalizedDirectory,
             ...queryParams,
           },
@@ -143,8 +147,8 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
           autoDetectPathStyle(data[0].directory, serverId)
         }
 
-        setSessions(sortSessions(data, sortRef.current))
-        setHasMore(data.length >= currentLimitRef.current)
+        setSessions(sortSessions(data.slice(0, requestedLimit), sortRef.current))
+        setHasMore(data.length > requestedLimit)
       } catch (e) {
         if (requestId !== requestIdRef.current) return
         setError(e instanceof Error ? e : new Error('Failed to fetch sessions'))

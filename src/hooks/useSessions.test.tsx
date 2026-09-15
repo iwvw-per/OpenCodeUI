@@ -102,10 +102,11 @@ describe('useSessions', () => {
       await Promise.resolve()
     })
 
+    // limit 比 pageSize 多 1：多取一条用于判断是否还有更多
     expect(getSessionsMock).toHaveBeenCalledWith(
       {
         roots: true,
-        limit: 20,
+        limit: 21,
         directory: '/workspace/demo',
       },
       undefined,
@@ -275,6 +276,42 @@ describe('useSessions', () => {
 
     // 按创建时间正序
     expect(result.current.sessions.map(session => session.id)).toEqual(['session-b', 'session-a'])
+  })
+
+  it('does not report hasMore when the server returns exactly the page size', async () => {
+    // pageSize=2：服务端只有 2 条，返回 2 条（= pageSize）。
+    // 旧实现用 data.length >= limit 判断，会误判为「还有更多」，
+    // 于是多出一个点了没反应的「展开更多会话」按钮。
+    getSessionsMock.mockResolvedValue([makeSession('session-a'), makeSession('session-b')])
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo', pageSize: 2 }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-a', 'session-b'])
+    expect(result.current.hasMore).toBe(false)
+  })
+
+  it('reports hasMore and trims the extra probe row when more exist', async () => {
+    // pageSize=2，服务端有 3 条：多取的第 3 条只用于判断，不进列表
+    getSessionsMock.mockResolvedValue([
+      makeSession('session-a'),
+      makeSession('session-b'),
+      makeSession('session-c'),
+    ])
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo', pageSize: 2 }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-a', 'session-b'])
+    expect(result.current.hasMore).toBe(true)
   })
 
   it('queues a reconnect refresh while a newer request is still in flight', async () => {

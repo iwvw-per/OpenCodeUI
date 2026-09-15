@@ -80,9 +80,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // 使用正斜杠格式传给 API（http 层会处理兼容）
         const targetDir = normalizeToForwardSlash(currentDirectory) || undefined
 
+        // 多取一条用于判断是否还有更多：仅凭 data.length >= limit 无法区分
+        // 「刚好这么多」和「还有更多」——会话数正好等于 pageSize 时会多出一个
+        // 点了没反应的「展开更多会话」按钮（取回同样条数后 hasMore 立刻变 false）。
+        const requestedLimit = currentLimitRef.current
         const data = await getSessions({
           roots: true,
-          limit: currentLimitRef.current,
+          limit: requestedLimit + 1,
           directory: targetDir,
           search: search || undefined,
           ...queryParams,
@@ -95,19 +99,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           autoDetectPathStyle(data[0].directory)
         }
 
+        const page = data.slice(0, requestedLimit)
+
         if (append) {
           // 去重：过滤掉已存在的 session
           setSessions(prev => {
             const existingIds = new Set(prev.map(s => s.id))
-            const newSessions = data.filter(s => !existingIds.has(s.id))
+            const newSessions = page.filter(s => !existingIds.has(s.id))
             return [...prev, ...newSessions]
           })
         } else {
           // 与侧栏列表保持同一排序：上/下一个会话快捷键按位置取值，
           // 两边顺序不一致会让导航目标与用户看到的不符
-          setSessions(sortSessions(data, getSortPreference()))
+          setSessions(sortSessions(page, getSortPreference()))
         }
-        setHasMore(data.length >= currentLimitRef.current)
+        setHasMore(data.length > requestedLimit)
       } catch (e) {
         if (requestId === requestIdRef.current && !append) {
           if (retryAttempt < 3) {
@@ -135,7 +141,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [currentDirectory, search],
+    [currentDirectory, search, getSortPreference],
   )
 
   // 保持 fetchSessions ref 同步（用于 SSE onReconnected 回调）
@@ -242,7 +248,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     })
 
     return unsubscribe
-  }, [matchesCurrentDirectory])
+  }, [matchesCurrentDirectory, getSortPreference])
 
   useEffect(() => {
     return serverStore.onServerChange(() => {
