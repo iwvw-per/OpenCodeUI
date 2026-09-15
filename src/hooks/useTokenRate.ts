@@ -1,9 +1,10 @@
 // ============================================
-// useTokenRate - 最后一轮对话的生成速率（tok/s）
+// useTokenRate - 最后一轮对话的输出速率（tok/s）
 //
-// 取最后一条「已完成」助手消息，按单个请求的实际生成速度计算：
-//   (tokens.output + tokens.reasoning) / 合并后的文本+推理时间窗口
-// 分母排除工具调用与排队等待（按整条消息时长算会把多步任务的 TPS 摊薄）。
+// 取最后一条「已完成」助手消息，按单个请求的实际输出速度计算：
+//   tokens.output / 合并后的文本 part 时间窗口
+// 只统计输出 token，不含 reasoning（推理另计，混进来会让这个数字反映思考速度
+// 而不是输出速度）；分母也只算文本 part 的生成时间，排除推理与工具调用等待。
 // part 缺少时间窗口时退回整条消息时长。SSE 流没有逐 chunk token 计数，
 // 当前轮生成期间保持显示上一轮的值，完成后随 message.updated 自动刷新。
 // ============================================
@@ -38,12 +39,12 @@ export function useTokenRate(sessionId: string | null): TokenRateState {
         const completed = info.time.completed
         if (!created || !completed || completed <= created) continue
 
-        // 速率分母只算实际生成时间：合并文本/推理 part 各自的时间窗口，
-        // 排除工具调用与排队等待——按整条消息时长算会把多步任务的 TPS 摊薄
-        const tokens = info.tokens.output + info.tokens.reasoning
+        // 速率 = 输出 token / 文本生成时间：只算 text part 的时间窗口，
+        // 不含 reasoning（推理另计）与工具调用等待——混进来会把输出速度摊薄
+        const tokens = info.tokens.output
         const intervals: { start: number; end: number }[] = []
         for (const part of message.parts) {
-          if (part.type !== 'text' && part.type !== 'reasoning') continue
+          if (part.type !== 'text') continue
           const start = part.time?.start
           const end = part.time?.end
           if (!start || !end || end <= start) continue
