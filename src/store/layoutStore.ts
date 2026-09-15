@@ -2,6 +2,9 @@
 // LayoutStore - 全局 UI 布局状态
 // ============================================
 
+// 直接引文件而非 '../utils' barrel：barrel 会连带 settingsBackup → store，形成循环依赖
+import { DEFAULT_SESSION_SORT, isSessionSortField, type SessionSortField } from '../utils/sessionSort'
+
 // 面板位置
 export type PanelPosition = 'bottom' | 'right'
 
@@ -103,6 +106,10 @@ interface LayoutState {
   sidebarShowChildSessions: boolean
   /** 侧栏显示「全局」分组（非 Git 工作区会话），默认关闭 */
   sidebarShowGlobal: boolean
+  /** 侧栏会话排序字段 */
+  sidebarSessionSortField: SessionSortField
+  /** 侧栏会话排序方向：true = 倒序（新→旧），false = 正序（旧→新） */
+  sidebarSessionSortDesc: boolean
   /** 发送消息快捷键：Enter（默认 true）或 Shift+Enter（false） */
   sendOnEnter: boolean
 
@@ -130,6 +137,7 @@ const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS = 'opencode-sidebar-folder-recents'
 const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF = 'opencode-sidebar-folder-recents-show-diff'
 const STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS = 'opencode-sidebar-show-child-sessions'
 const STORAGE_KEY_SIDEBAR_SHOW_GLOBAL = 'opencode-sidebar-show-global'
+const STORAGE_KEY_SIDEBAR_SESSION_SORT = 'opencode-sidebar-session-sort'
 const STORAGE_KEY_SEND_ON_ENTER = 'opencode-send-on-enter'
 const STORAGE_KEY_PANEL_LAYOUT = 'opencode-panel-layout'
 const STORAGE_KEY_TERMINAL_LAYOUT = 'opencode-terminal-layout'
@@ -320,6 +328,8 @@ export class LayoutStore {
     sidebarFolderRecentsShowDiff: true,
     sidebarShowChildSessions: false,
     sidebarShowGlobal: false,
+    sidebarSessionSortField: DEFAULT_SESSION_SORT.field,
+    sidebarSessionSortDesc: DEFAULT_SESSION_SORT.desc,
     sendOnEnter: true,
     rightPanelOpen: false,
     rightPanelWidth: 450,
@@ -424,6 +434,22 @@ export class LayoutStore {
       const savedShowGlobal = localStorage.getItem(STORAGE_KEY_SIDEBAR_SHOW_GLOBAL)
       if (savedShowGlobal !== null) {
         this.state.sidebarShowGlobal = savedShowGlobal === 'true'
+      }
+
+      // 排序偏好存成 JSON；解析失败/字段非法时保持默认（updated + 倒序）
+      try {
+        const rawSort = localStorage.getItem(STORAGE_KEY_SIDEBAR_SESSION_SORT)
+        if (rawSort !== null) {
+          const parsed = JSON.parse(rawSort) as { field?: unknown; desc?: unknown }
+          if (isSessionSortField(parsed?.field)) {
+            this.state.sidebarSessionSortField = parsed.field
+          }
+          if (typeof parsed?.desc === 'boolean') {
+            this.state.sidebarSessionSortDesc = parsed.desc
+          }
+        }
+      } catch {
+        // ignore malformed preference
       }
 
       const savedSendOnEnter = localStorage.getItem(STORAGE_KEY_SEND_ON_ENTER)
@@ -551,6 +577,18 @@ export class LayoutStore {
     this.state.sidebarShowGlobal = enabled
     try {
       localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_GLOBAL, String(enabled))
+    } catch {
+      /* ignore */
+    }
+    this.notify()
+  }
+
+  setSidebarSessionSort(field: SessionSortField, desc: boolean) {
+    if (this.state.sidebarSessionSortField === field && this.state.sidebarSessionSortDesc === desc) return
+    this.state.sidebarSessionSortField = field
+    this.state.sidebarSessionSortDesc = desc
+    try {
+      localStorage.setItem(STORAGE_KEY_SIDEBAR_SESSION_SORT, JSON.stringify({ field, desc }))
     } catch {
       /* ignore */
     }
@@ -1211,6 +1249,8 @@ export interface LayoutBackup {
   sidebarFolderRecentsShowDiff: boolean
   sidebarShowChildSessions: boolean
   sidebarShowGlobal: boolean
+  sidebarSessionSortField: SessionSortField
+  sidebarSessionSortDesc: boolean
   sendOnEnter: boolean
   wakeLock: boolean
   rightPanelWidth: number
@@ -1257,6 +1297,8 @@ export function exportLayoutBackup(): LayoutBackup {
     sidebarFolderRecentsShowDiff: state.sidebarFolderRecentsShowDiff,
     sidebarShowChildSessions: state.sidebarShowChildSessions,
     sidebarShowGlobal: state.sidebarShowGlobal,
+    sidebarSessionSortField: state.sidebarSessionSortField,
+    sidebarSessionSortDesc: state.sidebarSessionSortDesc,
     sendOnEnter: state.sendOnEnter,
     wakeLock: state.wakeLock,
     rightPanelWidth: state.rightPanelWidth,
@@ -1293,6 +1335,15 @@ export function importLayoutBackup(raw: unknown): void {
   )
   localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, String(parsed?.sidebarShowChildSessions === true))
   localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_GLOBAL, String(parsed?.sidebarShowGlobal === true))
+  localStorage.setItem(
+    STORAGE_KEY_SIDEBAR_SESSION_SORT,
+    JSON.stringify({
+      field: isSessionSortField(parsed?.sidebarSessionSortField)
+        ? parsed.sidebarSessionSortField
+        : DEFAULT_SESSION_SORT.field,
+      desc: typeof parsed?.sidebarSessionSortDesc === 'boolean' ? parsed.sidebarSessionSortDesc : DEFAULT_SESSION_SORT.desc,
+    }),
+  )
   localStorage.setItem(STORAGE_KEY_SEND_ON_ENTER, String(parsed?.sendOnEnter !== false))
   localStorage.setItem(STORAGE_KEY_WAKE_LOCK, String(parsed?.wakeLock === true))
   localStorage.setItem(STORAGE_KEY_RIGHT_PANEL_WIDTH, String(rightPanelWidth))

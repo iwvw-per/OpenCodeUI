@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EventCallbacks } from '../types/api/event'
 import { useSessions } from './useSessions'
+import { layoutStore } from '../store/layoutStore'
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void
@@ -83,6 +84,8 @@ describe('useSessions', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    // 排序偏好是全局 store 状态，重置避免污染后续用例
+    layoutStore.setSidebarSessionSort('updated', true)
   })
 
   it('waits for enabled before fetching', async () => {
@@ -143,6 +146,135 @@ describe('useSessions', () => {
     })
 
     expect(result.current.sessions.map(session => session.id)).toEqual(['session-1'])
+  })
+
+  it('updates a session in place without changing its position', async () => {
+    getSessionsMock.mockResolvedValue([makeSession('session-a'), makeSession('session-b'), makeSession('session-c')])
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-a', 'session-b', 'session-c'])
+
+    await act(async () => {
+      latestEventCallbacks.onSessionUpdated?.({ ...makeSession('session-b'), title: 'Renamed' })
+    })
+
+    // 内容更新了，但位置不动
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-a', 'session-b', 'session-c'])
+    expect(result.current.sessions[1].title).toBe('Renamed')
+  })
+
+  it('keeps the list stable when two sessions update alternately', async () => {
+    getSessionsMock.mockResolvedValue([makeSession('session-a'), makeSession('session-b')])
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    // 并行会话的 session.updated 是交替到达的；早先的实现每次置顶，
+    // 导致这两项在列表里来回跳
+    await act(async () => {
+      for (let i = 0; i < 4; i += 1) {
+        latestEventCallbacks.onSessionUpdated?.(makeSession('session-a'))
+        latestEventCallbacks.onSessionUpdated?.(makeSession('session-b'))
+      }
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-a', 'session-b'])
+  })
+
+  it('inserts a session that is not in the list yet at its sorted position', async () => {
+    getSessionsMock.mockResolvedValue([{ ...makeSession('session-a'), time: { created: 1, updated: 100 } }])
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    // 默认按更新时间倒序：更新的会话排在最前
+    await act(async () => {
+      latestEventCallbacks.onSessionUpdated?.({
+        ...makeSession('session-new'),
+        time: { created: 2, updated: 200 },
+      })
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-new', 'session-a'])
+  })
+
+  it('sorts fetched sessions by updated descending by default', async () => {
+    getSessionsMock.mockResolvedValue([
+      { ...makeSession('session-old'), time: { created: 1, updated: 10 } },
+      { ...makeSession('session-new'), time: { created: 2, updated: 30 } },
+      { ...makeSession('session-mid'), time: { created: 3, updated: 20 } },
+    ])
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual([
+      'session-new',
+      'session-mid',
+      'session-old',
+    ])
+  })
+
+  it('re-sorts the existing list when the sort preference changes', async () => {
+    getSessionsMock.mockResolvedValue([
+      { ...makeSession('session-old'), time: { created: 1, updated: 10 } },
+      { ...makeSession('session-new'), time: { created: 2, updated: 30 } },
+    ])
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-new', 'session-old'])
+
+    // 切到正序：立即就地重排，不必等下次拉取
+    await act(async () => {
+      layoutStore.setSidebarSessionSort('updated', false)
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-old', 'session-new'])
+  })
+
+  it('sorts by created time when the preference says so', async () => {
+    getSessionsMock.mockResolvedValue([
+      { ...makeSession('session-a'), time: { created: 30, updated: 1 } },
+      { ...makeSession('session-b'), time: { created: 10, updated: 2 } },
+    ])
+
+    await act(async () => {
+      layoutStore.setSidebarSessionSort('created', false)
+    })
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    // 按创建时间正序
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-b', 'session-a'])
   })
 
   it('queues a reconnect refresh while a newer request is still in flight', async () => {

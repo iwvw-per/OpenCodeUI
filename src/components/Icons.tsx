@@ -94,6 +94,9 @@ import {
   ZoomOut,
   Hash,
   ArrowUpNarrowWide,
+  ArrowDownNarrowWide,
+  CalendarPlus,
+  ListChecks,
   MoreHorizontal,
   FolderPlus,
   Archive,
@@ -229,6 +232,9 @@ export const GripVerticalIcon = wrap(GripVertical)
 export const AppWindowIcon = wrap(AppWindow)
 export const HashIcon = wrap(Hash)
 export const SortIcon = wrap(ArrowUpNarrowWide)
+export const SortDescIcon = wrap(ArrowDownNarrowWide)
+export const CalendarPlusIcon = wrap(CalendarPlus)
+export const ManageSessionsIcon = wrap(ListChecks)
 export const MenuDotsIcon = wrap(MoreHorizontal)
 export const FolderPlusIcon = wrap(FolderPlus)
 export const ArchiveIcon = wrap(Archive)

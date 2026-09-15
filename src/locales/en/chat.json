@@ -181,7 +181,14 @@
     "hosts": "Hosts",
     "hostsHint": "Switch between hosts",
     "groupByHost": "Group by server",
-    "projectByFolder": "Group by project"
+    "projectByFolder": "Group by project",
+    "sortSessions": "Sort",
+    "sortBy": "Sort by",
+    "sortDirection": "Direction",
+    "sortByUpdated": "Last updated",
+    "sortByCreated": "Created",
+    "sortDesc": "Newest first",
+    "sortAsc": "Oldest first"
   },
   "activeSession": {
     "awaitingPermission": "Awaiting Permission",

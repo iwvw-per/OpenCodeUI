@@ -77,12 +77,20 @@ vi.mock('../store/serverStore', () => ({
   },
 }))
 
-vi.mock('../utils', () => ({
-  sessionErrorHandler: (...args: unknown[]) => sessionErrorHandlerMock(...args),
-  normalizeToForwardSlash: (value?: string) => value,
-  isSameDirectory: (left?: string, right?: string) => left === right,
-  autoDetectPathStyle: (...args: unknown[]) => autoDetectPathStyleMock(...args),
-}))
+// 只替换需要打桩的部分；排序用真实实现，避免测试里重复一份排序逻辑
+vi.mock('../utils', async () => {
+  const { sortSessions, insertSessionSorted } = await vi.importActual<typeof import('../utils/sessionSort')>(
+    '../utils/sessionSort',
+  )
+  return {
+    sessionErrorHandler: (...args: unknown[]) => sessionErrorHandlerMock(...args),
+    normalizeToForwardSlash: (value?: string) => value,
+    isSameDirectory: (left?: string, right?: string) => left === right,
+    autoDetectPathStyle: (...args: unknown[]) => autoDetectPathStyleMock(...args),
+    sortSessions,
+    insertSessionSorted,
+  }
+})
 
 vi.mock('../utils/sessionLifecycle', () => ({
   clearSessionRuntimeState: (...args: unknown[]) => clearSessionRuntimeStateMock(...args),
@@ -246,6 +254,44 @@ describe('SessionProvider', () => {
 
     expect(clearSessionRuntimeStateMock).toHaveBeenCalledWith('session-1')
     expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-2'])
+  })
+
+  it('updates a session in place without changing its position', async () => {
+    getSessionsMock.mockResolvedValue([
+      { id: 'session-1', directory: '/workspace/demo', title: 'One' },
+      { id: 'session-2', directory: '/workspace/demo', title: 'Two' },
+      { id: 'session-3', directory: '/workspace/demo', title: 'Three' },
+    ])
+
+    render(
+      <SessionProvider>
+        <SessionContextProbe />
+      </SessionProvider>,
+    )
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-1', 'session-2', 'session-3'])
+
+    act(() => {
+      latestEventCallbacks.onSessionUpdated?.({
+        id: 'session-2',
+        slug: 'session-2',
+        projectID: 'project-1',
+        directory: '/workspace/demo',
+        title: 'Two updated',
+        version: '1',
+        time: { created: 1, updated: 2 },
+      })
+    })
+
+    // 内容更新了，但位置不动（并行会话交替更新时列表不能来回跳）
+    expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-1', 'session-2', 'session-3'])
+    expect(latestContext?.sessions[1].title).toBe('Two updated')
   })
 
   it('refetches on server endpoint changes even while the old request is in flight', async () => {
