@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import type { CollapsedDialogInfo } from '../InputBox'
 
 // ============================================
@@ -191,21 +191,34 @@ export function useMobileCollapse({
     }
   }, [isFocused, enabled, isInsideInputArea, textareaRef])
 
-  // ---- 持续追踪展开态内容区高度 ----
-  useEffect(() => {
+  // ---- 追踪展开态内容区高度 ----
+  // 收起态要把外层盒子高度钉死为展开态高度，因此必须在收起前拿到准确的
+  // 展开高度。ResizeObserver 回调在布局后才触发，初次收起时可能尚未采样过
+  // （值为 0）→ 退化成无固定高度 → 高度跳变。
+  // 这里在 observe 时同步做一次布局读取，保证 isCollapsed 翻转为 true 时
+  // expandedHeight 已经是真实高度。
+  const expandedHeightRef = useRef(0)
+  useLayoutEffect(() => {
     const el = contentWrapRef.current
     if (!el) return
+
+    const commit = (measured: number) => {
+      if (measured <= 0 || measured === expandedHeightRef.current) return
+      expandedHeightRef.current = measured
+      setExpandedHeight(measured)
+    }
+
+    if (!isCollapsed) commit(el.offsetHeight)
+
     const ro = new ResizeObserver(entries => {
       for (const entry of entries) {
         // 只在展开态时采样，收起态的高度不更新
-        if (!isCollapsed) {
-          setExpandedHeight(entry.contentRect.height)
-        }
+        if (!isCollapsed) commit(entry.contentRect.height)
       }
     })
     ro.observe(el)
     return () => ro.disconnect()
-  }, [isCollapsed, contentWrapRef])
+  }, [contentWrapRef, isCollapsed])
 
   // ---- 注册输入框容器用于动画 ----
   useEffect(() => {

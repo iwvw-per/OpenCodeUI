@@ -344,7 +344,8 @@ function InputBoxComponent({
     const nextComposerMaxHeight = getComposerMaxHeight(paneHeight, isCompact)
     const attachmentHeight = attachments.length > 0 ? (attachmentSectionRef.current?.offsetHeight ?? 0) : 0
     const toolbarHeight = toolbarRef.current?.offsetHeight || INPUT_TOOLBAR_FALLBACK_HEIGHT
-    const footerHeight = isCollapsed ? 0 : footerRef.current?.offsetHeight || INPUT_FOOTER_FALLBACK_HEIGHT
+    // Footer 常驻占位，收起态也占 h-8（见下方 Footer 注释），所以预算里始终扣除
+    const footerHeight = footerRef.current?.offsetHeight || INPUT_FOOTER_FALLBACK_HEIGHT
     const inputContainerChrome = attachmentHeight + toolbarHeight + TEXTAREA_VERTICAL_CHROME
     const nextInputContainerMaxHeight = Math.max(
       TEXTAREA_MIN_HEIGHT + TEXTAREA_VERTICAL_CHROME + toolbarHeight,
@@ -360,7 +361,7 @@ function InputBoxComponent({
       Math.abs(prev - nextInputContainerMaxHeight) < 1 ? prev : nextInputContainerMaxHeight,
     )
     setTextareaMaxHeight(prev => (Math.abs(prev - nextTextareaMaxHeight) < 1 ? prev : nextTextareaMaxHeight))
-  }, [attachments.length, isCollapsed, isCompact])
+  }, [attachments.length, isCompact])
 
   useLayoutEffect(() => {
     updateComposerHeightBudget()
@@ -1229,18 +1230,14 @@ function InputBoxComponent({
   // → bottomPadding 变化 → virtualizer paddingEnd 变化（virtual-core 不补偿 paddingEnd）
   // → dist 平移 → isCollapsed 翻转回 → 振荡闪烁。
   //
-  // 展开态总缓冲 = Footer(h-8=2rem) + padding = 2rem + max(0, env-2rem) = max(2rem, env)
-  // 收起态总缓冲 = 0(无 Footer) + padding → padding 必须 = max(2rem, env)
-  //
-  // - env ≥ 2rem（iPhone home indicator）：收起 = env，胶囊贴 safe-area 顶，无多截
-  // - env < 2rem（PC / 部分 Android）：收起 = 2rem，胶囊与展开态 Footer 位置对齐
-  //
-  // 但 2rem(32px) 对胶囊来说视觉上离底部太远，下方用 translateY 把收起态内容
-  // 整体下移补偿——transform 不影响布局高度，inputBoxHeight 不变，不破坏上述约束。
-  const bottomDockPadding = isCollapsed
-    ? 'max(2rem, var(--safe-area-inset-bottom, 0px))'
-    : 'max(0px, calc(var(--safe-area-inset-bottom, 0px) - 2rem))'
-  // 收起态视觉下移：把 2rem 撑出的多余缓冲吃掉，只留 0.75rem(12px) 呼吸空间
+  // Footer 常驻占位（始终 h-8 = 2rem），所以两种状态的 padding 完全相同：
+  // 总缓冲 = 2rem(Footer) + max(0, env-2rem) = max(2rem, env)，逐帧恒定。
+  // 早先的写法是收起态把 Footer 高度让给 padding（footer+padding 各自过渡），
+  // 两条过渡不严格互补，动画中间总缓冲会塌陷 ~6px，底部出现一次轻微挤压；
+  // 让 Footer 永久占位后，布局在整段动画里完全不动，只有 opacity/transform 在变。
+  const bottomDockPadding = 'max(0px, calc(var(--safe-area-inset-bottom, 0px) - 2rem))'
+  // 收起态视觉下移：Footer 让出的 2rem 里只留 0.75rem(12px) 呼吸空间，
+  // 剩下 2rem-0.75rem 用 translateY 吃掉——transform 不影响布局高度，不破坏上述约束。
   const collapsedVisualOffset = isCollapsed
     ? 'translateY(calc(2rem - 0.75rem))'
     : 'none'
@@ -1256,26 +1253,47 @@ function InputBoxComponent({
         <div
           ref={contentWrapRef}
           onPointerDown={handleContainerPointerDown}
-          className={`relative flex flex-col gap-2 ${isCollapsed ? 'justify-end' : ''}`}
+          className="relative flex flex-col gap-2 transition-transform duration-200 ease-out"
           style={
             isCollapsed && expandedHeight > 0
-              ? { minHeight: expandedHeight, maxHeight: composerMaxHeight, transform: collapsedVisualOffset }
+              ? // 收起态：外层盒子高度钉死为展开态高度（height 而非 minHeight，
+                // 内部行插入/移除都不会改变盒子高度），transform 只做视觉下移
+                { height: expandedHeight, transform: collapsedVisualOffset }
               : { maxHeight: composerMaxHeight }
           }
         >
-          {/* FloatingActions — 
-              展开态：absolute 定位在内容区上方，不占文档流，避免显隐变化影响高度导致滚动抖动
-              收起态：正常文档流，紧贴胶囊上方
-              始终同一 DOM 节点，切换时 FloatingActions 不 remount，避免入场动画闪烁 */}
+          {/* Collapsed Capsule - 移动端收起状态
+              始终挂载，仅切换 opacity/visibility，与输入区共用 200ms 时间线，
+              避免条件挂载造成 0ms 行插入导致高度骤跳；
+              固定贴在盒子底部，不参与文档流。
+              展开态必须 invisible：内层按钮是 pointer-events-auto，
+              仅靠父级 pointer-events-none 挡不住，会让隐形胶囊盖住工具栏下半部，
+              移动端点模型选择器会命中胶囊而误展开输入框。 */}
+          <div
+            className={`absolute inset-x-0 bottom-0 z-30 flex items-center justify-center gap-4 transition-[opacity,visibility,transform] duration-200 ease-out ${
+              isCollapsed ? 'visible scale-100 opacity-100' : 'pointer-events-none invisible scale-95 opacity-0'
+            }`}
+            aria-hidden={!isCollapsed || undefined}
+          >
+            <CollapsedCapsule
+              onExpand={handleExpandInput}
+              showScrollToBottom={showScrollToBottom}
+              onScrollToBottom={onScrollToBottom}
+            />
+          </div>
+
+          {/* FloatingActions —
+              常态 absolute 脱离文档流：展开态浮在内容区上方，
+              收起态浮在胶囊上方。
+              只用 bottom 表达两个位置（收起态等价于原来的 bottom:0 + translateY(-2.5rem)），
+              不引入 transform 层，backdrop-blur 才不会被破坏；
+              bottom 的过渡在 index.css 的 [data-floating-actions] 里统一声明。 */}
           <div
             data-floating-actions
-            className={
-              isCollapsed
-                ? 'flex justify-center pb-2'
-                : 'absolute bottom-full left-0 right-0 flex justify-center pb-2 pointer-events-none'
-            }
+            className="absolute inset-x-0 z-40 flex justify-center pointer-events-none"
+            style={{ bottom: isCollapsed ? '2.5rem' : '100%' }}
           >
-            <div className={isCollapsed ? undefined : 'pointer-events-auto'}>
+            <div className="pointer-events-auto">
               <FloatingActions
                 showScrollToBottom={showScrollToBottom}
                 isCollapsed={isCollapsed}
@@ -1290,19 +1308,10 @@ function InputBoxComponent({
             </div>
           </div>
 
-          {/* Collapsed Capsule - 移动端收起状态 */}
-          {isCollapsed && (
-            <CollapsedCapsule
-              onExpand={handleExpandInput}
-              showScrollToBottom={showScrollToBottom}
-              onScrollToBottom={onScrollToBottom}
-            />
-          )}
-
           {/* Wrapper — 菜单在 glass 容器外，避免嵌套 backdrop-filter 导致模糊失效。
               收起态只做视觉隐藏，不能卸载输入区，否则移动端虚拟键盘会随焦点元素销毁而关闭。 */}
           <div
-            className={`z-30 transition-[opacity,transform] duration-200 ease-out ${
+            className={`z-20 transition-[opacity,transform] duration-200 ease-out ${
               isCollapsed
                 ? 'pointer-events-none absolute inset-x-0 bottom-0 opacity-0 scale-95'
                 : 'relative opacity-100 scale-100'
@@ -1451,11 +1460,16 @@ function InputBoxComponent({
           </div>
         </div>
 
-        {/* Footer: 常驻 DOM，收起用 hidden。避免 isCollapsed 抖一下时卸载整行（自动放行/免责声明闪烁） */}
+        {/* Footer: 常驻 DOM 且常驻占位（h-8 不参与收起动画），收起只淡出。
+            这样收起/展开全程布局完全不变（wrap 底边、总缓冲恒定），
+            不会因为 Footer 消失/padding 补偿的瞬时切换把底部挤一下。
+            不能加 overflow-hidden：InputFooter 内的 todo 面板是 absolute 向上展开的。 */}
         <div
           ref={footerRef}
           onPointerDown={handleContainerPointerDown}
-          className={`h-8 flex items-center justify-center ${isCollapsed ? 'hidden' : ''}`}
+          className={`h-8 flex items-center justify-center transition-opacity duration-200 ease-out ${
+            isCollapsed ? 'pointer-events-none opacity-0' : 'opacity-100'
+          }`}
           aria-hidden={isCollapsed || undefined}
         >
           <InputFooter

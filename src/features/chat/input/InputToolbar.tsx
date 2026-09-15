@@ -310,8 +310,8 @@ export function InputToolbar({
       {/* Left side: Model + Agent + Variant selectors */}
       <div className={`flex items-center min-w-0 ${isCompact ? 'gap-1' : 'gap-2'}`}>
         {/* Agent Selector（模式选择） */}
-        <AnimatedPresence show={selectableAgents.length > 1} className={isCompact ? 'shrink-0' : ''}>
-          <div className="relative">
+        <AnimatedPresence show={selectableAgents.length > 1} className={isCompact ? 'shrink min-w-0' : ''}>
+          <div className={isCompact ? 'relative min-w-0' : 'relative'}>
             <button
               ref={agentTriggerRef}
               type="button"
@@ -330,7 +330,7 @@ export function InputToolbar({
               aria-haspopup="menu"
               aria-expanded={agentMenuOpen}
               aria-controls={agentMenuOpen ? agentMenuId : undefined}
-              className="flex items-center gap-1.5 px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden w-full"
+              className={`flex items-center gap-1.5 px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden ${isCompact ? 'max-w-[6rem]' : 'w-full'}`}
               title={
                 currentAgent
                   ? `${currentAgent.name}${currentAgent.description ? ': ' + currentAgent.description : ''}`
@@ -389,23 +389,27 @@ export function InputToolbar({
           </div>
         </AnimatedPresence>
 
-        {/* Model Selector — 放在模式选择后面（桌面 + 移动端） */}
+        {/* Model Selector — 放在模式选择后面（桌面 + 移动端）
+            移动端必须保证入口可见可点：给它 shrink-0 与最小宽度，
+            让 Agent / Variant 先让位，而不是把模型入口挤成 0 宽 */}
         {onModelChange && (
-          <ModelSelector
-            ref={modelSelectorRef}
-            models={models}
-            selectedModelKey={selectedModelKey}
-            onSelect={onModelChange}
-            isLoading={modelsLoading}
-            position="top"
-            trigger="toolbar"
-            constrainToRef={inputContainerRef}
-          />
+          <div className={isCompact ? 'shrink-0 min-w-[6.5rem] max-w-[11rem]' : 'min-w-0 flex-1'}>
+            <ModelSelector
+              ref={modelSelectorRef}
+              models={models}
+              selectedModelKey={selectedModelKey}
+              onSelect={onModelChange}
+              isLoading={modelsLoading}
+              position="top"
+              trigger="toolbar"
+              constrainToRef={inputContainerRef}
+            />
+          </div>
         )}
 
         {/* Variant Selector */}
-        <AnimatedPresence show={variants.length > 0} className={isCompact ? 'shrink-0' : ''}>
-          <div className="relative">
+        <AnimatedPresence show={variants.length > 0} className={isCompact ? 'shrink min-w-0' : ''}>
+          <div className={isCompact ? 'relative min-w-0' : 'relative'}>
             <button
               ref={variantTriggerRef}
               type="button"
@@ -424,7 +428,7 @@ export function InputToolbar({
               aria-haspopup="menu"
               aria-expanded={variantMenuOpen}
               aria-controls={variantMenuOpen ? variantMenuId : undefined}
-              className="flex items-center gap-1.5 px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden w-full"
+              className={`flex items-center gap-1.5 px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden ${isCompact ? 'max-w-[5.5rem]' : 'w-full'}`}
               title={
                 selectedVariant
                   ? selectedVariant.charAt(0).toUpperCase() + selectedVariant.slice(1)
@@ -492,7 +496,7 @@ export function InputToolbar({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 shrink-0">
         <AnimatedPresence show={supportsAnyFile}>
           <>
             {/* 浏览器模式下的隐藏文件输入 */}
