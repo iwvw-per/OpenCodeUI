@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.6.74] - 2026-09-15
+
+- fix(input): TPS 只统计输出 token，不再混入 reasoning (94c5c2e)
+
 ## [v0.6.73] - 2026-09-15
 
 - fix(sidebar): 修复「展开更多会话」点了没反应（hasMore 差一） (cfe3a83)
