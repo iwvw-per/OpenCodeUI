@@ -35,15 +35,13 @@ describe('InputFooter token rate', () => {
     useTokenRateMock.mockReturnValue({ tokensPerSec: 0, hasData: false })
   })
 
-  it('shows the token rate together with the disclaimer when there are no todos', () => {
+  it('shows the token rate when there are no todos', () => {
     useTodosMock.mockReturnValue([])
     useTokenRateMock.mockReturnValue({ tokensPerSec: 123.4, hasData: true })
 
     render(<InputFooter paneId="pane-1" sessionId="session-1" />)
 
-    // 免责声明文案随语言变化，这里断言两个元素同时存在即可
     expect(screen.getByText('123 tok/s')).toBeInTheDocument()
-    expect(screen.getByText(/verify AI responses/i)).toBeInTheDocument()
   })
 
   it('shows the token rate alongside the todo progress when todos exist', () => {
@@ -56,8 +54,16 @@ describe('InputFooter token rate', () => {
 
     expect(screen.getByText('43 tok/s')).toBeInTheDocument()
     expect(screen.getByText('1/3')).toBeInTheDocument()
-    // 有 todo 时不显示免责声明
-    expect(screen.queryByText(/verify AI responses/i)).not.toBeInTheDocument()
+  })
+
+  it('does not render the todo progress block when there are no todos', () => {
+    useTodosMock.mockReturnValue([])
+    useTodoStatsMock.mockReturnValue({ completed: 0, total: 0 })
+    useTokenRateMock.mockReturnValue({ tokensPerSec: 5, hasData: true })
+
+    render(<InputFooter paneId="pane-1" sessionId="session-1" />)
+
+    expect(screen.queryByText('0/0')).not.toBeInTheDocument()
   })
 
   it('renders zero when there is no completed turn yet', () => {

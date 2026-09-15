@@ -102,7 +102,6 @@
     "autoApproveOff": "自动放行：关闭",
     "autoApproveSession": "自动放行：本次会话 · 点击切换为全部会话",
     "autoApproveGlobal": "自动放行：全部会话 · 点击关闭",
-    "pleaseVerify": "请验证 AI 回复的准确性。",
     "allTasksDone": "所有任务已完成",
     "remaining": "剩余 {{count}} 个",
     "allDone": "全部完成",

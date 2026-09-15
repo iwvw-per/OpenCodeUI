@@ -125,7 +125,6 @@ export interface InputBoxProps {
   ) => Promise<boolean> | boolean
   onAbort?: () => void
   onCommand?: (command: string) => Promise<boolean> | boolean // 斜杠命令回调，接收完整命令字符串如 "/help"
-  onNewChat?: () => void // 新建对话回调
   disabled?: boolean
   isStreaming?: boolean
   agents?: ApiAgent[]
@@ -171,7 +170,6 @@ function InputBoxComponent({
   onSend,
   onAbort,
   onCommand,
-  onNewChat,
   disabled,
   isStreaming,
   agents = [],
@@ -1475,7 +1473,6 @@ function InputBoxComponent({
           <InputFooter
             paneId={paneId}
             sessionId={sessionId}
-            onNewChat={onNewChat}
             inputContainerRef={inputContainerRef}
           />
         </div>
