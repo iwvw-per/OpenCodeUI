@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.6.75] - 2026-09-15
+
+- feat(input): 移除输入框下方的「请验证 AI 回复的准确性」提示 (70d0101)
+- feat(input): TPS 常显，不再只在有 todo 时出现 (d467203)
+
 ## [v0.6.74] - 2026-09-15
 
 - fix(input): TPS 只统计输出 token，不再混入 reasoning (94c5c2e)
