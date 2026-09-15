@@ -11,7 +11,8 @@ import { todoStore } from '../store/todoStore'
 import { serverStore } from '../store/serverStore'
 import { pinnedSessionsStore } from '../store/pinnedSessionsStore'
 import { useDirectory } from './useDirectory'
-import { sessionErrorHandler, normalizeToForwardSlash, isSameDirectory, autoDetectPathStyle } from '../utils'
+import { sessionErrorHandler, normalizeToForwardSlash, isSameDirectory, autoDetectPathStyle, sortSessions, insertSessionSorted } from '../utils'
+import { layoutStore } from '../store/layoutStore'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { SessionContext, type SessionContextValue } from './SessionContext.shared'
 
@@ -45,6 +46,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     searchRef.current = search
   }, [search])
+
+  // 排序偏好：从 layoutStore 读（拉取时应用；偏好变化时就地重排）
+  const getSortPreference = useCallback(
+    () => ({
+      field: layoutStore.getState().sidebarSessionSortField,
+      desc: layoutStore.getState().sidebarSessionSortDesc,
+    }),
+    [],
+  )
+  useEffect(() => {
+    return layoutStore.subscribe(() => {
+      setSessions(prev => (prev.length > 0 ? sortSessions(prev, getSortPreference()) : prev))
+    })
+  }, [getSortPreference])
 
   // 核心获取逻辑
   // 注意：directory 传给 getSessions 时使用正斜杠格式
@@ -88,7 +103,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             return [...prev, ...newSessions]
           })
         } else {
-          setSessions(data)
+          // 与侧栏列表保持同一排序：上/下一个会话快捷键按位置取值，
+          // 两边顺序不一致会让导航目标与用户看到的不符
+          setSessions(sortSessions(data, getSortPreference()))
         }
         setHasMore(data.length >= currentLimitRef.current)
       } catch (e) {
@@ -165,7 +182,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
         setSessions(prev => {
           if (prev.some(s => s.id === session.id)) return prev
-          return [session, ...prev]
+          return insertSessionSorted(prev, session, getSortPreference())
         })
       },
       onSessionUpdated: session => {
@@ -194,11 +211,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           }
 
           if (index === -1) {
-            return [session, ...prev]
+            return insertSessionSorted(prev, session, getSortPreference())
           }
 
-          const updated = prev.filter(s => s.id !== session.id)
-          return [session, ...updated]
+          // 就地替换：更新不改变位置。并行会话的 session.updated 会交替到达，
+          // 每次置顶会让列表来回跳；上/下一个会话快捷键（useChatSession）按位置取值，
+          // 重排还会让导航目标乱跳。
+          const next = prev.slice()
+          next[index] = session
+          return next
         })
       },
       onTodoUpdated: data => {

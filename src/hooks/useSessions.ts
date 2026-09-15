@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react'
 import {
   getSessions,
   createSession,
@@ -10,7 +10,8 @@ import {
 } from '../api'
 import { serverStore } from '../store/serverStore'
 import { pinnedSessionsStore } from '../store/pinnedSessionsStore'
-import { autoDetectPathStyle, isSameDirectory } from '../utils'
+import { layoutStore } from '../store/layoutStore'
+import { autoDetectPathStyle, isSameDirectory, insertSessionSorted, sortSessions } from '../utils'
 
 interface UseSessionsOptions {
   /** 每页数量 */
@@ -87,6 +88,24 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     [normalizedDirectory],
   )
 
+  // 排序偏好：订阅 store，改偏好时立即重排（不必等下次拉取）
+  const sortPreference = useSyncExternalStore(
+    cb => layoutStore.subscribe(cb),
+    () => layoutStore.getState().sidebarSessionSortField,
+    () => layoutStore.getState().sidebarSessionSortField,
+  )
+  const sortDesc = useSyncExternalStore(
+    cb => layoutStore.subscribe(cb),
+    () => layoutStore.getState().sidebarSessionSortDesc,
+    () => layoutStore.getState().sidebarSessionSortDesc,
+  )
+  const sortRef = useRef({ field: sortPreference, desc: sortDesc })
+  useEffect(() => {
+    sortRef.current = { field: sortPreference, desc: sortDesc }
+    // 偏好变化：就地重排已有列表
+    setSessions(prev => (prev.length > 0 ? sortSessions(prev, { field: sortPreference, desc: sortDesc }) : prev))
+  }, [sortPreference, sortDesc])
+
   // 获取会话列表
   // append 仅用于控制 loading 状态：true 时用 isLoadingMore，false 时用 isLoading
   // 数据始终全量替换（递增 limit 策略）
@@ -124,7 +143,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
           autoDetectPathStyle(data[0].directory, serverId)
         }
 
-        setSessions(data)
+        setSessions(sortSessions(data, sortRef.current))
         setHasMore(data.length >= currentLimitRef.current)
       } catch (e) {
         if (requestId !== requestIdRef.current) return
@@ -211,7 +230,8 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
 
         setSessions(prev => {
           if (prev.some(item => item.id === session.id)) return prev
-          return [session, ...prev]
+          // 列表始终按偏好有序，新会话插到对应位置（正序时在末尾），不是无脑置顶
+          return insertSessionSorted(prev, session, sortRef.current)
         })
       },
       onSessionUpdated: session => {
@@ -241,11 +261,15 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
           }
 
           if (index === -1) {
-            return [session, ...prev]
+            return insertSessionSorted(prev, session, sortRef.current)
           }
 
-          const updated = prev.filter(item => item.id !== session.id)
-          return [session, ...updated]
+          // 就地替换：更新不改变位置。并行会话的 session.updated 会交替到达
+          // （实测两个流式会话是 A A B B A B 这样交替），若每次置顶，
+          // 列表里这两项就会来回跳。
+          const next = prev.slice()
+          next[index] = session
+          return next
         })
       },
       onSessionDeleted: sessionId => {
@@ -312,7 +336,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
       } else {
         setSessions(prev => {
           if (prev.some(session => session.id === newSession.id)) return prev
-          return [newSession, ...prev]
+          return insertSessionSorted(prev, newSession, sortRef.current)
         })
       }
 

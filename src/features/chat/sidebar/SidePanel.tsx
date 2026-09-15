@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore
 import { useTranslation } from 'react-i18next'
 import { FolderRecentList, type FolderRecentProject } from './FolderRecentList'
 import { HostList } from './HostList'
+import { SessionSortMenu } from './SessionSortMenu'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
 import { getProjectGroupIdentity } from './projectGrouping'
@@ -15,7 +16,7 @@ import {
   TrashIcon,
   SearchIcon,
   CloseIcon,
-  ListFilterIcon,
+  ManageSessionsIcon,
   FolderMinusIcon,
   CheckIcon,
   SpinnerIcon,
@@ -1222,18 +1223,21 @@ export function SidePanel({
                     <span className="truncate">{t('sidebar.project', { defaultValue: 'Project' })}</span>
                   </button>
                 </div>
-                {/* 管理按钮：仅项目视图（批量管理会话/项目） */}
+                {/* 排序 + 管理：仅项目视图。两个按钮独立（排序改偏好，管理进批量选择） */}
                 {sidebarTab === 'projects' && (
-                  <button
-                    type="button"
-                    onMouseDown={e => e.preventDefault()}
-                    onClick={enterEditMode}
-                    aria-label={t('sidebar.manageSessions')}
-                    className="ml-auto shrink-0 p-1 rounded-md text-text-500 hover:text-text-300 hover:bg-bg-200/50 transition-colors duration-150"
-                    title={t('sidebar.manageSessions')}
-                  >
-                    <ListFilterIcon size={14} />
-                  </button>
+                  <div className="ml-auto shrink-0 flex items-center gap-0.5">
+                    <SessionSortMenu />
+                    <button
+                      type="button"
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={enterEditMode}
+                      aria-label={t('sidebar.manageSessions')}
+                      className="shrink-0 p-1 rounded-md text-text-500 hover:text-text-300 hover:bg-bg-200/50 transition-colors duration-150"
+                      title={t('sidebar.manageSessions')}
+                    >
+                      <ManageSessionsIcon size={14} />
+                    </button>
+                  </div>
                 )}
               </>
             )}

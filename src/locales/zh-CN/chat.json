@@ -181,7 +181,14 @@
     "hosts": "主机",
     "hostsHint": "切换后端主机",
     "groupByHost": "按主机分组",
-    "projectByFolder": "按项目分组"
+    "projectByFolder": "按项目分组",
+    "sortSessions": "排序",
+    "sortBy": "排序方式",
+    "sortDirection": "方向",
+    "sortByUpdated": "更新时间",
+    "sortByCreated": "创建时间",
+    "sortDesc": "倒序（新 → 旧）",
+    "sortAsc": "正序（旧 → 新）"
   },
   "activeSession": {
     "awaitingPermission": "等待权限",
