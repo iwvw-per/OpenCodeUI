@@ -102,7 +102,6 @@
     "autoApproveOff": "Auto-approve: off",
     "autoApproveSession": "Auto-approve: this session · click for all sessions",
     "autoApproveGlobal": "Auto-approve: all sessions · click to disable",
-    "pleaseVerify": "Please verify AI responses.",
     "allTasksDone": "All tasks done",
     "remaining": "{{count}} remaining",
     "allDone": "All Done",

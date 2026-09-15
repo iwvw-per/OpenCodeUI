@@ -991,7 +991,6 @@ export const ChatPane = memo(function ChatPane({
           onSend={handleSend}
           onAbort={handleAbort}
           onCommand={handleCommand}
-          onNewChat={handleNewSession}
           disabled={inputDisabled}
           isStreaming={isStreaming}
           agents={agents}

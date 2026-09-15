@@ -35,14 +35,12 @@ function formatTokenRate(rate: number): string {
 interface InputFooterProps {
   paneId: string
   sessionId?: string | null
-  onNewChat?: () => void
   inputContainerRef?: RefObject<HTMLDivElement | null>
 }
 
 export const InputFooter = memo(function InputFooter({
   paneId,
   sessionId,
-  onNewChat,
   inputContainerRef,
 }: InputFooterProps) {
   const { t } = useTranslation(['chat', 'common'])
@@ -232,27 +230,24 @@ export const InputFooter = memo(function InputFooter({
         />
       </button>
 
-      <span className="text-text-500/30 shrink-0">·</span>
-
-      {/* disclaimer / todos：两者互斥，TPS 在两种情况下都显示 */}
-      {!hasTodos ? (
-        <button onClick={onNewChat} className="min-w-0 truncate hover:text-text-300 transition-colors">
-          {t('inputFooter.pleaseVerify')}
-        </button>
-      ) : (
-        <button
-          onClick={togglePanel}
-          className={`flex items-center gap-1.5 min-w-0 hover:text-text-300 transition-colors ${
-            panelOpen ? 'text-text-300' : ''
-          }`}
-        >
-          <MiniProgress size={11} progress={progress} done={isAllDone} />
-          <span className="tabular-nums shrink-0">
-            {stats.completed}/{stats.total}
-          </span>
-          <span className="text-text-500/50 shrink-0">·</span>
-          <span className="truncate max-w-[120px] sm:max-w-[200px]">{taskLabel}</span>
-        </button>
+      {/* 待办进度：没有待办时整段（含前面的分隔点）都不渲染，只留 TPS */}
+      {hasTodos && (
+        <>
+          <span className="text-text-500/30 shrink-0">·</span>
+          <button
+            onClick={togglePanel}
+            className={`flex items-center gap-1.5 min-w-0 hover:text-text-300 transition-colors ${
+              panelOpen ? 'text-text-300' : ''
+            }`}
+          >
+            <MiniProgress size={11} progress={progress} done={isAllDone} />
+            <span className="tabular-nums shrink-0">
+              {stats.completed}/{stats.total}
+            </span>
+            <span className="text-text-500/50 shrink-0">·</span>
+            <span className="truncate max-w-[120px] sm:max-w-[200px]">{taskLabel}</span>
+          </button>
+        </>
       )}
 
       <span className="text-text-500/30 shrink-0">·</span>
