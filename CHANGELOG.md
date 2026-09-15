@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.6.73] - 2026-09-15
+
+- fix(sidebar): 修复「展开更多会话」点了没反应（hasMore 差一） (cfe3a83)
+
 ## [v0.6.72] - 2026-09-15
 
 - chore: ignore .zcode/ agent scratch dir (6c398fa)
