@@ -9,6 +9,8 @@ import { getThemePreset } from '../../../themes'
 import type { CustomCSSSnippet } from '../../../store/themeStore'
 import { FONT_SCALE_MIN, FONT_SCALE_MAX } from '../../../store/themeStore'
 import { saveData } from '../../../utils/downloadUtils'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 
 // ============================================
 // Theme Preset Card
@@ -413,7 +415,7 @@ function CustomCSSEditor({
           <Button
             variant="ghost"
             size="sm"
-            className="text-accent-main-100 hover:bg-accent-main-100/10 hover:text-accent-main-200"
+            className={cn('text-accent-main-100 hover:text-accent-main-200', interactive.accent)}
             onClick={() => fileInputRef.current?.click()}
           >
             {t('appearance.importCss')}
@@ -422,7 +424,7 @@ function CustomCSSEditor({
             <Button
               variant="ghost"
               size="sm"
-              className="text-accent-main-100 hover:bg-accent-main-100/10 hover:text-accent-main-200"
+              className={cn('text-accent-main-100 hover:text-accent-main-200', interactive.accent)}
               onClick={() => {
                 cancelPendingChange()
                 setDraft({ source: value, value: template })

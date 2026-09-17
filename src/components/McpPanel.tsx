@@ -31,6 +31,8 @@ import {
 } from '../api/mcp'
 import type { MCPResource, MCPStatus, McpServerConfig } from '../types/api/mcp'
 import { Button, IconButton, Input, Tabs, TabsList, TabsTrigger } from './ui'
+import { cn } from '../utils/cn'
+import { interactive } from '../utils/interaction'
 import { useDirectory } from '../hooks'
 import { logger } from '../utils/logger'
 import { apiErrorHandler } from '../utils'
@@ -568,7 +570,7 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
     <div className="group">
       {/* Main row */}
       <div
-        className="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-bg-200/50 transition-colors"
+        className={cn('flex items-center gap-2 rounded-md px-2 py-2', interactive.subtle)}
         onClick={() => canExpand && setExpanded(!expanded)}
       >
         {/* Expand icon only if there are details to show */}

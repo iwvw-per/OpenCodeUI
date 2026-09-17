@@ -20,6 +20,8 @@ import {
 import { soundStore, useSoundSettings } from '../../../store/soundStore'
 import { Toggle, SettingRow, SettingField, SettingsSection, SettingsSubgroup } from './SettingsUI'
 import { BUILTIN_SOUNDS, SOUND_OPTIONS, isSoundSupported, playSound } from '../../../utils/soundPlayer'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 import type { NotificationType } from '../../../store/notificationStore'
 
 // ============================================
@@ -349,7 +351,10 @@ function EventSoundCard({
             type="button"
             onClick={handleExportCustom}
             disabled={audioBusy !== null}
-            className="text-[length:var(--fs-xs)] text-accent-main-100 hover:text-accent-main-200 px-1.5 py-0.5 rounded-md hover:bg-accent-main-100/10 transition-colors"
+            className={cn(
+              'text-[length:var(--fs-xs)] text-accent-main-100 hover:text-accent-main-200 px-1.5 py-0.5 rounded-md',
+              interactive.accent,
+            )}
           >
             {t('notifications.exportAudio')}
           </button>
@@ -371,7 +376,10 @@ function EventSoundCard({
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={audioBusy !== null}
-          className="text-[length:var(--fs-xs)] text-accent-main-100 hover:text-accent-main-200 px-2 py-1 rounded-md hover:bg-accent-main-100/10 transition-colors disabled:opacity-50"
+          className={cn(
+            'text-[length:var(--fs-xs)] text-accent-main-100 hover:text-accent-main-200 px-2 py-1 rounded-md disabled:opacity-50',
+            interactive.accent,
+          )}
         >
           {hasCustom ? t('notifications.replaceAudio') : t('notifications.uploadAudio')}
         </button>

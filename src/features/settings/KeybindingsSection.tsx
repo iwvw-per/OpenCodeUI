@@ -10,6 +10,8 @@ import { keyEventToString, formatKeybinding, parseKeybinding } from '../../store
 import { UndoIcon, SearchIcon } from '../../components/Icons'
 import type { KeybindingConfig, KeybindingAction } from '../../store/keybindingStore'
 import { SettingsSection } from './components/SettingsUI'
+import { cn } from '../../utils/cn'
+import { interactive } from '../../utils/interaction'
 
 const ACTION_TRANSLATION_KEYS: Record<KeybindingAction, { label: string; description: string }> = {
   openSettings: { label: 'openSettings', description: 'openSettingsDesc' },
@@ -141,10 +143,11 @@ function KeybindingRow({ config, onEdit, onReset, isKeyUsed, t }: KeybindingRowP
   return (
     <div
       data-setting-label={config.label}
-      className={`
-      flex min-w-0 items-center h-9 px-3 rounded-md transition-colors group
-      ${isEditing ? 'bg-accent-main-100/5 ring-1 ring-accent-main-100/20' : 'hover:bg-bg-100/60'}
-    `}
+      className={cn(
+        'flex min-w-0 items-center h-9 px-3 rounded-md transition-colors group',
+        // 编辑态（捕获按键）是选中态，非编辑态悬停回落到通用列表行词汇
+        isEditing ? 'bg-accent-main-100/5 ring-1 ring-accent-main-100/20' : interactive.row,
+      )}
     >
       {/* Label */}
       <span className="min-w-0 flex-1 truncate pr-2 text-[length:var(--fs-md)] text-text-200">{config.label}</span>
@@ -154,8 +157,12 @@ function KeybindingRow({ config, onEdit, onReset, isKeyUsed, t }: KeybindingRowP
         <button
           type="button"
           onClick={() => onReset(config.action)}
-          className="p-1 mr-1 rounded text-text-400 hover:text-text-100 hover:bg-bg-200
-                     opacity-0 group-hover:opacity-100 transition-opacity"
+          className={cn(
+            'p-1 mr-1 rounded text-text-400 hover:text-text-100',
+            interactive.subtle,
+            interactive.focusRingCompact,
+            'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity',
+          )}
           title={t('keybindings.resetToDefault')}
         >
           <UndoIcon size={12} />
@@ -190,10 +197,11 @@ function KeybindingRow({ config, onEdit, onReset, isKeyUsed, t }: KeybindingRowP
             setTempKey('')
             setError('')
           }}
-          className={`
-            h-7 shrink-0 flex items-center gap-0.5 px-1 rounded transition-colors
-            ${isModified ? 'hover:bg-accent-main-100/10' : 'hover:bg-bg-200/60'}
-          `}
+          className={cn(
+            'h-7 shrink-0 flex items-center gap-0.5 px-1 rounded transition-colors',
+            // 已改键的项用 accent 浅底标记，未改的用中性行悬停
+            isModified ? 'hover:bg-accent-main-100/15' : interactive.subtle,
+          )}
         >
           <ShortcutDisplay
             shortcut={config.currentKey}
@@ -281,7 +289,11 @@ export function KeybindingsSection() {
           <button
             type="button"
             onClick={resetAll}
-            className="h-7 px-2 rounded-md text-[length:var(--fs-xs)] font-medium text-text-400 hover:text-danger-100 hover:bg-danger-100/10 transition-colors"
+            className={cn(
+              'h-7 px-2 rounded-md text-[length:var(--fs-xs)] font-medium text-text-400 hover:text-danger-100',
+              interactive.danger,
+              interactive.focusRingCompact,
+            )}
           >
             {t('keybindings.resetAll')}
           </button>

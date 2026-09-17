@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../../../components/ui/Button'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 import { TrashIcon, WifiIcon, WifiOffIcon, SpinnerIcon, StopIcon } from '../../../components/Icons'
 import { useServerStore, useIsMobile } from '../../../hooks'
 import { API_BASE_URL } from '../../../constants'
@@ -197,7 +199,12 @@ export function ServiceSettings() {
         actions={
           <button
             type="button"
-            className="h-7 px-2 rounded-md text-[length:var(--fs-xs)] font-medium text-accent-main-100 hover:bg-accent-main-100/10 transition-colors disabled:opacity-50"
+            className={cn(
+              'h-7 px-2 rounded-md text-[length:var(--fs-xs)] font-medium text-accent-main-100',
+              interactive.accent,
+              interactive.focusRingCompact,
+              'disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none',
+            )}
             onClick={handleDetectBinary}
             disabled={detectingBinary}
           >
@@ -274,7 +281,11 @@ export function ServiceSettings() {
         actions={
           <button
             type="button"
-            className="h-7 px-2 rounded-md text-[length:var(--fs-xs)] font-medium text-accent-main-100 hover:bg-accent-main-100/10 transition-colors"
+            className={cn(
+              'h-7 px-2 rounded-md text-[length:var(--fs-xs)] font-medium text-accent-main-100',
+              interactive.accent,
+              interactive.focusRingCompact,
+            )}
             onClick={() => serviceStore.setEnvVars([...envVars, { key: '', value: '' }])}
           >
             + {t('common:add')}

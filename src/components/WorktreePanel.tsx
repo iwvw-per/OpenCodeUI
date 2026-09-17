@@ -24,6 +24,8 @@ import { listWorktrees, createWorktree, removeWorktree, resetWorktree } from '..
 import { subscribeToEvents } from '../api/events'
 import { useDirectory, useVcsInfo, requestGitWorkspaceCatalogRefresh } from '../hooks'
 import { getDirectoryName, isSameDirectory, normalizeToForwardSlash } from '../utils'
+import { cn } from '../utils/cn'
+import { interactive } from '../utils/interaction'
 import { ConfirmDialog } from './ui/ConfirmDialog'
 
 // ============================================
@@ -257,7 +259,12 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
               refreshVcs()
             }}
             disabled={loading}
-            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-text-400 hover:text-text-100 hover:bg-bg-200/50 transition-colors"
+            className={cn(
+              'inline-flex h-6 w-6 items-center justify-center rounded-md text-text-400 hover:text-text-100 transition-colors',
+              interactive.subtle,
+              interactive.focusRingCompact,
+              interactive.disabled,
+            )}
             title={t('common:refresh')}
             aria-label={t('common:refresh')}
           >
@@ -340,7 +347,11 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
             <button
               onClick={() => setShowCreateForm(true)}
               disabled={!canManageWorktrees}
-              className="px-3 py-1.5 text-[length:var(--fs-xs)] bg-bg-200/50 hover:bg-bg-200 text-text-200 rounded-md transition-colors"
+              className={cn(
+                'px-3 py-1.5 text-[length:var(--fs-xs)] bg-bg-200/50 hover:bg-bg-200 text-text-200 rounded-md transition-colors',
+                interactive.focusRingCompact,
+                interactive.disabled,
+              )}
             >
               {t('worktreePanel.createWorktree')}
             </button>
@@ -448,7 +459,12 @@ function CreateWorktreeForm({ onSubmit, onCancel, isLoading }: CreateWorktreeFor
           type="button"
           onClick={onCancel}
           disabled={isLoading}
-          className="px-2.5 py-1 text-[length:var(--fs-xs)] text-text-300 hover:text-text-100 hover:bg-bg-200/50 rounded-md transition-colors"
+          className={cn(
+            'px-2.5 py-1 text-[length:var(--fs-xs)] text-text-300 hover:text-text-100 rounded-md',
+            interactive.subtle,
+            interactive.focusRingCompact,
+            interactive.disabled,
+          )}
         >
           {t('common:cancel')}
         </button>
@@ -489,7 +505,7 @@ const WorktreeItem = memo(function WorktreeItem({
   const { t } = useTranslation(['components', 'common'])
 
   return (
-    <div className="group flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-bg-200/50 transition-colors">
+    <div className={cn('group flex items-center gap-2.5 px-2 py-2 rounded-md', interactive.subtle)}>
       {/* Icon */}
       <div className="w-7 h-7 rounded-md bg-bg-200/60 flex items-center justify-center shrink-0">
         <FolderIcon size={14} className="text-text-400" />
@@ -510,21 +526,21 @@ const WorktreeItem = memo(function WorktreeItem({
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           <button
             onClick={onOpenSession}
-            className="p-1 rounded-md text-text-400 hover:text-accent-main-100 hover:bg-accent-main-100/10 transition-colors"
+            className={cn('p-1 rounded-md text-text-400 hover:text-accent-main-100', interactive.accent, interactive.focusRingCompact)}
             title={t('worktreePanel.openSession')}
           >
             <ExternalLinkIcon size={12} />
           </button>
           <button
             onClick={onReset}
-            className="p-1 rounded-md text-text-400 hover:text-warning-100 hover:bg-warning-100/10 transition-colors"
+            className={cn('p-1 rounded-md text-text-400 hover:text-warning-100', interactive.warning, interactive.focusRingCompact)}
             title={t('worktreePanel.resetWorktreeAction')}
           >
             <RetryIcon size={12} />
           </button>
           <button
             onClick={onDelete}
-            className="p-1 rounded-md text-text-400 hover:text-danger-100 hover:bg-danger-100/10 transition-colors"
+            className={cn('p-1 rounded-md text-text-400 hover:text-danger-100', interactive.danger, interactive.focusRingCompact)}
             title={t('worktreePanel.removeWorktreeAction')}
           >
             <TrashIcon size={12} />

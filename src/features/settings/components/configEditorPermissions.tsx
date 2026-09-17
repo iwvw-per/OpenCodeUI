@@ -9,6 +9,8 @@ import { PERMISSION_ACTIONS, PERMISSION_TOOLS } from './configEditorMeta'
 import { enumChoices, type SectionProps } from './configEditorSectionTypes'
 import type { JsonRecord, Lang } from './configEditorTypes'
 import { clone, hasOwn, isRecord, previewValue, setRoot, tx, useLang } from './configEditorUtils'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 
 export function PermissionEditor({ value, onChange, lang }: { value: unknown; onChange: (value: unknown) => void; lang: Lang }) {
   const { activeChildId, enter, depth } = useDrillContainer()
@@ -164,7 +166,12 @@ export function PermissionEditor({ value, onChange, lang }: { value: unknown; on
               onChange({ ...record, [newTool.trim()]: 'ask' })
               setNewTool('')
             }}
-            className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md px-3 text-[length:var(--fs-sm)] font-medium text-accent-main-100 transition-colors hover:bg-accent-main-100/10 disabled:opacity-40"
+            className={cn(
+              'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md px-3 text-[length:var(--fs-sm)] font-medium text-accent-main-100',
+              interactive.accent,
+              interactive.focusRingCompact,
+              'disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none',
+            )}
           >
             <PlusIcon size={13} />
             {tx('Add', '添加', lang)}
@@ -197,7 +204,12 @@ function PatternRules({ value, onChange, lang }: { value: JsonRecord; onChange: 
             onChange({ ...value, [newPattern.trim()]: 'ask' })
             setNewPattern('')
           }}
-          className="inline-flex h-8 shrink-0 items-center justify-center rounded-md px-2.5 text-accent-main-100 transition-colors hover:bg-accent-main-100/10 disabled:opacity-40"
+          className={cn(
+            'inline-flex h-8 shrink-0 items-center justify-center rounded-md px-2.5 text-accent-main-100',
+            interactive.accent,
+            interactive.focusRingCompact,
+            'disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none',
+          )}
         >
           <PlusIcon size={14} />
         </button>
@@ -250,7 +262,12 @@ export function ToolToggleMap({ value, onChange }: { value: unknown; onChange: (
             onChange({ ...record, [newKey.trim()]: true })
             setNewKey('')
           }}
-          className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md px-3 text-[length:var(--fs-sm)] font-medium text-accent-main-100 transition-colors hover:bg-accent-main-100/10 disabled:opacity-40"
+          className={cn(
+            'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md px-3 text-[length:var(--fs-sm)] font-medium text-accent-main-100',
+            interactive.accent,
+            interactive.focusRingCompact,
+            'disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none',
+          )}
         >
           <PlusIcon size={14} />
         </button>

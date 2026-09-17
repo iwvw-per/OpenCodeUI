@@ -13,6 +13,8 @@ import { ProvidersSection } from './configEditorProviders'
 import { enumChoices, type SectionProps } from './configEditorSectionTypes'
 import type { Choice, JsonRecord, Lang, SectionID } from './configEditorTypes'
 import { clone, getObject, hasNested, hasOwn, hasRoot, isRecord, previewValue, setNested, setRoot, tx } from './configEditorUtils'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 
 function GeneralSection({ config, setConfig, lang, shells, models, agents }: SectionProps) {
   const root = config as JsonRecord
@@ -647,7 +649,10 @@ function ModeCompatEditor({ value, onChange, lang, models }: { value: unknown; o
             onChange({ ...rec, [newName.trim()]: { description: '' } })
             setNewName('')
           }}
-          className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md px-3 text-[length:var(--fs-sm)] font-medium text-accent-main-100 transition-colors hover:bg-accent-main-100/10 disabled:opacity-40"
+          className={cn(
+            'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md px-3 text-[length:var(--fs-sm)] font-medium text-accent-main-100 disabled:opacity-40',
+            interactive.accent,
+          )}
         >
           <PlusIcon size={13} />
           {tx('Add', '添加', lang)}

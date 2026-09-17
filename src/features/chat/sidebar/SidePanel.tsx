@@ -45,6 +45,8 @@ import {
 import { getDirectoryName, isSameDirectory, normalizeToForwardSlash } from '../../../utils'
 import { makeSessionKey, splitSessionKey } from '../../../utils/sessionKey'
 import { uiErrorHandler } from '../../../utils'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 
 // 侧边栏设计模式：
 // - 按钮结构统一，不因 expanded/collapsed 改变 DOM
@@ -1014,7 +1016,11 @@ export function SidePanel({
             <button
               onClick={onToggleSidebar}
               aria-label={isExpanded ? t('sidebar.collapseSidebar') : t('sidebar.expandSidebar')}
-              className="h-8 w-8 flex items-center justify-center rounded-lg text-text-300 hover:text-text-100 hover:bg-bg-200 active:scale-[0.98] transition-all duration-200"
+              className={cn(
+                'h-8 w-8 flex items-center justify-center rounded-lg text-text-300 hover:text-text-100 active:scale-[0.98]',
+                interactive.row,
+                'transition-all duration-200',
+              )}
             >
               <SidebarIcon size={16} />
             </button>
@@ -1029,7 +1035,11 @@ export function SidePanel({
           type="button"
           onClick={onNewSession}
           aria-label={t('sidebar.newChat')}
-          className="h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 hover:bg-bg-200 active:scale-[0.98] transition-all duration-300 group overflow-hidden"
+          className={cn(
+            'h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 active:scale-[0.98] group overflow-hidden',
+            interactive.row,
+            'transition-all duration-300',
+          )}
           style={{
             width: showLabels ? '100%' : 32,
             paddingLeft: 6,
@@ -1059,7 +1069,11 @@ export function SidePanel({
           type="button"
           onClick={onAddProject}
           aria-label={t('sidebar.newProject')}
-          className="h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 hover:bg-bg-200 active:scale-[0.98] transition-all duration-300 group overflow-hidden"
+          className={cn(
+            'h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 active:scale-[0.98] group overflow-hidden',
+            interactive.row,
+            'transition-all duration-300',
+          )}
           style={{
             width: showLabels ? '100%' : 32,
             paddingLeft: 6,
@@ -1115,7 +1129,11 @@ export function SidePanel({
               onToggleSidebar()
             }}
             aria-label={t('sidebar.searchChats')}
-            className="h-8 mb-1.5 flex items-center rounded-lg text-text-300 hover:text-text-100 hover:bg-bg-200 active:scale-[0.98] transition-all duration-300 overflow-hidden"
+            className={cn(
+              'h-8 mb-1.5 flex items-center rounded-lg text-text-300 hover:text-text-100 active:scale-[0.98] overflow-hidden',
+              interactive.row,
+              'transition-all duration-300',
+            )}
             style={{ width: 32, paddingLeft: 6, paddingRight: 6 }}
             title={t('sidebar.searchChats')}
           >
@@ -1157,7 +1175,10 @@ export function SidePanel({
                     <button
                       type="button"
                       onClick={() => setBatchDeleteSessionConfirm(true)}
-                      className="p-1.5 rounded-md text-text-500 hover:text-danger-100 hover:bg-danger-100/10 active:bg-danger-100/15 transition-colors duration-150"
+                      className={cn(
+                        'p-1.5 rounded-md text-text-500 hover:text-danger-100',
+                        interactive.danger,
+                      )}
                       title={t('sidebar.deleteSessionsWithCount', { count: selectedSessionIds.size })}
                       aria-label={t('sidebar.deleteSessionsWithCount', { count: selectedSessionIds.size })}
                     >
@@ -1168,7 +1189,11 @@ export function SidePanel({
                     <button
                       type="button"
                       onClick={() => setBatchRemoveProjectConfirm(true)}
-                      className="p-1.5 rounded-md text-text-500 hover:text-warning-100 hover:bg-warning-100/10 active:bg-warning-100/15 transition-colors duration-150"
+                      className={cn(
+                        'p-1.5 rounded-md text-text-500 hover:text-warning-100',
+                        interactive.warning,
+                        interactive.focusRingCompact,
+                      )}
                       title={t('sidebar.removeProjectsWithCount', { count: selectedProjectIds.size })}
                       aria-label={t('sidebar.removeProjectsWithCount', { count: selectedProjectIds.size })}
                     >
@@ -1181,7 +1206,10 @@ export function SidePanel({
                     onClick={exitEditMode}
                     aria-label={t('sidebar.doneManaging')}
                     aria-pressed
-                    className="p-1.5 rounded-md text-text-500 hover:text-text-100 hover:bg-bg-300 active:bg-bg-300 transition-colors duration-150"
+                    className={cn(
+                      'p-1.5 rounded-md text-text-500 hover:text-text-100',
+                      interactive.subtle,
+                    )}
                     title={t('sidebar.doneManaging')}
                   >
                     <CheckIcon size={14} />

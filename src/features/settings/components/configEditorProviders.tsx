@@ -8,6 +8,8 @@ import { MODALITIES, MODEL_STATUS } from './configEditorMeta'
 import { enumChoices, type SectionProps } from './configEditorSectionTypes'
 import type { JsonRecord, Lang } from './configEditorTypes'
 import { asStringArray, clone, getObject, hasOwn, isRecord, previewValue, setNested, tx } from './configEditorUtils'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 
 export function ProvidersSection({ config, setConfig, lang, providerCatalog }: SectionProps) {
   return (
@@ -316,7 +318,10 @@ function ProviderModels({
             addModel(newModel.trim())
             setNewModel('')
           }}
-          className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md px-3 text-[length:var(--fs-sm)] font-medium text-accent-main-100 transition-colors hover:bg-accent-main-100/10 disabled:opacity-40"
+          className={cn(
+            'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md px-3 text-[length:var(--fs-sm)] font-medium text-accent-main-100 disabled:opacity-40',
+            interactive.accent,
+          )}
         >
           <PlusIcon size={14} />
           {tx('Add', '添加', lang)}

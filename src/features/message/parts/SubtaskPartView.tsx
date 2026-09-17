@@ -8,6 +8,8 @@ import { UsersIcon, ChevronDownIcon, LayersIcon, TerminalIcon, ReturnIcon } from
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 import { MessageExpandPanel } from '../messageExpand'
 import { chevronClass, useMessageExpandRender } from '../messageExpandShared'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 
 interface SubtaskPartViewProps {
   part: SubtaskPart
@@ -134,7 +136,10 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
               <div className="pt-2 border-t border-border-200/30">
                 <button
                   onClick={handleEnter}
-                  className="w-full flex items-center justify-center gap-2 py-2 text-[length:var(--fs-sm)] font-medium text-accent-main-100 hover:bg-accent-main-100/10 rounded-sm transition-colors"
+                  className={cn(
+                    'w-full flex items-center justify-center gap-2 py-2 text-[length:var(--fs-sm)] font-medium text-accent-main-100 rounded-sm',
+                    interactive.accent,
+                  )}
                 >
                   <ReturnIcon size={14} />
                   {t('subtask.viewFullSession')}

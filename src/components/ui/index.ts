@@ -23,9 +23,11 @@ export { Select, SelectTrigger, SelectContent, SelectItem, SelectLabel, SelectSe
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './Tabs'
 export { ScrollArea } from './ScrollArea'
 export { SmoothHeight } from './SmoothHeight'
+export { ResizablePanel } from './ResizablePanel'
 
 // 浮层
 export { Dialog } from './Dialog'
+export { ConfirmDialog } from './ConfirmDialog'
 export { DropdownMenu } from './DropdownMenu'
 export { Popover, PopoverTrigger, PopoverContent, PopoverAnchor, PopoverClose } from './Popover'
 export { Tooltip, TooltipProvider, TooltipRoot, TooltipTrigger, TooltipContent } from './Tooltip'
