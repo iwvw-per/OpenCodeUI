@@ -11,11 +11,17 @@ function model(providerId: string, id: string): ModelInfo {
 }
 
 function readHiddenKeys(): string[] {
-  const key = Object.keys(localStorage).find(k => k.endsWith(':hidden-model-keys'))
-  if (!key) return []
-  const raw = localStorage.getItem(key)
-  if (!raw) return []
-  return JSON.parse(raw) as string[]
+  // 必须用 localStorage.key(i) 枚举。Object.keys(localStorage) 在 jsdom 下返回的是
+  // 方法名（getItem/setItem/...）而不是存储键，用它做 find 永远命中不了，
+  // 测试会稳定地拿到 []——这正是本文件此前长期失败的原因。
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i)
+    if (!key || !key.endsWith(':hidden-model-keys')) continue
+    const raw = localStorage.getItem(key)
+    if (!raw) return []
+    return JSON.parse(raw) as string[]
+  }
+  return []
 }
 
 describe('modelVisibilityStore', () => {
