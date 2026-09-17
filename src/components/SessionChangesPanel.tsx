@@ -767,11 +767,9 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
             </DropdownMenu>
 
             {/* List Mode Toggle */}
-            <Tabs value={listMode} onValueChange={value => setListMode(value as 'flat' | 'tree')}>
-              <TabsList variant="slider" activeIndex={listMode === 'flat' ? 0 : 1} itemCount={2} className="shrink-0">
+            <Tabs variant="slider" value={listMode} onValueChange={value => setListMode(value as 'flat' | 'tree')}>
+              <TabsList activeIndex={listMode === 'flat' ? 0 : 1} itemCount={2} className="shrink-0">
                 <TabsTrigger
-                  variant="slider"
-                  size="sm"
                   value="flat"
                   title={t('sessionChanges.flatList')}
                   className="px-2 py-0.5 text-[length:var(--fs-xxs)]"
@@ -779,8 +777,6 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                   {t('sessionChanges.list')}
                 </TabsTrigger>
                 <TabsTrigger
-                  variant="slider"
-                  size="sm"
                   value="tree"
                   title={t('sessionChanges.treeView')}
                   className="px-2 py-0.5 text-[length:var(--fs-xxs)]"
@@ -791,19 +787,15 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
             </Tabs>
 
             {/* View Mode Toggle */}
-            <Tabs value={viewMode} onValueChange={value => setViewMode(value as 'unified' | 'split')}>
-              <TabsList variant="slider" activeIndex={viewMode === 'unified' ? 0 : 1} itemCount={2} className="shrink-0">
+            <Tabs variant="slider" value={viewMode} onValueChange={value => setViewMode(value as 'unified' | 'split')}>
+              <TabsList activeIndex={viewMode === 'unified' ? 0 : 1} itemCount={2} className="shrink-0">
                 <TabsTrigger
-                  variant="slider"
-                  size="sm"
                   value="unified"
                   className="px-2 py-0.5 text-[length:var(--fs-xxs)]"
                 >
                   {t('sessionChanges.unified')}
                 </TabsTrigger>
                 <TabsTrigger
-                  variant="slider"
-                  size="sm"
                   value="split"
                   className="px-2 py-0.5 text-[length:var(--fs-xxs)]"
                 >

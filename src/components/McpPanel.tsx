@@ -375,12 +375,12 @@ const AddServerForm = memo(function AddServerForm({ onSubmit, onCancel, isLoadin
       </div>
 
       {/* Server Type Toggle */}
-      <Tabs value={serverType} onValueChange={value => setServerType(value as 'local' | 'remote')} className="mb-3">
+      <Tabs value={serverType} onValueChange={value => setServerType(value as 'local' | 'remote')} size="md" className="mb-3">
         <TabsList className="w-full">
-          <TabsTrigger value="local" size="md" className="flex-1 justify-center normal-case tracking-normal">
+          <TabsTrigger value="local" className="flex-1 justify-center normal-case tracking-normal">
             {t('mcpPanel.local')}
           </TabsTrigger>
-          <TabsTrigger value="remote" size="md" className="flex-1 justify-center normal-case tracking-normal">
+          <TabsTrigger value="remote" className="flex-1 justify-center normal-case tracking-normal">
             {t('mcpPanel.remote')}
           </TabsTrigger>
         </TabsList>

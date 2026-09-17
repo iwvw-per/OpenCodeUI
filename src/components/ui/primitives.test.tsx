@@ -80,6 +80,49 @@ describe('Tabs', () => {
     // 只有激活面板带 role="tabpanel"，非激活面板节点仍在 DOM 但不暴露该角色。
     expect(screen.getAllByRole('tabpanel')).toHaveLength(1)
   })
+
+  it('inherits variant and size from Tabs so list and trigger stay aligned', () => {
+    // 回归保护：此前 TabsList 与 TabsTrigger 需各自传 size，漏传会让外层用 sm
+    // 而内层用 md，导致内层圆角反大于外层、弧线对不上。
+    render(
+      <Tabs defaultValue="a" size="md">
+        <TabsList>
+          <TabsTrigger value="a">A</TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    )
+    expect(screen.getByRole('tablist').className).toContain('rounded-lg')
+    expect(screen.getByRole('tab').className).toContain('rounded-md')
+  })
+
+  it('uses concentric radii that scale with size', () => {
+    const { unmount } = render(
+      <Tabs defaultValue="a">
+        <TabsList size="sm">
+          <TabsTrigger value="a">A</TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    )
+    // 紧凑尺寸用 4px 外层 + 2px 内层（同心：4 − p-0.5 的 2px = 2）
+    const smList = screen.getByRole('tablist')
+    expect(smList.className).toContain('rounded-sm')
+    expect(screen.getByRole('tab').className).toContain('rounded-xs')
+    unmount()
+
+    render(
+      <Tabs defaultValue="a">
+        <TabsList size="md">
+          <TabsTrigger value="a" size="md">
+            A
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    )
+    // 常规尺寸用 8px 外层 + 6px 内层（同心：8 − 2 = 6）
+    const mdList = screen.getByRole('tablist')
+    expect(mdList.className).toContain('rounded-lg')
+    expect(screen.getByRole('tab').className).toContain('rounded-md')
+  })
 })
 
 describe('Switch', () => {

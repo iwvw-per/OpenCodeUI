@@ -84,9 +84,9 @@ export function SegmentedControl<T extends string>({ value, options, onChange }:
         onChange(next as T)
       }}
     >
-      <TabsList variant="slider" activeIndex={activeIndex} itemCount={options.length}>
+      <TabsList activeIndex={activeIndex} itemCount={options.length}>
         {options.map(opt => (
-          <TabsTrigger key={opt.value} variant="slider" size="md" value={opt.value} aria-label={opt.label}>
+          <TabsTrigger key={opt.value} value={opt.value} aria-label={opt.label}>
             {opt.icon}
             <span className="truncate">{opt.label}</span>
           </TabsTrigger>
