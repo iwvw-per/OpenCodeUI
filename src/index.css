@@ -318,20 +318,26 @@ body,
   /* ============================================
    * Border Radius - 统一圆角规范
    * ============================================
-   * 使用场景：
-   * - xs: 小元素如 tag, badge
-   * - sm: 按钮, 输入框内部元素
-   * - md: 卡片, 下拉菜单
-   * - lg: 大卡片, 对话框
-   * - xl: 输入框容器, 消息气泡
-   * - full: 圆形按钮, 头像
+   * 取值与 Tailwind 默认刻度一致。此前整套刻度被上移一档
+   * （sm/md +2px、lg/xl/2xl +4px），使小尺寸元素的圆角占高度比例过高
+   * （h-8 列表项 12px 占 37.5%、size-6 图标按钮 8px 占 33%），观感偏浮。
+   *
+   * 按元素在层级中的位置选用，层级越"浮"圆角越大：
+   * - xs:  极小标记（badge、内联标签）
+   * - sm:  控件（按钮、图标按钮、输入框）
+   * - md:  容器（卡片、列表项、面板）
+   * - lg:  浮层（Dialog、DropdownMenu、Select、Popover）
+   * - xl:  大尺寸容器（消息气泡、输入区）
+   * - full: 圆形元素（状态点、头像、开关），不随主题圆角设置缩放
+   *
+   * 另见 docs/standards/前端组件与样式约定.md 的圆角章节。
    */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
   --radius-full: 9999px;
 
   /* ============================================
