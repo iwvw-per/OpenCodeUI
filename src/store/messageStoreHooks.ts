@@ -27,6 +27,24 @@ interface CachedSnapshot {
 const snapshotCache = new Map<string, CachedSnapshot>()
 const NULL_SESSION_KEY = '\u0000null'
 
+/**
+ * snapshot 缓存上限。messageStore 自身有 MAX_CACHED_SESSIONS 的淘汰，但这里
+ * 的缓存按 sessionId 独立存放，若不设限会随浏览过的会话数持续增长（每份都持有
+ * messages 数组）。超出后按插入顺序淘汰最旧的，Map 的插入序天然支持这一点。
+ */
+const MAX_SNAPSHOT_CACHE = 20
+
+function cacheSnapshot(key: string, entry: CachedSnapshot): void {
+  // 先删再设，使该项移到插入序末尾（LRU 语义）
+  snapshotCache.delete(key)
+  snapshotCache.set(key, entry)
+  while (snapshotCache.size > MAX_SNAPSHOT_CACHE) {
+    const oldest = snapshotCache.keys().next().value
+    if (oldest === undefined) break
+    snapshotCache.delete(oldest)
+  }
+}
+
 /** 任一会话/布局变化都递增；按版本号判定各 session 缓存是否过期 */
 let storeVersion = 0
 
@@ -88,7 +106,7 @@ function getSnapshotFor(sessionId: string | null): MessageStoreSnapshot {
   const next = createSnapshot(sessionId)
   // 内容与上一版完全一致时复用旧引用，避免旁路组件空刷
   const snapshot = cached && isSameSnapshot(cached.snapshot, next) ? cached.snapshot : next
-  snapshotCache.set(key, { version: storeVersion, snapshot })
+  cacheSnapshot(key, { version: storeVersion, snapshot })
   return snapshot
 }
 

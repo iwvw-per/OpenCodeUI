@@ -469,7 +469,9 @@ function InputBoxComponent({
         let result: boolean | void
         try {
           result = await onCommand(commandStr)
-        } catch {
+        } catch (err) {
+          // 与 handleSend 一致：命令执行失败不能静默，否则用户只看到草稿被恢复
+          uiErrorHandler('execute slash command', err)
           result = false
         }
 

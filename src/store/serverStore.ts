@@ -173,19 +173,8 @@ class ServerStore {
         const parsed: unknown = JSON.parse(stored)
         // 存储可能被写坏（对象、null、字符串等），非数组一律回退到默认服务器。
         // 逐项过滤缺少必要字段的条目，避免 .find()/.map() 在损坏数据上抛错后无法自愈。
-        this.servers = Array.isArray(parsed)
-          ? parsed.filter(
-              (item): item is ServerConfig =>
-                !!item &&
-                typeof item === 'object' &&
-                typeof (item as Record<string, unknown>).id === 'string' &&
-                (item as Record<string, unknown>).id !== '' &&
-                typeof (item as Record<string, unknown>).name === 'string' &&
-                (item as Record<string, unknown>).name !== '' &&
-                typeof (item as Record<string, unknown>).url === 'string' &&
-                (item as Record<string, unknown>).url !== '',
-            )
-          : []
+        // 与 normalizeServerBackup 共用 isValidServerConfig，保证两条路径校验一致。
+        this.servers = Array.isArray(parsed) ? parsed.filter(isValidServerConfig) : []
       }
 
       // 如果没有服务器，添加默认的本地服务器
@@ -297,6 +286,18 @@ class ServerStore {
 
   getStoredServers(): ServerConfig[] {
     return [...this.servers]
+  }
+
+  /**
+   * 整体替换服务器列表并同步内存状态。
+   *
+   * 与 layoutStore.replaceState / updateStore.applyImportedSettings 等保持一致：
+   * 只写 localStorage 会让 UI 与再次导出继续读到旧值。
+   */
+  replaceServers(servers: ServerConfig[], activeServerId: string | null): void {
+    this.servers = servers
+    this.activeServerId = activeServerId
+    this.notify()
   }
 
   /**
@@ -656,18 +657,30 @@ class ServerStore {
 // 单例导出
 export const serverStore = new ServerStore()
 
+/**
+ * 服务器条目的有效性判定：id/name/url 必须是非空字符串。
+ *
+ * 读取存储与导入备份两条路径共用同一谓词，避免校验强度不一致——
+ * 否则导入时放行的空字段条目会在下次启动加载时被丢弃，服务器凭空消失。
+ */
+function isValidServerConfig(item: unknown): item is ServerConfig {
+  if (!item || typeof item !== 'object') return false
+  const record = item as Record<string, unknown>
+  return (
+    typeof record.id === 'string' &&
+    record.id !== '' &&
+    typeof record.name === 'string' &&
+    record.name !== '' &&
+    typeof record.url === 'string' &&
+    record.url !== ''
+  )
+}
+
 function normalizeServerBackup(raw: unknown): ServerSettingsBackup {
   const parsed = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : undefined
   const servers = Array.isArray(parsed?.servers)
     ? parsed.servers
-        .filter(
-          (item): item is ServerConfig =>
-            !!item &&
-            typeof item === 'object' &&
-            typeof (item as Record<string, unknown>).id === 'string' &&
-            typeof (item as Record<string, unknown>).name === 'string' &&
-            typeof (item as Record<string, unknown>).url === 'string',
-        )
+        .filter(isValidServerConfig)
         .map(item => ({
           id: item.id,
           name: item.name,
@@ -768,6 +781,8 @@ export function importServerSettingsBackup(raw: unknown): void {
     localStorage.removeItem(ACTIVE_SERVER_KEY)
     sessionStorage.removeItem(ACTIVE_SERVER_KEY)
   }
+  // 同步内存状态：只写存储会让 UI 与再次导出继续读到旧值
+  serverStore.replaceServers(mergedServers, normalized.activeServerId)
 }
 
 /**
