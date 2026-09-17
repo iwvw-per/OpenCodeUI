@@ -15,6 +15,8 @@ interface HistoryEntry {
 
 interface UseInputHistoryOptions {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
+  /** 本 pane 的 session；分屏时避免读到聚焦 pane 的消息 */
+  sessionId?: string | null
 }
 
 interface UseInputHistoryReturn {
@@ -35,9 +37,9 @@ interface UseInputHistoryReturn {
   resetHistoryIndex: () => void
 }
 
-export function useInputHistory({ textareaRef }: UseInputHistoryOptions): UseInputHistoryReturn {
+export function useInputHistory({ textareaRef, sessionId }: UseInputHistoryOptions): UseInputHistoryReturn {
   // 构建历史条目：从消息列表中提取去重的用户消息
-  const messages = useMessages()
+  const messages = useMessages(sessionId)
   const userHistory = useMemo((): HistoryEntry[] => {
     const entries: HistoryEntry[] = []
     const seen = new Set<string>()

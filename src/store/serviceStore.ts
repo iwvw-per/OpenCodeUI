@@ -77,6 +77,7 @@ class ServiceStore {
   get binaryPath() {
     return this._binaryPath
   }
+  /** 返回内部数组的稳定引用（供 useSyncExternalStore 的 getSnapshot 使用），调用方不得就地修改 */
   get envVars() {
     return this._envVars
   }
@@ -132,9 +133,11 @@ class ServiceStore {
   }
 
   setEnvVars(vars: EnvVar[]) {
-    this._envVars = vars
+    // 写入时做防御性拷贝，避免外部数组后续被就地修改而污染 store 状态
+    const snapshot = vars.map(item => ({ ...item }))
+    this._envVars = snapshot
     try {
-      localStorage.setItem(STORAGE_KEY_ENV_VARS, JSON.stringify(vars))
+      localStorage.setItem(STORAGE_KEY_ENV_VARS, JSON.stringify(snapshot))
     } catch {
       /* */
     }

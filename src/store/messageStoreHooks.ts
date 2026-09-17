@@ -4,6 +4,10 @@
 //
 // React 绑定层：snapshot 缓存 + useSyncExternalStore hooks
 // 与 messageStore.ts 的纯 store 逻辑分离
+//
+// 所有便捷 hook 都接受可选的 sessionId：
+//   - 传入具体 sessionId（含 null）→ 只订阅该 session，分屏安全
+//   - 省略（undefined）→ 回退到全局聚焦 pane 的 session，保持向后兼容
 
 import { useSyncExternalStore, useRef, useCallback } from 'react'
 import { messageStore } from './messageStore'
@@ -14,11 +18,31 @@ import type { MessageStoreSnapshot, SessionStateSnapshot } from './messageStoreT
 // Snapshot Cache (避免 useSyncExternalStore 无限循环)
 // ============================================
 
-let cachedSnapshot: MessageStoreSnapshot | null = null
-let focusedSnapshotDirty = true
+/** 每个 session 一份 snapshot，附带生成时的 store 版本，用于判定是否需重建 */
+interface CachedSnapshot {
+  version: number
+  snapshot: MessageStoreSnapshot
+}
 
-function createSnapshot(): MessageStoreSnapshot {
-  const sessionId = paneLayoutStore.getFocusedSessionId()
+const snapshotCache = new Map<string, CachedSnapshot>()
+const NULL_SESSION_KEY = '\u0000null'
+
+/** 任一会话/布局变化都递增；按版本号判定各 session 缓存是否过期 */
+let storeVersion = 0
+
+messageStore.subscribe(() => {
+  storeVersion += 1
+})
+
+paneLayoutStore.subscribe(() => {
+  storeVersion += 1
+})
+
+function sessionCacheKey(sessionId: string | null): string {
+  return sessionId ?? NULL_SESSION_KEY
+}
+
+function createSnapshot(sessionId: string | null): MessageStoreSnapshot {
   return {
     sessionId,
     messages: messageStore.getVisibleMessages(sessionId),
@@ -37,7 +61,7 @@ function createSnapshot(): MessageStoreSnapshot {
   }
 }
 
-function isSameFocusedSnapshot(a: MessageStoreSnapshot, b: MessageStoreSnapshot): boolean {
+function isSameSnapshot(a: MessageStoreSnapshot, b: MessageStoreSnapshot): boolean {
   return (
     a.sessionId === b.sessionId &&
     a.messages === b.messages &&
@@ -56,25 +80,32 @@ function isSameFocusedSnapshot(a: MessageStoreSnapshot, b: MessageStoreSnapshot)
   )
 }
 
-function getSnapshot(): MessageStoreSnapshot {
-  if (!focusedSnapshotDirty && cachedSnapshot) return cachedSnapshot
-  focusedSnapshotDirty = false
-  const next = createSnapshot()
-  if (cachedSnapshot && isSameFocusedSnapshot(cachedSnapshot, next)) return cachedSnapshot
-  cachedSnapshot = next
-  return cachedSnapshot
+function getSnapshotFor(sessionId: string | null): MessageStoreSnapshot {
+  const key = sessionCacheKey(sessionId)
+  const cached = snapshotCache.get(key)
+  if (cached && cached.version === storeVersion) return cached.snapshot
+
+  const next = createSnapshot(sessionId)
+  // 内容与上一版完全一致时复用旧引用，避免旁路组件空刷
+  const snapshot = cached && isSameSnapshot(cached.snapshot, next) ? cached.snapshot : next
+  snapshotCache.set(key, { version: storeVersion, snapshot })
+  return snapshot
 }
 
-// 标记脏；真正重建在 getSnapshot，字段全相同时复用旧引用，避免旁路组件空刷
-messageStore.subscribe(() => {
-  focusedSnapshotDirty = true
-})
+function getFocusedSessionId(): string | null {
+  return paneLayoutStore.getFocusedSessionId()
+}
 
-paneLayoutStore.subscribe(() => {
-  focusedSnapshotDirty = true
-})
+/**
+ * 解析目标 session：
+ * - undefined → 跟随全局聚焦 pane（需要订阅 paneLayoutStore）
+ * - string / null → 固定订阅该 session
+ */
+function resolveSessionId(sessionId: string | null | undefined): string | null {
+  return sessionId === undefined ? getFocusedSessionId() : sessionId
+}
 
-function subscribeFocusedSnapshot(onStoreChange: () => void): () => void {
+function subscribeFocused(onStoreChange: () => void): () => void {
   const unsubscribeMessageStore = messageStore.subscribe(onStoreChange)
   const unsubscribePaneLayout = paneLayoutStore.subscribe(onStoreChange)
   return () => {
@@ -88,10 +119,23 @@ function subscribeFocusedSnapshot(onStoreChange: () => void): () => void {
 // ============================================
 
 /**
- * React hook to subscribe to the focused pane's session snapshot.
+ * 订阅某个 session 的完整 snapshot。
+ *
+ * @param sessionId 显式 session；省略时跟随全局聚焦 pane。
  */
-export function useMessageStore(): MessageStoreSnapshot {
-  return useSyncExternalStore(subscribeFocusedSnapshot, getSnapshot, getSnapshot)
+export function useMessageStore(sessionId?: string | null): MessageStoreSnapshot {
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (sessionId === undefined) return subscribeFocused(onStoreChange)
+      if (sessionId === null) return () => undefined
+      return messageStore.subscribeSession(sessionId, onStoreChange)
+    },
+    [sessionId],
+  )
+
+  const getSnapshot = useCallback(() => getSnapshotFor(resolveSessionId(sessionId)), [sessionId])
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
 /**
@@ -106,11 +150,12 @@ export function useMessageStore(): MessageStoreSnapshot {
 export function useMessageStoreSelector<T>(
   selector: (state: MessageStoreSnapshot) => T,
   equalityFn: (a: T, b: T) => boolean = shallowEqual,
+  sessionId?: string | null,
 ): T {
   const prevResultRef = useRef<T | undefined>(undefined)
 
   const getSelectedSnapshot = useCallback(() => {
-    const fullSnapshot = getSnapshot()
+    const fullSnapshot = getSnapshotFor(resolveSessionId(sessionId))
     const newResult = selector(fullSnapshot)
 
     // 如果结果相等，返回之前的引用以避免重渲染
@@ -120,9 +165,18 @@ export function useMessageStoreSelector<T>(
 
     prevResultRef.current = newResult
     return newResult
-  }, [selector, equalityFn])
+  }, [selector, equalityFn, sessionId])
 
-  return useSyncExternalStore(subscribeFocusedSnapshot, getSelectedSnapshot, getSelectedSnapshot)
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (sessionId === undefined) return subscribeFocused(onStoreChange)
+      if (sessionId === null) return () => undefined
+      return messageStore.subscribeSession(sessionId, onStoreChange)
+    },
+    [sessionId],
+  )
+
+  return useSyncExternalStore(subscribe, getSelectedSnapshot, getSelectedSnapshot)
 }
 
 /**
@@ -150,7 +204,6 @@ function shallowEqual<T>(a: T, b: T): boolean {
 
 // 模块级 selector：避免组件内联 () => ({...}) 导致 getSnapshot 身份每帧变化
 const selectSessionId = (state: MessageStoreSnapshot) => state.sessionId
-const selectIsStreaming = (state: MessageStoreSnapshot) => state.isStreaming
 const selectMessages = (state: MessageStoreSnapshot) => state.messages
 const selectHasMessages = (state: MessageStoreSnapshot) => state.messages.length > 0
 const selectHeaderSessionMeta = (state: MessageStoreSnapshot) => ({
@@ -163,14 +216,9 @@ const selectShareSessionMeta = (state: MessageStoreSnapshot) => ({
   shareUrl: state.shareUrl,
   sessionDirectory: state.sessionDirectory,
 })
-const selectUndoRedoState = (state: MessageStoreSnapshot) => ({
-  canUndo: state.canUndo,
-  canRedo: state.canRedo,
-  redoSteps: state.redoSteps,
-})
 const sameMessageArray = (a: Message[], b: Message[]) => a === b
 
-// 缓存：sessionId -> Snapshot
+// 缓存：sessionId -> SessionStateSnapshot
 const sessionSnapshots = new Map<string, SessionStateSnapshot>()
 
 messageStore.subscribe(() => {
@@ -231,39 +279,29 @@ export function useSessionState(sessionId: string | null): SessionStateSnapshot 
 // 便捷选择器 Hooks
 // ============================================
 
-/** 只订阅 sessionId */
+/** 全局聚焦 pane 的 sessionId（不接受覆盖，语义即「当前聚焦」） */
 export function useCurrentSessionId(): string | null {
   return useMessageStoreSelector(selectSessionId)
 }
 
-/** 只订阅 isStreaming */
-export function useIsStreaming(): boolean {
-  return useMessageStoreSelector(selectIsStreaming)
+/** 只订阅 messages；传 sessionId 时只读该 session，分屏安全 */
+export function useMessages(sessionId?: string | null): Message[] {
+  return useMessageStoreSelector(selectMessages, sameMessageArray, sessionId)
 }
 
-/** 只订阅 messages */
-export function useMessages(): Message[] {
-  return useMessageStoreSelector(selectMessages, sameMessageArray)
-}
-
-/** 当前 focused session 是否已有消息（length 级，流式加字不触发） */
-export function useHasMessages(): boolean {
-  return useMessageStoreSelector(selectHasMessages)
+/** 指定 session 是否已有消息（length 级，流式加字不触发） */
+export function useHasMessages(sessionId?: string | null): boolean {
+  return useMessageStoreSelector(selectHasMessages, undefined, sessionId)
 }
 
 /** Header 用：session 身份与标题，不跟 messages 文本 */
-export function useHeaderSessionMeta() {
-  return useMessageStoreSelector(selectHeaderSessionMeta)
+export function useHeaderSessionMeta(sessionId?: string | null) {
+  return useMessageStoreSelector(selectHeaderSessionMeta, undefined, sessionId)
 }
 
 /** Share 用：分享链接相关字段 */
-export function useShareSessionMeta() {
-  return useMessageStoreSelector(selectShareSessionMeta)
-}
-
-/** 只订阅 canUndo/canRedo */
-export function useUndoRedoState() {
-  return useMessageStoreSelector(selectUndoRedoState)
+export function useShareSessionMeta(sessionId?: string | null) {
+  return useMessageStoreSelector(selectShareSessionMeta, undefined, sessionId)
 }
 
 // Re-export types for convenience

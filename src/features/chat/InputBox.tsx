@@ -279,7 +279,7 @@ function InputBoxComponent({
   // ============================================
   // 历史消息导航（类终端体验，逻辑在 useInputHistory hook 中）
   // ============================================
-  const { handleHistoryKeyDown, handleHistoryChange, resetHistoryIndex } = useInputHistory({ textareaRef })
+  const { handleHistoryKeyDown, handleHistoryChange, resetHistoryIndex } = useInputHistory({ textareaRef, sessionId })
 
   // ============================================
   // Mobile Input Dock: 滚动收起/展开（逻辑在 useMobileCollapse hook 中）

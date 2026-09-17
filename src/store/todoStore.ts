@@ -26,9 +26,10 @@ export interface TodoStats {
 
 type Subscriber = () => void
 
-// 空数组常量，避免每次创建新引用
-const EMPTY_TODOS: TodoItem[] = []
-const EMPTY_STATS: TodoStats = { total: 0, completed: 0, inProgress: 0 }
+// 空数组/空统计常量，避免每次创建新引用（getSnapshot 需要稳定引用）
+// 冻结以防止任何消费方就地修改后污染其它 session 的读取结果
+const EMPTY_TODOS = Object.freeze([]) as unknown as TodoItem[]
+const EMPTY_STATS: TodoStats = Object.freeze({ total: 0, completed: 0, inProgress: 0 })
 
 // ============================================
 // Store Implementation
@@ -45,25 +46,30 @@ class TodoStore {
   // ============================================
 
   /**
-   * 获取 session 的 todos
+   * 获取 session 的 todos。
+   * 返回的是内部数组的稳定引用（供 useSyncExternalStore 的 getSnapshot 使用），
+   * 调用方不得就地修改（sort/reverse/push 等）；需要变更时先自行拷贝。
    */
   getTodos(sessionId: string): TodoItem[] {
     return this.sessions.get(sessionId)?.todos || EMPTY_TODOS
   }
 
   /**
-   * 设置 session 的 todos（通常由 SSE 事件触发）
+   * 设置 session 的 todos（通常由 SSE 事件触发）。
+   * 存入前做防御性拷贝（数组 + 每个 todo 的浅拷贝），
+   * 避免外部数组或元素对象后续被就地修改而污染 store 状态。
    */
   setTodos(sessionId: string, todos: TodoItem[]) {
+    const snapshot = todos.map(todo => ({ ...todo }))
     this.sessions.set(sessionId, {
-      todos,
+      todos: snapshot,
       lastUpdated: Date.now(),
     })
     // 更新 stats 缓存
     this.statsCache.set(sessionId, {
-      total: todos.length,
-      completed: todos.filter(t => t.status === 'completed').length,
-      inProgress: todos.filter(t => t.status === 'in_progress').length,
+      total: snapshot.length,
+      completed: snapshot.filter(t => t.status === 'completed').length,
+      inProgress: snapshot.filter(t => t.status === 'in_progress').length,
     })
     this.version++
     this.notify()
