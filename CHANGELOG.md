@@ -1,5 +1,27 @@
 # Changelog
 
+## [v0.6.76] - 2026-09-17
+
+- test: 修正 modelVisibilityStore 的 localStorage 枚举方式 (746fc6f2)
+- fix(chat): 修复未读残留与收起动画，统一输入框宽度 (f66d5ec6)
+- style(ui): 建立交互态词汇表并收敛全站 hover/active 写法 (3f21b9e1)
+- fix(sessions): 修复进入管理模式时列表行距收缩 (46766e5a)
+- style(sidebar): 统一列表项选中态为 accent 浅底 (be6a80e8)
+- style(IconButton): 强化 hover 反馈 (3a3d9738)
+- style(sidebar): 统一排序/管理按钮样式，tab 改用滑块变体 (f5d6987e)
+- style: 恢复默认圆角刻度，修正全站圆角偏大 (8852d5f7)
+- fix(tabs): 紧凑尺寸圆角收档并让 size/variant 自动继承 (a2351513)
+- style: 统一浮层圆角并补齐圆角规范 (f17fe09b)
+- fix: 限制拖放路径探测面 (77c8e020)
+- fix: 修复自审发现的回归与不一致 (38df8153)
+- fix: 备份文件不再包含服务器凭证 (b985fb00)
+- fix: 错误日志生产环境静默、观察器释放与 sessionKey 边界 (3d8a779d)
+- fix: 修复分屏消息串台与状态引用缺陷 (c0f80dd0)
+- fix: 修复缓存失效、导入同步、性能与边界缺陷 (715dc9fe)
+- fix: 修复安全、健壮性与并发缺陷 (10edb402)
+- refactor(ui): 建立基础组件层并消除样式与实现漂移 (538eb850)
+- feat(aiagent): 接入 API Monitor 的 AI Agent 账号与实例切换 (55b7c767)
+
 ## [v0.6.75] - 2026-09-15
 
 - feat(input): 移除输入框下方的「请验证 AI 回复的准确性」提示 (70d0101)
