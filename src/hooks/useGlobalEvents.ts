@@ -20,7 +20,6 @@ import { subscribeToServerEvents, getSessionStatus, getPendingPermissions, getPe
 import type { EventCallbacks } from '../types/api/event'
 import { replyPermission } from '../api/permission'
 import { autoApproveStore } from '../store/autoApproveStore'
-import { multiServerStore } from '../store/multiServerStore'
 import type { ApiMessage, ApiPart, ApiPermissionRequest, ApiQuestionRequest } from '../api/types'
 import type { SessionStatusMap } from '../types/api/session'
 
@@ -317,20 +316,27 @@ function isSessionDirectlyOpen(sessionId: string): boolean {
  * - active server
  * - 多服务器模式：白名单订阅的服务器（即使没有 pane 打开也要保持 SSE 连接，避免列表断连）
  */
+/**
+ * 需要保持事件连接的服务器集合。
+ *
+ * 现在无条件连接**所有已配置服务器**：主机列表要把每台的状态点、版本号都显示
+ * 成实时值，切换主机也要瞬时生效，这都要求连接先建好。
+ *
+ * 此前只有「多服务器模式」开启时才连白名单，关闭时只连活动服务器 ——
+ * 结果是主机列表里其他服务器全是灰点，看起来像"没生效"。
+ * 该模式已取消，同时订阅多服务器会话成为默认行为。
+ */
 function collectActiveServerIds(): string[] {
   const ids = new Set<string>()
+  // 已打开会话所属的服务器（即使它已从配置里被移除，也要保持连接以便收尾）
   for (const leaf of paneLayoutStore.allLeaves()) {
     if (leaf.sessionId) ids.add(sessionKeyToServerId(leaf.sessionId))
   }
-  if (ids.size === 0) ids.add(serverStore.getActiveServerId())
-  if (multiServerStore.isEnabled()) {
-    // 多服务器模式：白名单服务器保持连接 + 至少 active server
-    // （白名单的清理在删除服务器时由设置页同步处理）
-    for (const serverId of multiServerStore.getSubscribedServerIds()) {
-      ids.add(serverId)
-    }
-    ids.add(serverStore.getActiveServerId())
+  for (const server of serverStore.getEnabledServers()) {
+    ids.add(server.id)
   }
+  const activeId = serverStore.getActiveServerId()
+  if (activeId) ids.add(activeId)
   return Array.from(ids)
 }
 
@@ -338,6 +344,10 @@ export function useGlobalEvents(directories?: string[]) {
   const directoriesRef = useRef<string[] | undefined>(directories)
   const refreshRef = useRef<((strategy?: 'replace' | 'merge') => void) | null>(null)
   const initializedDirectoriesRef = useRef(false)
+  // 已做过全量初始化的 serverId。用于区分「首次连接」（走 replace 建基线）与
+  // 「effect 因服务器列表变化重跑」（走 merge，避免清掉别的服务器刚拉到的状态）。
+  // 见下方 activeServerIds.forEach 处的说明。
+  const initializedServersRef = useRef<Set<string>>(new Set())
 
   // 活跃服务器集合：所有 pane 打开的 session 所属 server + active server
   const [activeServerIds, setActiveServerIds] = useState<string[]>(() => collectActiveServerIds())
@@ -360,13 +370,23 @@ export function useGlobalEvents(directories?: string[]) {
   useEffect(() => {
     const unsubscribeLayout = paneLayoutStore.subscribe(() => {
       updateActiveServerIds()
+      // 会话成为当前焦点即视为已读，清掉它的 completed 未读点。
+      //
+      // 为什么不能只靠点击列表项来清：completed 通知的推送条件是
+      // !belongsToCurrentSession(scopedId)，而它读的 focusedSessionId 更新是
+      // 异步的。用户点开会话的瞬间若会话刚好完成，会误判为「不在看」而推送一条
+      // 通知；等状态稳定后已无人再触发标记已读，小点就永久残留。
+      // 这里在焦点真正落到该会话时补一次，覆盖所有打开路径（点击、键盘、分屏、URL）。
+      const focused = paneLayoutStore.getFocusedSessionId()
+      if (focused) notificationStore.markSessionNotificationsRead(focused, 'completed')
     })
-    const unsubscribeMulti = multiServerStore.subscribe(() => {
+    // 服务器列表变化（新增/删除/改名）也要重算：现在连接集合 = 所有已配置服务器
+    const unsubscribeServers = serverStore.subscribe(() => {
       updateActiveServerIds()
     })
     return () => {
       unsubscribeLayout()
-      unsubscribeMulti()
+      unsubscribeServers()
     }
   }, [updateActiveServerIds])
 
@@ -399,7 +419,10 @@ export function useGlobalEvents(directories?: string[]) {
     // ============================================
 
     const fetchAndInitialize = (serverId: string, strategy?: 'replace' | 'merge') => {
-      const effectiveStrategy = strategy ?? (multiServerStore.isEnabled() ? 'merge' : 'replace')
+      // 默认 merge：现在始终连接多台服务器，各服务器的状态/待处理请求是并集的
+      // 一部分，用 replace 会把其他服务器刚拉到的状态清掉。
+      // replace 只在「单台服务器的全量刷新」时显式传入。
+      const effectiveStrategy = strategy ?? 'merge'
       const currentVersion = (fetchVersions.get(serverId) ?? 0) + 1
       fetchVersions.set(serverId, currentVersion)
       activeFetchVersions.set(serverId, currentVersion)
@@ -803,7 +826,17 @@ export function useGlobalEvents(directories?: string[]) {
       subscribeToServerEvents(serverId, buildServerCallbacks(serverId)),
     )
     activeServerIds.forEach(serverId => {
-      fetchAndInitialize(serverId)
+      // 只有该服务器「首次连接」才用 replace：这是全量初始化，需要
+      // initializePendingRequests 建立待处理请求的基线。
+      //
+      // 不能用「本 effect 第一次运行」当条件：effect 依赖 activeServerIds，
+      // 而 collectActiveServerIds 现在无条件包含所有已配置服务器，所以任何
+      // 服务器增删改名都会让 effect 整体重跑。若那时仍传 replace，会对所有
+      // 已连服务器重跑 initialize/initializePendingRequests，把它们刚拉到的
+      // 待处理请求清掉。因此按 serverId 记录是否已初始化过。
+      const firstConnect = !initializedServersRef.current.has(serverId)
+      if (firstConnect) initializedServersRef.current.add(serverId)
+      fetchAndInitialize(serverId, firstConnect ? 'replace' : 'merge')
       refreshServerHealth(serverId)
     })
     approveGlobalPendingPermissions()

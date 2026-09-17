@@ -39,6 +39,8 @@
   "servers": {
     "connections": "Connections",
     "connectionsDesc": "Manage backend endpoints and choose which server this session uses",
+    "aiAgentAccount": "AI Agent Account",
+    "aiAgentAccountDesc": "Sign in to API Monitor to sync your AI Agent instances as switchable servers",
     "noServersConfigured": "No servers configured",
     "current": "Current",
     "checkHealth": "Check health",
@@ -64,13 +66,7 @@
     "editServer": "Edit server",
     "deleteServer": "Delete Server",
     "deleteServerConfirm": "Remove \"{{name}}\" from the server list? This cannot be undone.",
-    "multiServerMode": "Multi-server mode",
-    "multiServerModeDesc": "Subscribe to multiple servers at once. The sidebar session list is grouped by server, and you can interact with sessions on any connected server simultaneously.",
-    "subscribedCountHint": "{{count}} servers subscribed. Use the plug icon on each server to join/leave the whitelist.",
-    "multiServerModeOffHint": "When enabled, only the servers you subscribe to appear in the sidebar session list.",
-    "subscribe": "Subscribe",
-    "unsubscribe": "Unsubscribe",
-    "enableMultiServerFirst": "Enable multi-server mode first"
+    "enableServer": "Enable/disable {{name}}"
   },
   "chat": {
     "pathsFormatting": "Paths & Formatting",
@@ -129,6 +125,8 @@
     "toolCardCompact": "Compact",
     "immersiveMode": "Immersive Mode",
     "immersiveModeDesc": "Enable inline requests, descriptive steps and compact output together for a cleaner experience",
+    "immersiveAdvanced": "Detailed settings",
+    "immersiveAdvancedDesc": "These four are controlled by Immersive Mode, but can also be adjusted individually",
     "thinkingDisplay": "Thinking Display",
     "thinkingDisplayDesc": "Choose capsule, low-noise italic, or markdown reasoning style",
     "capsule": "Capsule",
@@ -255,9 +253,7 @@
     "folderStyleRecentsShowDiff": "Show Diff In Folder View",
     "folderStyleRecentsShowDiffDesc": "Show additions, deletions, and file counts for sessions in folder-style recents",
     "showChildSessions": "Always Show Child Sessions",
-    "showChildSessionsDesc": "Always list child sessions under their parent. When off, only active or selected children are shown.",
-    "showGlobal": "Show global conversations",
-    "showGlobalDesc": "Show the Global group in the sidebar (non-Git workspace, usually where opencode started). Off by default."
+    "showChildSessionsDesc": "Always list child sessions under their parent. When off, only active or selected children are shown."
   },
   "workspace": {
     "layout": "Layout & Reading",

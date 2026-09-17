@@ -249,7 +249,7 @@ export const ToolPartView = memo(function ToolPartView({
         <button
           type="button"
           ref={headerRef}
-          className={`flex w-full items-center gap-3 rounded-md px-0 ${MSG_SPACING.header} text-left hover:bg-bg-200/30 transition-colors group/header`}
+          className={`flex w-full items-center gap-3 rounded-md px-0 ${MSG_SPACING.header} text-left hover:bg-bg-200 transition-colors group/header`}
           onClick={toggleExpanded}
         >
           <div className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
@@ -277,7 +277,7 @@ export const ToolPartView = memo(function ToolPartView({
 
             {/* Diff stats — 紧跟 title，收起时且非失败时显示 */}
             {!effectiveExpanded && !isActive && !isError && (diffStats || hasDiffFiles) && (
-              <span className="shrink-0 flex items-center gap-1 text-[length:var(--fs-xxs)] font-mono font-medium tabular-nums">
+              <span className="shrink-0 flex items-center gap-1 text-[length:var(--fs-xxs)] font-medium tabular-nums">
                 {(diffStats?.additions ?? 0) > 0 && <span className="text-success-100">+{diffStats!.additions}</span>}
                 {(diffStats?.deletions ?? 0) > 0 && <span className="text-danger-100">-{diffStats!.deletions}</span>}
               </span>
@@ -287,7 +287,7 @@ export const ToolPartView = memo(function ToolPartView({
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {duration !== undefined && (state.status === 'completed' || isActive) && (
               <span
-                className={`text-[length:var(--fs-xxs)] font-mono tabular-nums ${isError ? 'text-danger-100/70' : isActive ? 'reasoning-shimmer-text' : 'text-text-500'}`}
+                className={`text-[length:var(--fs-xxs)] tabular-nums ${isError ? 'text-danger-100/70' : isActive ? 'reasoning-shimmer-text' : 'text-text-500'}`}
               >
                 {formatDuration(duration)}
               </span>
@@ -313,7 +313,7 @@ export const ToolPartView = memo(function ToolPartView({
           <button
             type="button"
             ref={headerRef}
-            className="flex items-center gap-2 w-full h-9 text-left pl-2 pr-0 hover:bg-bg-200/40 rounded-sm transition-colors group/header"
+            className="flex items-center gap-2 w-full h-9 text-left pl-2 pr-0 hover:bg-bg-200 rounded-sm transition-colors group/header"
             onClick={toggleExpanded}
           >
             <div className="flex items-baseline gap-2 overflow-hidden flex-1 min-w-0">
@@ -341,7 +341,7 @@ export const ToolPartView = memo(function ToolPartView({
             <div className="flex items-center gap-2 ml-auto shrink-0">
               {duration !== undefined && (state.status === 'completed' || isActive) && (
                 <span
-                  className={`text-[length:var(--fs-xxs)] font-mono tabular-nums ${
+                  className={`text-[length:var(--fs-xxs)] tabular-nums ${
                     isActive ? 'reasoning-shimmer-text' : 'text-text-500'
                   }`}
                 >
@@ -396,7 +396,7 @@ export const ToolPartView = memo(function ToolPartView({
         <button
           type="button"
           ref={headerRef}
-          className="flex items-center gap-2.5 w-full h-9 text-left pl-2 pr-0 hover:bg-bg-200/40 rounded-sm transition-colors group/header"
+          className="flex items-center gap-2.5 w-full h-9 text-left pl-2 pr-0 hover:bg-bg-200 rounded-sm transition-colors group/header"
           onClick={toggleExpanded}
         >
           <div className="flex items-baseline gap-2 overflow-hidden flex-1 min-w-0">
@@ -426,7 +426,7 @@ export const ToolPartView = memo(function ToolPartView({
           <div className="flex items-center gap-2 ml-auto shrink-0">
             {duration !== undefined && (state.status === 'completed' || isActive) && (
               <span
-                className={`text-[length:var(--fs-xxs)] font-mono tabular-nums transition-opacity duration-300 ${
+                className={`text-[length:var(--fs-xxs)] tabular-nums transition-opacity duration-300 ${
                   isActive ? 'reasoning-shimmer-text' : 'text-text-500'
                 }`}
               >

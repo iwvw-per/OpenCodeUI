@@ -12,7 +12,7 @@ import { cn } from '../../utils/cn'
  *   - underline：下划线式，用于内容区顶部导航
  */
 export type TabsVariant = 'segmented' | 'slider' | 'underline'
-export type TabsSize = 'sm' | 'md'
+export type TabsSize = 'sm' | 'md' | 'lg'
 
 const listBase: Record<TabsVariant, string> = {
   segmented: 'inline-flex items-center gap-0.5 border border-border-200/60 bg-bg-200/40 p-0.5',
@@ -26,16 +26,21 @@ const listBase: Record<TabsVariant, string> = {
  * 紧凑的 sm 整体只有约 25px 高（11px 文字 + py-1 + p-0.5 + 边框），
  * 若与 md 同用 8px 会占高度 32%，明显偏圆；故降一档取 4px。
  * 内层相应取 2px，满足同心：内层 = 外层 − p-0.5 的 2px。
+ *
+ * lg 用于装图标的分段控件（如侧栏底部的主题切换）：字号 fs-sm、
+ * 内边距更大，整体约 34px 高，容器取 6px 更协调。
  */
 const listRadius: Record<TabsSize, string> = {
   sm: 'rounded-sm',
   md: 'rounded-lg',
+  lg: 'rounded-md',
 }
 
 /** 内层 trigger 的圆角，与外层保持同心（外层值 − p-0.5 的 2px） */
 const triggerRadius: Record<TabsSize, string> = {
   sm: 'rounded-xs',
   md: 'rounded-md',
+  lg: 'rounded-sm',
 }
 
 const triggerBase = 'inline-flex items-center gap-1 whitespace-nowrap transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main-100/40 disabled:opacity-40 disabled:cursor-not-allowed'
@@ -66,6 +71,7 @@ const triggerVariant: Record<TabsVariant, { base: string; active: string; inacti
 const triggerSize: Record<TabsSize, string> = {
   sm: 'px-2 py-1 text-[length:var(--fs-xxs)]',
   md: 'px-2.5 py-1.5 text-[length:var(--fs-xs)]',
+  lg: 'px-2.5 py-1.5 text-[length:var(--fs-sm)]',
 }
 
 interface TabsProps extends React.ComponentPropsWithoutRef<typeof TabsPrimitive.Root> {

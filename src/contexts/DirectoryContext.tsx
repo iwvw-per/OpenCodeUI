@@ -62,9 +62,10 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
 
   const [pathInfo, setPathInfo] = useState<ApiPath | null>(null)
 
-  // 多服务器模式：路径信息跟随焦点服务器（焦点缺省 = 活动服务器）
-  const multiServerConfig = useMultiServerStore()
-  const pathServerId = multiServerConfig.enabled ? multiServerStore.getFocusedServerId() : undefined
+  // 路径信息跟随焦点服务器（焦点缺省 = 活动服务器）。
+  // 不再有模式开关：始终按服务器区分路径信息。
+  useMultiServerStore()
+  const pathServerId = multiServerStore.getFocusedServerId()
 
   // 服务器 ID 切换时切换 per-server 目录；local runtime URL 变化时只刷新 path info。
   useEffect(() => {
@@ -75,7 +76,7 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
         setUrlDirectory(undefined)
       }
       setPathInfo(null)
-      getPath(multiServerStore.isEnabled() ? multiServerStore.getFocusedServerId() : undefined)
+      getPath(multiServerStore.getFocusedServerId())
         .then(setPathInfo)
         .catch(handleError('get path info', 'api'))
     })

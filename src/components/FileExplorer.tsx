@@ -631,7 +631,7 @@ const TextSearchResults = memo(function TextSearchResults({
                 onPointerDown={e => handlePointerDragStart(e, path)}
                 onClick={() => onSelectFile(path)}
                 onContextMenu={event => onContextMenuFile?.(event, path)}
-                className="w-full px-2 py-1.5 text-left hover:bg-bg-200/50 transition-colors"
+                className="w-full px-2 py-1.5 text-left hover:bg-bg-200 transition-colors"
               >
                 <div className="flex items-center gap-1.5 min-w-0">
                   <img
@@ -674,7 +674,7 @@ const TextSearchResults = memo(function TextSearchResults({
                 onPointerDown={e => handlePointerDragStart(e, path)}
                 onClick={() => onSelect(match)}
                 onContextMenu={event => onContextMenuFile?.(event, path)}
-                className="w-full px-2 py-1.5 text-left hover:bg-bg-200/50 transition-colors"
+                className="w-full px-2 py-1.5 text-left hover:bg-bg-200 transition-colors"
               >
                 <div className="flex items-center gap-1.5 min-w-0">
                   <img
@@ -771,7 +771,7 @@ const FileTreeItem = memo(function FileTreeItem({
         onContextMenu={event => onContextMenu?.(event, node.path, node.absolute)}
         className={`
           w-full flex items-center gap-1 px-2 py-0.5 text-left cursor-default
-          select-none hover:bg-bg-200/50 transition-colors text-[length:var(--fs-sm)]
+          select-none hover:bg-bg-200 transition-colors text-[length:var(--fs-sm)]
           text-text-300
           ${node.ignored ? 'opacity-50' : ''}
         `}

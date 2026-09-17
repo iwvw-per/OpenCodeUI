@@ -88,7 +88,9 @@ export const SelectItem = forwardRef<
     className={cn(
       'relative flex w-full cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 pr-7',
       'text-[length:var(--fs-sm)] text-text-200 outline-none transition-colors',
-      'data-[highlighted]:bg-accent-main-100/12 data-[highlighted]:text-text-100',
+      // highlighted 是「鼠标/键盘高亮项」，语义为 hover，取统一悬停底色；
+      // 选中态由 data-[state=checked] 的文字色 + CheckIcon 表达，不靠底色深浅区分。
+      'data-[highlighted]:bg-bg-200 data-[highlighted]:text-text-100',
       'data-[state=checked]:text-text-100',
       'data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
       className,

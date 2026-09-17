@@ -109,7 +109,7 @@ export function SessionChildrenSlot({
     <div className="ml-3">
       {loading ? (
         <div className="flex items-center py-1.5 px-2">
-          <SpinnerIcon size={10} className="animate-spin text-text-500" />
+          <SpinnerIcon size={10} className="animate-spin text-accent-main-100" />
         </div>
       ) : (
         list!.map((child, index) => {

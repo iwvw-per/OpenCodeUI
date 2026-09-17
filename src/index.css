@@ -364,15 +364,22 @@ body,
   --menu-width: 360px;
 
   /* ============================================
-   * Fonts — 默认使用系统字体栈，用户可通过 Settings 自定义覆盖
-   * 
+   * Fonts — 自托管组合字体（西文 + 中文各一套，靠字符回退自动分工）
+   *
+   * 逐字符匹配：拉丁字母命中前面的 Manrope，中文 Manrope 无字形 →
+   * 落到 HarmonyOS Sans SC，无需 JS 或按语言切换。
+   *
+   * 字体包在 public/fonts/sora/，由 index.html 引入 sora.css。
+   * 中文用 cn-font-split 按 unicode-range 切成 164 个子集按需下载；
+   * Sora / Manrope 是 400-700 可变字体。
+   *
    * --font-ui-sans: 用户可覆盖的 UI 字体变量
    * --font-sans:    Tailwind font-sans class 使用的变量，指向 --font-ui-sans
    * --font-mono:    代码/等宽字体，Tailwind font-mono class 使用
    * ============================================ */
   --font-ui-sans:
-    system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Liberation Sans', sans-serif, 'Apple Color Emoji',
-    'Segoe UI Emoji';
+    'Manrope', 'HarmonyOS Sans SC', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji';
   --font-sans: var(--font-ui-sans);
   --font-ui-serif: 'Georgia', 'Noto Serif', serif;
   --font-mono: 'Fira Code', 'Noto Sans Mono CJK SC', 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular',
@@ -403,8 +410,8 @@ body,
  */
 :root {
   --font-ui-sans:
-    system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Liberation Sans', sans-serif, 'Apple Color Emoji',
-    'Segoe UI Emoji';
+    'Manrope', 'HarmonyOS Sans SC', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji';
   --font-sans: var(--font-ui-sans);
   --font-ui-serif: 'Georgia', 'Noto Serif', serif;
   --font-mono: 'Fira Code', 'Noto Sans Mono CJK SC', 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular',
@@ -499,6 +506,61 @@ body {
   margin: 0;
   font-family: var(--font-ui-sans);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================
+ * 组合字体的标题与字重补丁
+ *
+ * 标题换 Sora（正文用 Manrope），形成西文上的层级差异。
+ * 中文仍落到 HarmonyOS Sans SC。
+ * ============================================ */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: 'Sora', 'HarmonyOS Sans SC', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* HarmonyOS Sans SC 只自托管了 400 / 600 两档。
+   全站有 170 处 font-medium(500)，没有对应字重时浏览器会合成加粗
+   （算法描边），小字号中文下容易发虚、笔画粘连。这里把 500 归到
+   真实存在的 600，由字体本身表达强调，视觉更干净。
+   代价：medium 与 semibold 同级，层级差异靠颜色/字号承担。
+
+   覆盖 @theme 里的 --font-weight-medium 而非 .font-medium 类：
+   Tailwind 生成的是 .font-medium{font-weight:var(--font-weight-medium)}，
+   改变量即可全局生效，不必和 @layer utilities 拼特异性。 */
+@theme {
+  --font-weight-medium: 600;
+  /* HarmonyOS Sans SC 也无 700，font-bold 会合成加粗。
+     归到真实存在的 600；全站只有 4 处（列表分组标题、markdown 标题等），
+     视觉上本就与 semibold 同级。 */
+  --font-weight-bold: 600;
+}
+
+/* ============================================
+ * 字体下行笔画防裁切
+ *
+ * 自托管字体的下探墨迹（拉丁 g/j/p/q/y 及中文标点）比系统 UI 字体更深。
+ * 配合 truncate / line-clamp / overflow-hidden 或固定高度容器时，
+ * leading-none / leading-tight 的行盒过矮会切掉底部笔画。
+ *
+ * 这里给紧密行高设 1.35 下限（≥ 各字体实际墨迹下探），一次性消除裁切。
+ * 规则不带 layer，优先级高于 @layer utilities 里的 Tailwind 类，全局生效。
+ *
+ * 实测影响：全站 27 处紧密行高，其中 6 处同时有固定高度容器。
+ * 最紧的是 h-4(16px) + fs-xs(12px) → 行盒 16.2px，仅超出 0.2px，可忽略；
+ * 其余（h-7 28px / h-8 32px）都远大于行盒高度。
+ * ============================================ */
+.leading-none,
+.leading-tight,
+.leading-\[1\.2\] {
+  line-height: 1.35;
 }
 
 /* ============================================
@@ -923,7 +985,23 @@ body {
  * Mention tag styles
  * ============================================ */
 .mention-tag {
-  font-weight: 500;
+  /* 600 而非 500：HarmonyOS Sans SC 无 500 字重，500 会触发合成加粗 */
+  font-weight: 600;
+}
+
+/* ============================================
+ * Switch 滑块位移
+ *
+ * Radix 用 data-state 标记开关状态，滑块位移按状态切换。
+ * 位移量由组件按几何算出（轨道宽 − 滑块宽），经 --switch-travel 传入，
+ * 避免写死 4px 网格值导致两态左右留白不等。
+ * ============================================ */
+[data-switch-track] [data-switch-thumb] {
+  translate: 0;
+}
+
+[data-switch-track][data-state='checked'] [data-switch-thumb] {
+  translate: var(--switch-travel) 0;
 }
 
 /* Agent mention - uses accent (orange) */
@@ -1060,12 +1138,40 @@ body {
     transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Floating actions contain backdrop-blur chips; avoid transform layers here so blur survives in WebView/Tauri.
-   bottom 参与过渡：收起/展开时位置从 100% 切到 2.5rem，不加过渡会瞬间跳变。 */
+/* Floating actions contain backdrop-blur chips; avoid transform layers here so blur survives in WebView/Tauri. */
 [data-floating-actions] {
-  transition:
-    opacity 180ms cubic-bezier(0.4, 0, 0.2, 1),
-    bottom 200ms ease-out;
+  transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 收起时胶囊的浮现动画：与输入区的缩小共用同一时长与缓动，读成一个动作。
+ *
+ * 为什么用 CSS keyframes 而不是给元素加 transition：
+ * 胶囊是条件挂载（{isCollapsed && ...}），元素在挂载的同一帧就需要有「起始态」，
+ * 否则浏览器会先按终态渲染一帧再跳回起点，出现一次闪烁。keyframes 的 from 帧
+ * 由动画本身提供，挂载即生效，不存在这个问题。
+ *
+ * 起点略小（0.96）且略下移：呼应输入框「缩进下方」的方向，让两个形态在
+ * 视觉上像是同一个东西连续变化，而不是各自动各自。
+ * 只用 transform + opacity，不触发布局。 */
+@keyframes composer-capsule-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-composer-capsule-in {
+  animation: composer-capsule-in 220ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-composer-capsule-in {
+    animation: none;
+  }
 }
 
 [data-input-box][data-todo-swap='hidden'] {
@@ -1300,7 +1406,11 @@ body {
 
 /* 1) 全局字重 / 行高 / 渲染 */
 :root:root {
-  font-weight: 500;        /* Inter、PingFang 的 400 在 12–14px 会发虚 */
+  /* 400 而非 500：HarmonyOS Sans SC 只自托管 400/600 两档，
+     500 会走浏览器合成加粗（算法描边），小字号中文下笔画发虚。
+     原值 500 是针对 Inter / PingFang 调的（它们的 400 在 12-14px 偏细），
+     换成自托管字体后不再需要。 */
+  font-weight: 400;
   line-height: 1.6;        /* 中英混排要比 1.4 松一些 */
   letter-spacing: 0.01em;  /* 给中文一点呼吸感 */
   font-optical-sizing: auto;
@@ -1310,14 +1420,16 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* 等宽字体单独加粗，并处理连字 */
+/* 等宽字体处理连字 */
 :root:root code,
 :root:root pre,
 :root:root kbd,
 :root:root samp,
 :root:root textarea,
 :root:root [class*='font-mono'] {
-  font-weight: 500;
+  /* 同样用 400：等宽字体（Fira Code / Consolas）只有 400 是真字重，
+     500 会合成加粗，在代码块里会把字形糊掉。 */
+  font-weight: 400;
   letter-spacing: 0;
   font-variant-ligatures: contextual; /* 讨厌连字就改成 none */
 }

@@ -165,7 +165,11 @@ export async function listInstances(account?: AiAgentAccount | null): Promise<Ai
 export function ensureServerForInstance(account: AiAgentAccount, instance: AiAgentInstance): ServerConfig {
   const id = serverIdForInstance(instance)
   const url = `${account.domain}${instance.gatewayPath || `/api/aiagent/gw/${instance.id}`}`
-  const name = instance.hostName ? `${instance.label}（${instance.hostName}）` : instance.label
+  // label 与 hostName 常相同（面板里两者都填机器名），此时拼成「工作（工作）」是纯噪音，
+  // 只在确实不同时才补括号说明。
+  const hostName = instance.hostName?.trim()
+  const label = instance.label?.trim()
+  const name = hostName && hostName !== label ? `${label}（${hostName}）` : label || hostName || instance.id
   return serverStore.addServerWithId(id, {
     name,
     url,

@@ -31,8 +31,12 @@ interface UseMobileCollapseOptions {
 interface UseMobileCollapseReturn {
   /** 是否处于收起（胶囊）状态 */
   isCollapsed: boolean
-  /** 展开态时采样到的内容区高度（用于收起时撑占位） */
-  expandedHeight: number
+  /**
+   * 最近一次展开态的内容区高度（ref，渲染期可同步读）。
+   * 收起态用它把外层盒子高度钉住，值必须在翻转那一帧就绪，
+   * 所以是 ref 而非 state。
+   */
+  expandedHeightRef: React.RefObject<number>
   /** 点击胶囊展开 */
   handleExpandInput: () => void
   /** textarea onFocus */
@@ -101,8 +105,23 @@ export function useMobileCollapse({
   const hasPendingDialogs = !!collapsedPermission || !!collapsedQuestion
   const isCollapsed = enabled && !isAtBottom && !hasContent && !isFocused && !hasPendingDialogs && !justCleared
 
-  // 展开态内容区高度（用于收起时占位，防 isAtBottom 反馈循环）
-  const [expandedHeight, setExpandedHeight] = useState(0)
+  // 展开态内容区高度（用于收起时占位，防 isAtBottom 反馈循环）。
+  //
+  // 关键：必须用 ref 而非 state。ref 在渲染期即可同步读取，state 要等下一次
+  // 渲染才更新——首次收起时 state 仍是初值 0，高度约束会从 height 退回
+  // maxHeight，首帧几何突变，触发 virtualizer paddingEnd 反馈，连抖两下。
+  //
+  // 采样时机：每次布局结束后，只要处于展开态就无条件刷新（resize、切换
+  // session、内容行增减都会覆盖到），因此 isCollapsed 翻 true 那一帧读到的
+  // 一定是最近一次展开态的真实高度。收起后停止刷新，锁住这个值。
+  const expandedHeightRef = useRef(0)
+  useLayoutEffect(() => {
+    if (isCollapsed) return
+    const el = contentWrapRef.current
+    if (!el) return
+    const measured = el.offsetHeight
+    if (measured > 0) expandedHeightRef.current = measured
+  })
 
   // ---- 点击胶囊展开 ----
   const handleExpandInput = useCallback(() => {
@@ -191,35 +210,6 @@ export function useMobileCollapse({
     }
   }, [isFocused, enabled, isInsideInputArea, textareaRef])
 
-  // ---- 追踪展开态内容区高度 ----
-  // 收起态要把外层盒子高度钉死为展开态高度，因此必须在收起前拿到准确的
-  // 展开高度。ResizeObserver 回调在布局后才触发，初次收起时可能尚未采样过
-  // （值为 0）→ 退化成无固定高度 → 高度跳变。
-  // 这里在 observe 时同步做一次布局读取，保证 isCollapsed 翻转为 true 时
-  // expandedHeight 已经是真实高度。
-  const expandedHeightRef = useRef(0)
-  useLayoutEffect(() => {
-    const el = contentWrapRef.current
-    if (!el) return
-
-    const commit = (measured: number) => {
-      if (measured <= 0 || measured === expandedHeightRef.current) return
-      expandedHeightRef.current = measured
-      setExpandedHeight(measured)
-    }
-
-    if (!isCollapsed) commit(el.offsetHeight)
-
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        // 只在展开态时采样，收起态的高度不更新
-        if (!isCollapsed) commit(entry.contentRect.height)
-      }
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [contentWrapRef, isCollapsed])
-
   // ---- 注册输入框容器用于动画 ----
   useEffect(() => {
     if (registerInputBox) {
@@ -230,7 +220,7 @@ export function useMobileCollapse({
 
   return {
     isCollapsed,
-    expandedHeight,
+    expandedHeightRef,
     handleExpandInput,
     handleFocus,
     handleBlur,

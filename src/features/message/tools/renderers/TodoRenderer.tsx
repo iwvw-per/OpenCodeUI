@@ -58,7 +58,7 @@ function TodoList({ todos, stateKey }: { todos: TodoItem[]; stateKey: string }) 
           </span>
           <span className="text-text-300 font-medium font-mono">{t('todo.tasks')}</span>
         </div>
-        <span className="text-text-500 tabular-nums font-mono">{t('todo.completedCount', { completed, total })}</span>
+        <span className="text-text-500 tabular-nums">{t('todo.completedCount', { completed, total })}</span>
       </div>
 
       {/* List */}

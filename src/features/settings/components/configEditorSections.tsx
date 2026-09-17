@@ -276,7 +276,7 @@ function ReferenceEditor({ value, onChange, lang, drillPrefix }: { value: JsonRe
       {entries.map(([alias, entry]) => {
         const type = typeOf(entry)
         return (
-          <div key={alias} className="group flex items-center gap-2 rounded-lg px-2.5 transition-colors hover:bg-bg-100/50">
+          <div key={alias} className="group flex items-center gap-2 rounded-lg px-2.5 transition-colors hover:bg-bg-200 active:bg-bg-300">
             <button type="button" onClick={() => enter({ id: `${drillPrefix}:${alias}`, title: `@${alias}` })} className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left">
               <div className="min-w-0 flex-1">
                 <div className="truncate font-mono text-[length:var(--fs-sm)] font-medium text-text-100">@{alias}</div>
@@ -387,7 +387,7 @@ function PluginsHome({ config, setConfig, lang }: SectionProps) {
             const name = isTuple ? String(entry[0] ?? '') : String(entry ?? '')
             const options = isTuple && isRecord(entry[1]) ? (entry[1] as JsonRecord) : {}
             return (
-              <div key={index} className="group flex items-center gap-2 rounded-lg px-2.5 transition-colors hover:bg-bg-100/50">
+              <div key={index} className="group flex items-center gap-2 rounded-lg px-2.5 transition-colors hover:bg-bg-200 active:bg-bg-300">
                 <button type="button" onClick={() => enter({ id: `plugin:${index}`, title: name || tx('plugin', '插件', lang) })} className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left">
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-mono text-[length:var(--fs-sm)] font-medium text-text-100">{name || tx('(empty)', '（空）', lang)}</div>
@@ -548,7 +548,7 @@ function PolicyEditor({ value, onChange, lang }: { value: unknown; onChange: (va
                 <button
                   type="button"
                   onClick={() => onChange(list.filter((_, i) => i !== index))}
-                  className="mt-5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-300 transition-colors hover:bg-bg-200/40 hover:text-error-100"
+                  className="mt-5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-300 transition-colors hover:bg-bg-200 hover:text-error-100"
                   title={tx('Remove', '删除', lang)}
                 >
                   <TrashIcon size={14} />

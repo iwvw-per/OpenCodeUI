@@ -210,7 +210,7 @@ function TerminalSurface({
             <button
               type="button"
               onClick={onToggleFullscreen}
-              className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-500 transition-colors hover:bg-bg-200/60 hover:text-text-100"
+              className="ml-auto inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-500 transition-colors hover:bg-bg-200 hover:text-text-100"
               title={fullscreenLabel}
               aria-label={fullscreenLabel}
             >

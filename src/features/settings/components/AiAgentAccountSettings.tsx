@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '../../../components/ui/Button'
-import { SettingsSection, settingsFieldClass } from './SettingsUI'
+import { SettingsSection, SettingRow, settingsFieldClass } from './SettingsUI'
+import { Switch } from '../../../components/ui'
 import {
   login as accountLogin,
   logout as accountLogout,
   readAccount,
   syncInstances,
-  selectInstance,
   type AiAgentAccount,
   type AiAgentInstance,
 } from '../../../api/aiagent'
@@ -41,6 +41,66 @@ function describeSyncState(state: SyncState): string {
   }
 }
 
+/**
+ * 设置同步：把本地设置同步到 API Monitor 面板，在多台设备间保持一致。
+ *
+ * 独立成一个组件 + 区块，不复用 AI Agent 账号的卡片：
+ * 它依赖同一份登录态，但语义上属于「本地偏好同步」，与「服务器连接」无关。
+ * 放在服务器页时容易被误读成服务器的一个属性。
+ */
+export function PreferencesSyncSettings() {
+  const [syncEnabled, setSyncEnabledState] = useState(() => isSyncEnabled())
+  const [syncState, setSyncState] = useState<SyncState>(() => getSyncState())
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => subscribeSyncState(setSyncState), [])
+
+  const handleToggleSync = useCallback(
+    async (next: boolean) => {
+      setBusy(true)
+      setSyncEnabled(next)
+      try {
+        if (next) {
+          // startPreferencesSync 内部会读账号并自行判断是否可同步
+          await startPreferencesSync()
+        } else {
+          stopPreferencesSync()
+        }
+        setSyncEnabledState(next)
+      } finally {
+        setBusy(false)
+      }
+    },
+    [],
+  )
+
+  return (
+    <SettingsSection title="设置同步" description="把主题、布局、快捷键等本地设置同步到面板，在多台设备间保持一致。">
+      <SettingRow
+        label="启用同步"
+        description={describeSyncState(syncState)}
+      >
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!syncEnabled || busy || syncState.status === 'syncing'}
+            onClick={() => void syncNow()}
+          >
+            立即同步
+          </Button>
+          <Switch
+            checked={syncEnabled}
+            onCheckedChange={next => void handleToggleSync(next)}
+            disabled={busy}
+            aria-label="启用设置同步"
+          />
+        </div>
+      </SettingRow>
+    </SettingsSection>
+  )
+}
+
 /** AI Agent 账号：连接 API Monitor 的 aiagent 模块，同步实例为可切换服务器。 */
 export function AiAgentAccountSettings() {
   const [account, setAccount] = useState<AiAgentAccount | null>(() => readAccount())
@@ -50,24 +110,7 @@ export function AiAgentAccountSettings() {
   const [instances, setInstances] = useState<AiAgentInstance[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [syncEnabled, setSyncEnabledState] = useState(() => isSyncEnabled())
-  const [syncState, setSyncState] = useState<SyncState>(() => getSyncState())
-  const { activeServer, getHealth, checkHealth } = useServerStore()
-
-  useEffect(() => subscribeSyncState(setSyncState), [])
-
-  const handleToggleSync = useCallback(
-    async (enabled: boolean) => {
-      setSyncEnabled(enabled)
-      setSyncEnabledState(enabled)
-      if (enabled) {
-        await startPreferencesSync()
-      } else {
-        stopPreferencesSync()
-      }
-    },
-    [],
-  )
+  const { getHealth, checkHealth } = useServerStore()
 
   const refreshInstances = useCallback(
     async (target?: AiAgentAccount | null) => {
@@ -123,20 +166,10 @@ export function AiAgentAccountSettings() {
     }
   }, [])
 
-  const handleSwitch = useCallback(
-    (instance: AiAgentInstance) => {
-      if (!selectInstance(instance)) {
-        setError('切换失败：实例服务器未登记')
-      }
-    },
-    [],
-  )
-
   return (
-    <SettingsSection
-      title="AI Agent 账号"
-      description="登录 API Monitor 账号后，自动同步你名下的 AI Agent 实例，并在这些机器之间切换。数据经主机 Agent 的原生流通道转发，不需要开放公网端口。"
-    >
+    // 不再自带 SettingsSection：外层 ServersSettings 已提供区块标题与描述，
+    // 内层再包一层会出现两个「AI Agent 账号」标题。
+    <>
       {!account ? (
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1 text-xs text-text-300">
@@ -182,10 +215,10 @@ export function AiAgentAccountSettings() {
               已登录 <span className="text-text-100">{account.username}</span> @ {account.domain}
             </span>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" onClick={() => refreshInstances(account)} disabled={busy}>
+              <Button variant="secondary" size="sm" onClick={() => refreshInstances(account)} disabled={busy}>
                 刷新实例
               </Button>
-              <Button variant="ghost" onClick={handleLogout} disabled={busy}>
+              <Button variant="secondary" size="sm" onClick={handleLogout} disabled={busy}>
                 退出登录
               </Button>
             </div>
@@ -194,10 +227,12 @@ export function AiAgentAccountSettings() {
           {instances.length === 0 ? (
             <p className="text-xs text-text-500">该账号下还没有登记实例。请先在面板的 AI Agent 模块添加。</p>
           ) : (
+            /* 只展示实例状态，不提供「切换」按钮：
+               切服务器统一在下方「连接」清单里做。此前这里另有一个切换入口，
+               与连接清单操作同一份 serverStore，属重复呈现。 */
             <ul className="flex flex-col gap-1">
               {instances.map(instance => {
                 const serverId = `aiagent:${instance.id}`
-                const isActive = activeServer?.id === serverId
                 const health = getHealth(serverId)
                 const online = health?.status === 'online'
                 const offlineLabel = health?.error || instance.status?.error || ''
@@ -221,58 +256,14 @@ export function AiAgentAccountSettings() {
                         {instance.port}
                       </div>
                     </div>
-                    <Button
-                      variant={isActive ? 'secondary' : 'ghost'}
-                      disabled={isActive}
-                      onClick={() => handleSwitch(instance)}
-                    >
-                      {isActive ? '当前' : '切换'}
-                    </Button>
                   </li>
                 )
               })}
             </ul>
           )}
           {error && <span className="text-xs text-red-400">{error}</span>}
-
-          <div className="flex flex-col gap-2 rounded-lg border border-border-100 bg-bg-100 px-3 py-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-xs text-text-100">设置同步</div>
-                <div className="text-[11px] text-text-500">{describeSyncState(syncState)}</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  disabled={!syncEnabled || busy || syncState.status === 'syncing'}
-                  onClick={() => void syncNow()}
-                >
-                  立即同步
-                </Button>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={syncEnabled}
-                  aria-label="启用设置同步"
-                  onClick={() => void handleToggleSync(!syncEnabled)}
-                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-                    syncEnabled ? 'bg-accent-main-100' : 'bg-bg-300'
-                  }`}
-                >
-                  <span
-                    className={`inline-block size-4 rounded-full bg-bg-000 transition-transform ${
-                      syncEnabled ? 'translate-x-4' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
-              </div>
-            </div>
-            <p className="text-[11px] text-text-500">
-              开启后，主题、布局、快捷键、项目与会话偏好等本地设置会自动同步到面板，在这台设备与其它设备之间保持一致。
-            </p>
-          </div>
         </div>
       )}
-    </SettingsSection>
+    </>
   )
 }

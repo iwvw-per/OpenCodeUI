@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { DESKTOP_FULLSCREEN_LAYER_Z_INDEX } from '../../constants'
 import { DownloadIcon, PlusIcon, MinusIcon } from '../../components/Icons'
 import { CopyButton } from '../../components/ui'
+import { cn } from '../../utils/cn'
+import { interactive } from '../../utils/interaction'
 import { getAttachmentIcon } from './utils'
 import { saveData } from '../../utils/downloadUtils'
 import type { Attachment } from './types'
@@ -155,7 +157,7 @@ function DownloadButton({ attachment }: { attachment: Attachment }) {
       type="button"
       onClick={handleDownload}
       aria-label={t('attachment.saveToFile')}
-      className="p-1.5 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded-lg transition-colors"
+      className={cn('p-1.5 rounded-lg text-text-400 hover:text-text-100', interactive.subtle)}
       title={t('attachment.saveToFile')}
     >
       <DownloadIcon size={16} />
@@ -457,7 +459,10 @@ function ZoomableImage({ url, alt }: { url: string; alt: string }) {
             type="button"
             onClick={resetView}
             aria-label={t('attachment.zoomReset')}
-            className="px-2 py-1 rounded text-[length:var(--fs-sm)] font-mono text-text-400 hover:text-text-100 hover:bg-bg-200/60 transition-colors min-w-[52px] min-h-[44px] sm:min-h-0 flex items-center justify-center"
+            className={cn(
+              'px-2 py-1 rounded-md text-[length:var(--fs-sm)] font-mono text-text-400 hover:text-text-100 transition-colors min-w-[52px] min-h-[44px] sm:min-h-0 flex items-center justify-center',
+              interactive.subtle,
+            )}
             title={t('attachment.zoomReset')}
           >
             {scalePercent}%
@@ -492,7 +497,10 @@ function ZoomButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={title}
-      className="p-2 rounded text-text-400 hover:text-text-100 hover:bg-bg-200/60 transition-colors disabled:opacity-30 disabled:cursor-not-allowed min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+      className={cn(
+        'p-2 rounded-md text-text-400 hover:text-text-100 disabled:opacity-30 disabled:cursor-not-allowed min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 flex items-center justify-center',
+        interactive.subtle,
+      )}
       title={title}
     >
       {children}

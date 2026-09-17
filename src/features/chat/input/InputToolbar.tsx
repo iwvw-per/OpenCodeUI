@@ -330,7 +330,7 @@ export function InputToolbar({
               aria-haspopup="menu"
               aria-expanded={agentMenuOpen}
               aria-controls={agentMenuOpen ? agentMenuId : undefined}
-              className={`flex items-center gap-1.5 px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden ${isCompact ? 'max-w-[6rem]' : 'w-full'}`}
+              className={`flex items-center gap-1.5 px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-colors duration-150 hover:bg-bg-200 active:bg-bg-300 cursor-pointer min-w-0 overflow-hidden ${isCompact ? 'max-w-[6rem]' : 'w-full'}`}
               title={
                 currentAgent
                   ? `${currentAgent.name}${currentAgent.description ? ': ' + currentAgent.description : ''}`
@@ -345,7 +345,12 @@ export function InputToolbar({
                 <AgentIcon />
               </span>
               <span className="text-[length:var(--fs-sm)] text-text-300 capitalize truncate">{selectedAgent || 'build'}</span>
-              <span className={`text-text-400 shrink-0 ${isCompact ? 'hidden' : ''}`}>
+              {/* 箭头与 ModelSelector 保持一致：展开时旋转 180°，带过渡 */}
+              <span
+                className={`text-text-400 shrink-0 transition-transform duration-200 ${isCompact ? 'hidden' : ''} ${
+                  agentMenuOpen ? 'rotate-180' : ''
+                }`}
+              >
                 <ChevronDownIcon />
               </span>
             </button>
@@ -362,6 +367,7 @@ export function InputToolbar({
                 ref={agentMenuRef}
                 role="menu"
                 aria-label="Agent menu"
+                className="flex flex-col gap-0.5"
                 onKeyDown={event =>
                   handleMenuKeyDown(event, agentMenuRef.current, () => setAgentMenuOpen(false), agentTriggerRef.current)
                 }
@@ -428,7 +434,7 @@ export function InputToolbar({
               aria-haspopup="menu"
               aria-expanded={variantMenuOpen}
               aria-controls={variantMenuOpen ? variantMenuId : undefined}
-              className={`flex items-center gap-1.5 px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden ${isCompact ? 'max-w-[5.5rem]' : 'w-full'}`}
+              className={`flex items-center gap-1.5 px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-colors duration-150 hover:bg-bg-200 active:bg-bg-300 cursor-pointer min-w-0 overflow-hidden ${isCompact ? 'max-w-[5.5rem]' : 'w-full'}`}
               title={
                 selectedVariant
                   ? selectedVariant.charAt(0).toUpperCase() + selectedVariant.slice(1)
@@ -444,7 +450,12 @@ export function InputToolbar({
                   ? selectedVariant.charAt(0).toUpperCase() + selectedVariant.slice(1)
                   : t('inputToolbar.default')}
               </span>
-              <span className={`text-text-400 shrink-0 ${isCompact ? 'hidden' : ''}`}>
+              {/* 箭头与 ModelSelector 保持一致：展开时旋转 180°，带过渡 */}
+              <span
+                className={`text-text-400 shrink-0 transition-transform duration-200 ${isCompact ? 'hidden' : ''} ${
+                  variantMenuOpen ? 'rotate-180' : ''
+                }`}
+              >
                 <ChevronDownIcon />
               </span>
             </button>
@@ -462,6 +473,7 @@ export function InputToolbar({
                 ref={variantMenuRef}
                 role="menu"
                 aria-label="Variant menu"
+                className="flex flex-col gap-0.5"
                 onKeyDown={event =>
                   handleMenuKeyDown(event, variantMenuRef.current, () => setVariantMenuOpen(false), variantTriggerRef.current)
                 }

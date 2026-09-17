@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../../hooks'
 import { layoutStore, useLayoutStore } from '../../../store'
-import { Toggle, SegmentedControl, SettingRow, SettingField, SettingsSection } from './SettingsUI'
+import { Toggle, SegmentedControl, SettingRow, SettingsSection } from './SettingsUI'
 
 export function WorkspaceSettings() {
   const { t } = useTranslation(['settings'])
@@ -61,18 +61,16 @@ export function WorkspaceSettings() {
           <Toggle enabled={manualTerminalTitles} onChange={toggleManualTerminalTitles} />
         </SettingRow>
 
-        <SettingField label={t('appearance.diffStyle')} description={t('appearance.diffStyleDesc')}>
-          <div className="w-full max-w-[300px]">
-            <SegmentedControl
-              value={diffStyle}
-              options={[
-                { value: 'markers', label: t('appearance.diffStyleMarkers') },
-                { value: 'changeBars', label: t('appearance.diffStyleChangeBars') },
-              ]}
-              onChange={v => setDiffStyle(v as 'markers' | 'changeBars')}
-            />
-          </div>
-        </SettingField>
+        <SettingRow label={t('appearance.diffStyle')} description={t('appearance.diffStyleDesc')}>
+          <SegmentedControl
+            value={diffStyle}
+            options={[
+              { value: 'markers', label: t('appearance.diffStyleMarkers') },
+              { value: 'changeBars', label: t('appearance.diffStyleChangeBars') },
+            ]}
+            onChange={v => setDiffStyle(v as 'markers' | 'changeBars')}
+          />
+        </SettingRow>
       </SettingsSection>
 
       <SettingsSection title={t('workspace.terminal')} description={t('workspace.terminalDesc')}>

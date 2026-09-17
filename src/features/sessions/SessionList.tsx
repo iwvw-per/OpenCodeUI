@@ -174,12 +174,12 @@ export function SessionList({
                 placeholder={t('sessions.searchChats')}
                 aria-label={t('sessions.searchChats')}
                 autoComplete="off"
-                className="w-full bg-bg-200/40 hover:bg-bg-200/80 focus:bg-bg-000 border border-transparent focus:border-border-200 rounded-lg py-2 pl-9 pr-3 text-[length:var(--fs-sm)] text-text-100 placeholder:text-text-400/70 focus:outline-none focus:shadow-sm transition-all duration-200"
+                className="w-full bg-bg-200/40 hover:bg-bg-200 focus:bg-bg-000 border border-transparent focus:border-border-200 rounded-lg py-2 pl-9 pr-3 text-[length:var(--fs-sm)] text-text-100 placeholder:text-text-400/70 focus:outline-none focus:shadow-sm transition-all duration-200"
               />
             </div>
             <IconButton
               size="md"
-              className="bg-bg-200/40 hover:bg-bg-200/80"
+              className="bg-bg-200/40 hover:bg-bg-200"
               onClick={onNewChat}
               title={t('sessions.newChat')}
               aria-label={t('sessions.newChat')}
@@ -575,9 +575,12 @@ export function SessionListItem({
       onToggleCheck?.({ shiftKey: e?.shiftKey })
       return
     }
-    // 如果操作按钮已显示，点击空白区域收起它，不触发 select
+    // 如果操作按钮已显示，点击空白区域收起它，不触发 select。
+    // 注意：收起按钮的同时也要清未读——否则用户以为已经打开了会话，
+    // 项目行上的未读点却还在（触摸端 showActions 常驻，第一次点击正好走这里）。
     if (showActions) {
       setShowActions(false)
+      notificationStore.markSessionNotificationsRead(activeQueryKey, 'completed')
       return
     }
     notificationStore.markSessionNotificationsRead(activeQueryKey, 'completed')
@@ -659,10 +662,10 @@ export function SessionListItem({
           interactive.row,
           isEditMode
             ? isChecked
-              ? 'bg-accent-main-100/12 text-text-100'
+              ? interactive.rowSelected
               : 'text-text-300 hover:text-text-200'
             : isSelected
-              ? 'bg-accent-main-100/12 text-text-100'
+              ? interactive.rowSelected
               : 'text-text-300 hover:text-text-200',
           showActions && !isEditMode && 'bg-bg-200',
         )}
@@ -675,7 +678,7 @@ export function SessionListItem({
             }`}
           >
             {isWorking ? (
-              <SpinnerIcon size={12} className="animate-spin text-text-400" />
+              <SpinnerIcon size={12} className="animate-spin text-accent-main-100" />
             ) : activeStatus ? (
               <>
                 <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot}`} />
@@ -795,10 +798,10 @@ export function SessionListItem({
         interactive.row,
         isEditMode
           ? isChecked
-            ? 'bg-accent-main-100/12 text-text-100'
+            ? interactive.rowSelected
             : ''
           : isSelected
-            ? 'bg-accent-main-100/12 text-text-100'
+            ? interactive.rowSelected
             : '',
         showActions && !isEditMode && 'bg-bg-200',
       )}
@@ -980,7 +983,7 @@ function UnavailablePinnedSessionItem({
 
 function LoadingSpinner({ size = 'md' }: { size?: 'sm' | 'md' }) {
   const sizeClass = size === 'sm' ? 'w-3 h-3' : 'w-5 h-5'
-  return <SpinnerIcon className={`animate-spin text-text-400 ${sizeClass}`} size={size === 'sm' ? 12 : 20} />
+  return <SpinnerIcon className={`animate-spin text-accent-main-100 ${sizeClass}`} size={size === 'sm' ? 12 : 20} />
 }
 
 // ============================================

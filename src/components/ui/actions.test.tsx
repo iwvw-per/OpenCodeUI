@@ -73,10 +73,24 @@ describe('ContextMenuItem', () => {
     )
     const button = screen.getByRole('button', { name: '刷新' })
     // 回归保护：此前 hover 仅用 bg-bg-200/60，叠在 bg-bg-100 上约 1.8% 亮度差，
-    // 浅色主题下几乎不可见。现在同时加深背景并加 ring 边框。
+    // 浅色主题下几乎不可见。现统一为全不透明的 bg-bg-200。
     expect(button.className).toContain('hover:bg-bg-200')
-    expect(button.className).toContain('hover:ring-1')
-    // 用 ring 而非 border，避免占布局空间导致 hover 时元素位移
+    // 不用 border：border 占布局空间，hover 进出会推动相邻元素
     expect(button.className).not.toContain('hover:border')
+    // 也不用 ring：ring 在本项目里是「键盘焦点」的专用表达（focus-visible:ring-*），
+    // 若 hover 也加 ring，鼠标悬停与键盘聚焦将无法区分。
+    expect(button.className).not.toContain('hover:ring')
+  })
+
+  it('never changes geometry on press', () => {
+    render(
+      <IconButton aria-label="刷新" onClick={() => {}}>
+        <span>icon</span>
+      </IconButton>,
+    )
+    const button = screen.getByRole('button', { name: '刷新' })
+    // 按下反馈只用颜色：scale/translate/rotate 会让元素在按下瞬间改变视觉边界，
+    // 在密集列表里表现为相邻元素抖动。
+    expect(button.className).not.toMatch(/active:(scale|translate|rotate|skew)/)
   })
 })

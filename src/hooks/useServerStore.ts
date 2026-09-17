@@ -44,6 +44,11 @@ export function useServerStore() {
     return serverStore.setActiveServer(id)
   }, [])
 
+  /** 启用/停用服务器；停用当前活动服务器时由 store 负责自动切换 */
+  const setServerEnabled = useCallback((id: string, enabled: boolean) => {
+    return serverStore.setServerEnabled(id, enabled)
+  }, [])
+
   const checkHealth = useCallback((serverId: string) => {
     return serverStore.checkHealth(serverId)
   }, [])
@@ -67,6 +72,7 @@ export function useServerStore() {
     updateServer,
     removeServer,
     setActiveServer,
+    setServerEnabled,
     checkHealth,
     checkAllHealth,
     getHealth,

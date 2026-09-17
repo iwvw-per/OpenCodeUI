@@ -426,7 +426,7 @@ export function Select({
             id={menuId}
             ref={menuRef}
             role="listbox"
-            className="fixed z-[400] max-h-64 overflow-y-auto rounded-lg border border-border-200 glass p-1 shadow-lg custom-scrollbar"
+            className="fixed z-[400] max-h-64 overflow-y-auto rounded-lg border border-border-200 glass flex flex-col gap-0.5 p-1 shadow-lg custom-scrollbar"
             style={pos}
           >
             {filtered.length === 0 && (
@@ -502,7 +502,7 @@ export function StringListField({
             type="button"
             aria-label={tx(`Remove item ${index + 1}`, `删除第 ${index + 1} 项`, lang)}
             onClick={() => onChange(list.filter((_, i) => i !== index))}
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-300 transition-colors hover:bg-bg-200/40 hover:text-error-100"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-300 transition-colors hover:bg-bg-200 hover:text-error-100"
           >
             <TrashIcon size={14} />
           </button>

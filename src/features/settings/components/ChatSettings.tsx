@@ -4,7 +4,7 @@ import { PathAutoIcon, PathUnixIcon, PathWindowsIcon } from '../../../components
 import { usePathMode, useTheme } from '../../../hooks'
 import { themeStore, type ReasoningDisplayMode, type CompletedAtFormat } from '../../../store/themeStore'
 import { useLayoutStore, layoutStore } from '../../../store/layoutStore'
-import { Toggle, SegmentedControl, SettingRow, SettingField, SettingsSection } from './SettingsUI'
+import { Toggle, SegmentedControl, SettingRow, SettingField, SettingsSection, SettingsCardRow } from './SettingsUI'
 import type { PathMode } from '../../../utils/directoryUtils'
 
 const STEP_FINISH_FIELDS = [
@@ -57,7 +57,7 @@ export function ChatSettings() {
   return (
     <div>
       <SettingsSection title={t('chat.pathsFormatting')} description={t('chat.pathsFormattingDesc')}>
-        <div>
+        <SettingsCardRow>
           <div className="w-full max-w-[320px]">
             <SegmentedControl
               value={pathMode}
@@ -78,7 +78,7 @@ export function ChatSettings() {
                 })}`}
             </p>
           )}
-        </div>
+        </SettingsCardRow>
 
         <SettingRow
           label={t('chat.externalDropMentionMode')}
@@ -142,8 +142,7 @@ export function ChatSettings() {
           />
         </SettingRow>
 
-        <SettingField label={t('chat.sendMode')} description={t('chat.sendModeDesc')}>
-          <div className="w-full max-w-[320px]">
+        <SettingRow label={t('chat.sendMode')} description={t('chat.sendModeDesc')}>
             <SegmentedControl
               value={sendOnEnter ? 'enter' : 'shiftEnter'}
               options={[
@@ -152,11 +151,9 @@ export function ChatSettings() {
               ]}
               onChange={v => layoutStore.setSendOnEnter(v === 'enter')}
             />
-          </div>
-        </SettingField>
+        </SettingRow>
 
-        <SettingField label={t('chat.thinkingDisplay')} description={t('chat.thinkingDisplayDesc')}>
-          <div className="w-full max-w-[320px]">
+        <SettingRow label={t('chat.thinkingDisplay')} description={t('chat.thinkingDisplayDesc')}>
             <SegmentedControl
               value={reasoningDisplayMode}
               options={[
@@ -169,8 +166,7 @@ export function ChatSettings() {
                 themeStore.setReasoningDisplayMode(v as ReasoningDisplayMode)
               }}
             />
-          </div>
-        </SettingField>
+        </SettingRow>
       </SettingsSection>
 
       <SettingsSection title={t('chat.stepFinishInfo')}>

@@ -39,6 +39,8 @@
   "servers": {
     "connections": "连接",
     "connectionsDesc": "管理后端端点并选择本次会话使用的服务器",
+    "aiAgentAccount": "AI Agent 账号",
+    "aiAgentAccountDesc": "登录 API Monitor 面板，同步你名下的 AI Agent 实例作为可切换服务器",
     "noServersConfigured": "尚未配置服务器",
     "current": "当前",
     "checkHealth": "健康检查",
@@ -64,13 +66,7 @@
     "editServer": "编辑服务器",
     "deleteServer": "删除服务器",
     "deleteServerConfirm": "确定从列表中移除「{{name}}」？此操作无法撤销。",
-    "multiServerMode": "多服务器模式",
-    "multiServerModeDesc": "同时订阅多个服务器。侧栏会话列表按服务器分组，可以同时与任意已连接服务器上的会话交互。",
-    "subscribedCountHint": "已订阅 {{count}} 个服务器。用每个服务器上的插头图标加入/移出白名单。",
-    "multiServerModeOffHint": "开启后，只有你订阅的服务器会出现在侧栏会话列表中。",
-    "subscribe": "订阅",
-    "unsubscribe": "取消订阅",
-    "enableMultiServerFirst": "请先开启多服务器模式"
+    "enableServer": "启用/停用 {{name}}"
   },
   "chat": {
     "pathsFormatting": "路径和格式",
@@ -129,6 +125,8 @@
     "toolCardCompact": "精简",
     "immersiveMode": "沉浸模式",
     "immersiveModeDesc": "一键开启内嵌请求、描述型步骤和精简输出，更沉浸的体验",
+    "immersiveAdvanced": "详细设置",
+    "immersiveAdvancedDesc": "以上四项由沉浸模式统一控制，也可单独调整",
     "thinkingDisplay": "思考过程显示",
     "thinkingDisplayDesc": "选择 Capsule、低干扰 Italic 或 Markdown 推理样式",
     "capsule": "Capsule",
@@ -255,9 +253,7 @@
     "folderStyleRecentsShowDiff": "文件夹模式显示 Diff",
     "folderStyleRecentsShowDiffDesc": "在文件夹式最近记录中显示会话的增删和文件统计",
     "showChildSessions": "始终显示子会话",
-    "showChildSessionsDesc": "始终在父会话下列出子会话。关闭时仅显示活跃或正在查看的子会话",
-    "showGlobal": "显示全局对话",
-    "showGlobalDesc": "在侧栏显示「全局」分组（非 Git 工作区，通常是 opencode 启动目录）。默认关闭。"
+    "showChildSessionsDesc": "始终在父会话下列出子会话。关闭时仅显示活跃或正在查看的子会话"
   },
   "workspace": {
     "layout": "布局和阅读",

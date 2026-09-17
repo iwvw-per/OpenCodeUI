@@ -22,6 +22,23 @@ vi.mock('../../../hooks/useTokenRate', () => ({
   useTokenRate: (...args: unknown[]) => useTokenRateMock(...args),
 }))
 
+// 统计面板的数据来源：只测 footer 渲染时用空统计，避免真实 hook 去订阅 messageStore
+vi.mock('../../../hooks/useSessionTurnStats', () => ({
+  useSessionTurnStats: () => ({
+    turns: 0,
+    steps: 0,
+    modelMs: 0,
+    toolMs: 0,
+    ttftMs: null,
+    tokensPerSec: null,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    inputTokens: 0,
+    cacheHitPercent: null,
+    hasData: false,
+  }),
+}))
+
 vi.mock('../../../api/session', () => ({
   getSessionTodos: vi.fn().mockResolvedValue([]),
 }))

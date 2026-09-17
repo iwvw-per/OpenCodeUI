@@ -21,7 +21,7 @@ vi.mock('../attachment', () => ({
 
 vi.mock('./chatViewport', () => ({
   useChatViewport: () => ({
-    presentation: { surfaceVariant: 'desktop', isCompact: false },
+    presentation: { surfaceVariant: 'desktop', isCompact: false, isWideMode: false },
     interaction: {
       mode: 'pointer',
       touchCapable: false,
@@ -104,6 +104,22 @@ vi.mock('../../store/keybindingStore', () => ({
   },
   matchesKeybinding: (event: KeyboardEvent, key: string) => key === 'Enter' && event.key === 'Enter',
 }))
+
+describe('InputBox 收起动画', () => {
+  it('展开态：输入区不缩不放、可见，且无胶囊', () => {
+    render(<InputBox paneId="pane-test" onSend={vi.fn()} />)
+
+    const textarea = screen.getByRole('textbox')
+    const inputWrapper = textarea.closest('[class*="opacity-100"]')
+
+    expect(inputWrapper).not.toBeNull()
+    expect(inputWrapper?.className).toContain('scale-100')
+    expect(inputWrapper?.className).toContain('origin-bottom')
+    // 收起用的位移与缩放不应出现在展开态
+    expect(inputWrapper?.className).not.toContain('scale-[0.94]')
+    expect(document.querySelector('.animate-composer-capsule-in')).toBeNull()
+  })
+})
 
 describe('InputBox slash command selection', () => {
   beforeEach(() => {

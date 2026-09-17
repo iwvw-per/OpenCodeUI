@@ -366,7 +366,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
       }}
     >
       {/* Items List */}
-      <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar p-1.5">
+      <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 p-1.5">
         {loading && items.length === 0 && (
           <div className="px-2 py-4 text-center text-[length:var(--fs-base)] text-text-400">{t('common:loading')}</div>
         )}
@@ -401,7 +401,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
           <button
             key={`${item.type}-${item.value}`}
             className={`w-full px-2.5 py-2 md:py-1.5 flex items-center justify-between text-left rounded-lg transition-colors ${
-              index === selectedIndex ? 'bg-accent-main-100/10 text-text-100' : 'text-text-200 hover:bg-bg-100/40'
+              index === selectedIndex ? 'bg-bg-200 text-text-100' : 'text-text-200 hover:bg-bg-200'
             }`}
             onClick={() => {
               // 文件夹：点击进入目录浏览，而不是选中

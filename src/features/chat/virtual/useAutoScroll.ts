@@ -21,6 +21,10 @@ export function useAutoScroll(bottomThreshold = 10) {
 
   const autoMark = useRef<{ top: number; time: number } | undefined>(undefined)
   const autoTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // 上滚待确认：记录 wheel 时的 scrollTop，等 scroll 事件确认真的移动后再置 userScrolled。
+  // 未确认就置位会让「收起输入框」早于滚动触发，见 handleWheel 注释。
+  const pendingUpwardRef = useRef<number | null>(null)
+  const pendingUpwardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const setScrolled = useCallback((v: boolean) => {
     userScrolledRef.current = v
@@ -70,6 +74,19 @@ export function useAutoScroll(bottomThreshold = 10) {
   const handleScroll = useCallback(() => {
     const el = scrollElRef.current
     if (!el) return
+    // 确认上滚：wheel 记录的起始位置确实被超过了，才算用户真的离底。
+    // 这一步是「收起输入框」的正确触发点（见 handleWheel 注释）。
+    if (pendingUpwardRef.current !== null) {
+      const from = pendingUpwardRef.current
+      if (el.scrollTop < from) {
+        pendingUpwardRef.current = null
+        if (pendingUpwardTimerRef.current !== null) {
+          clearTimeout(pendingUpwardTimerRef.current)
+          pendingUpwardTimerRef.current = null
+        }
+        if (!userScrolledRef.current) setScrolled(true)
+      }
+    }
     const max = el.scrollHeight - el.clientHeight
     if (max <= 1) {
       // isAuto 守卫：程序滚动（applyScrollAdjustment 经 scrollToFn→markAuto）
@@ -110,8 +127,31 @@ export function useAutoScroll(bottomThreshold = 10) {
     autoMark.current = undefined
     const nested = (e.target instanceof Element ? e.target : undefined)?.closest('[data-scrollable]')
     if (nested && nested !== el) return
-    // 直接写 ref，不等 React re-render——同帧的 RO/measure 必须立刻看到离底
-    if (!userScrolledRef.current) setScrolled(true)
+    if (userScrolledRef.current) return
+    // 不要在这里立即置位。wheel 事件到达时 scrollTop 往往还没变（浏览器在下一帧
+    // 才真正滚动），此时置位会让「收起输入框」比滚动早一帧触发；若这次 wheel
+    // 最终被虚拟列表吸收、没有产生实际滚动，就等于凭空收起一次。
+    // 改为记录上滚前的 scrollTop，交给 scroll 事件确认真的移动后再置位。
+    //
+    // 实测（scripts/probe-collapse-trigger.mjs）：不确认时 isCollapsed 会在
+    // scrollTop 完全未变的情况下翻 true，动画空跑一遍；真实滚动随后发生又翻回，
+    // 视觉上表现为「首帧抽两下」。
+    pendingUpwardRef.current = el.scrollTop
+    // 兜底：部分环境下 scroll 事件的 scrollTop 与 wheel 同步更新、或容器不产生
+    // scroll 事件（滚动被完全吸收）。超过一帧仍未确认就不再等待，避免上滚需要
+    // 「先动一下才生效」的迟滞感。
+    if (pendingUpwardTimerRef.current !== null) clearTimeout(pendingUpwardTimerRef.current)
+    pendingUpwardTimerRef.current = window.setTimeout(() => {
+      pendingUpwardTimerRef.current = null
+      const from = pendingUpwardRef.current
+      pendingUpwardRef.current = null
+      if (from === null) return
+      const el2 = scrollElRef.current
+      if (!el2) return
+      // 只有确实没动过才放弃；动过则由 scroll 事件负责置位
+      if (el2.scrollTop >= from) return
+      setScrolled(true)
+    }, 120)
   }, [bottomThreshold, setScrolled])
 
   const handleInteraction = useCallback(() => {
@@ -133,7 +173,13 @@ export function useAutoScroll(bottomThreshold = 10) {
   // contentRef RO 会在 item 首次测量时触发（container height 变化），
   // 把 scrollTop 拉回底部，覆盖 applyScrollAdjustment 的正确行为。
 
-  useEffect(() => () => { if (autoTimer.current) clearTimeout(autoTimer.current) }, [])
+  useEffect(
+    () => () => {
+      if (autoTimer.current) clearTimeout(autoTimer.current)
+      if (pendingUpwardTimerRef.current !== null) clearTimeout(pendingUpwardTimerRef.current)
+    },
+    [],
+  )
 
   const reset = useCallback(() => {
     setScrolled(false)

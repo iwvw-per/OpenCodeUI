@@ -42,6 +42,7 @@ import {
 } from './chatPageModel'
 import { useTheme } from '../../hooks/useTheme'
 import { getStreamingHotIndexes, getTimelineRowYClass, mergeVirtualRangeIndexes } from './chatAreaUtils'
+import { getContentMaxWidthClass, getContentPaddingClass } from './contentWidth'
 import { useAutoScroll } from './virtual/useAutoScroll'
 import { useEmptyWorkingShellGate } from './virtual/useEmptyWorkingShellGate'
 
@@ -346,11 +347,11 @@ export const ChatArea = memo(
       ref,
     ) => {
       const { t } = useTranslation('chat')
-      const { isWideMode, processCollapseEnabled } = useTheme()
+      const { processCollapseEnabled } = useTheme()
       const { presentation } = useChatViewport()
       const atBottomThreshold = presentation.isCompact ? 150 : AT_BOTTOM_THRESHOLD_PX
-      const paddingClass = presentation.isCompact ? 'px-3' : 'px-5'
-      const maxWidthClass = isWideMode ? 'max-w-[95%] xl:max-w-6xl' : 'max-w-2xl'
+      const paddingClass = getContentPaddingClass(presentation.isCompact)
+      const maxWidthClass = getContentMaxWidthClass(presentation.isWideMode)
 
       // ── 派生数据 ──
       const entries = useMemo(

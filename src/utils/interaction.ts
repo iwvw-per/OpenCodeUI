@@ -22,40 +22,46 @@
  *
  * 每档都包含完整的 hover / 按下反馈，`focusRing` 单独提供以便组合到
  * 已经自带 hover 的控件上。
+ *
+ * 两条硬性约定（全站统一，不要在各调用点覆盖）：
+ *
+ * 1. **按下反馈只用颜色/透明度，不用几何变换。**
+ *    禁止 `active:scale-*` / `active:translate-*` / `active:rotate-*`。
+ *    缩放与位移会在按下瞬间改变元素的视觉边界，在密集列表里表现为相邻元素
+ *    抖动；"点击不改布局"比"有点动画"更重要。
+ *
+ * 2. **hover 与选中态用底色表达，不用边框。**
+ *    hover = `bg-bg-200`，选中 = `bg-bg-200 text-text-100`（同底色，靠文字色区分）。
+ *    加边框会撑开 1~2px 推动相邻元素；改用 ring 则会与键盘焦点环撞车，
+ *    使"焦点环只在键盘导航时出现"这条约定失效。
  */
 export const interactive = {
   /**
    * 列表行 / 菜单项：用于侧边栏会话项、文件树项、下拉选项等。
    *
-   * 选中态统一为 accent 浅底 + 主文字色（对比度 >= 9.9:1），
-   * 见规范「强调色的正确用法」。
+   * 选中态见 `rowSelected`：两者同底色，靠文字色区分层级。
    */
-  row: [
-    'cursor-pointer select-none',
-    'transition-colors duration-150',
-    'hover:bg-bg-200',
-    'active:bg-bg-300 active:duration-75',
-  ].join(' '),
+  row: ['cursor-pointer select-none', 'transition-colors duration-150', 'hover:bg-bg-200', 'active:bg-bg-300'].join(
+    ' ',
+  ),
 
   /**
-   * 列表行选中态。单独导出以便与 `row` 组合：
+   * 列表行选中态。与 `row` 组合使用：
    * `cn(interactive.row, selected && interactive.rowSelected)`
    *
-   * 用 bg-bg-200 而非 accent 浅底，是因为侧边栏选中项常与 hover 同时存在，
-   * accent 浅底在此场景下与 hover 差异过小、层级反而更弱。
+   * 与 row 同为 `bg-bg-200`，靠 `text-text-100` 拉高文字亮度来区分「选中」与
+   * 「悬停」。这样做的原因：若选中改用 accent 浅底，会与 hover 形成两种色相，
+   * 在侧边栏这类大色块区域显得杂乱；同底色 + 文字色既清晰又不需要边框。
    */
   rowSelected: 'bg-bg-200 text-text-100',
 
   /**
-   * 面板行 / 工具栏按钮：比 row 弱一档的悬停反馈，用于密集排布的
-   * 图标按钮、折叠标题栏等不需要强提示的位置。
+   * 面板行 / 工具栏按钮：与 row 同强度。保留独立档位是因为语义不同
+   * （密集排布的工具控件 vs 列表项），便于将来单独调整而不波及列表。
    */
-  subtle: [
-    'cursor-pointer select-none',
-    'transition-colors duration-150',
-    'hover:bg-bg-200/50',
-    'active:bg-bg-200/70 active:duration-75',
-  ].join(' '),
+  subtle: ['cursor-pointer select-none', 'transition-colors duration-150', 'hover:bg-bg-200', 'active:bg-bg-300'].join(
+    ' ',
+  ),
 
   /**
    * 危险操作（删除、断开、清空）：悬停转为危险色浅底。
@@ -65,7 +71,7 @@ export const interactive = {
     'cursor-pointer select-none',
     'transition-colors duration-150',
     'hover:bg-danger-100/10',
-    'active:bg-danger-100/20 active:duration-75',
+    'active:bg-danger-100/20',
   ].join(' '),
 
   /**
@@ -76,7 +82,7 @@ export const interactive = {
     'cursor-pointer select-none',
     'transition-colors duration-150',
     'hover:bg-warning-100/10',
-    'active:bg-warning-100/20 active:duration-75',
+    'active:bg-warning-100/20',
   ].join(' '),
 
   /**
@@ -87,18 +93,18 @@ export const interactive = {
     'cursor-pointer select-none',
     'transition-colors duration-150',
     'hover:bg-accent-main-100/10',
-    'active:bg-accent-main-100/20 active:duration-75',
+    'active:bg-accent-main-100/20',
   ].join(' '),
 
   /**
-   * 可点击卡片 / 大块区域：整块可点但内部仍含其他控件时使用，
-   * 反馈比 row 更轻，避免大色块 hover 时视觉过重。
+   * 可点击卡片 / 大块区域：整块可点但内部仍含其他控件时使用。
+   * 与 row 同强度（全不透明 bg-200），避免大色块 hover 反而更轻。
    */
   card: [
     'cursor-pointer',
-    'transition-[background-color,border-color,box-shadow] duration-150',
-    'hover:bg-bg-200/40',
-    'active:bg-bg-200/60',
+    'transition-[background-color,border-color] duration-150',
+    'hover:bg-bg-200',
+    'active:bg-bg-300',
   ].join(' '),
 
   /**
@@ -106,6 +112,9 @@ export const interactive = {
    *
    * 用 ring 而非 outline：ring 是 box-shadow，不占布局空间，不会在聚焦时
    * 推动相邻元素。已在自带 focus 样式（如 Radix 原语）的控件上不要叠加本项。
+   *
+   * 注意：ring 专属于**键盘焦点**，因此交互态一律不用 ring —— 否则鼠标悬停
+   * 与键盘聚焦无法区分，约定即失效。
    */
   focusRing:
     'outline-none focus-visible:ring-2 focus-visible:ring-accent-main-100/50 focus-visible:ring-offset-1 focus-visible:ring-offset-bg-100',
@@ -121,7 +130,13 @@ export const interactive = {
   disabled: 'disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none',
 } as const
 
-/** 需要「选中即 accent 浅底」时使用的强调态（如标签切换、筛选 chip）。 */
+/**
+ * 需要「选中即 accent 浅底」时使用的强调态。
+ *
+ * 仅用于**小型强调控件**（标签页、筛选 chip）——这类元素面积小，
+ * accent 浅底能提供明确的"当前项"识别。列表行、文件树等大面积区域
+ * 请用 `interactive.rowSelected`（中性底），否则大面积 accent 会压过内容。
+ */
 export const selectedAccent = 'bg-accent-main-100/15 text-text-100'
 
 export type InteractiveTone = keyof typeof interactive

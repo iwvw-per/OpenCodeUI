@@ -367,8 +367,8 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[length:var(--fs-md)] font-medium transition-colors whitespace-nowrap shrink-0
                     ${
                       vt.id === tab
-                        ? 'bg-bg-100/80 text-text-100'
-                        : 'text-text-400 active:bg-bg-100/40'
+                        ? 'bg-bg-200 text-text-100'
+                        : 'text-text-300 hover:bg-bg-200 hover:text-text-100'
                     }`}
                 >
                   {vt.icon}
@@ -409,7 +409,7 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-3 top-3 z-10 hidden md:flex items-center justify-center w-7 h-7 rounded-md text-text-400/60 hover:text-text-200 hover:bg-bg-200/70 transition-colors"
+          className="absolute right-3 top-3 z-10 hidden md:flex items-center justify-center w-7 h-7 rounded-md text-text-400/60 hover:text-text-200 hover:bg-bg-200 transition-colors"
           aria-label={t('closeSettings')}
           title={t('closeSettings')}
         >
@@ -448,7 +448,7 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
                         onClick={() => switchTab(vt.id)}
                         tabIndex={active ? 0 : -1}
                         className={`w-full min-h-8 flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[length:var(--fs-md)] font-medium transition-colors ${
-                          active ? 'bg-bg-200/70 text-text-100' : 'text-text-300 hover:bg-bg-200/40 hover:text-text-100'
+                          active ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:bg-bg-200 hover:text-text-100'
                         }`}
                       >
                         <span className={active ? 'text-accent-main-100' : 'text-text-400'}>{vt.icon}</span>
@@ -464,7 +464,7 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
           {/* 版本号与菜单图标左边缘对齐，弱化为辅助信息 */}
           <div className="shrink-0 mt-2 px-2.5">
             <div
-              className="text-[length:var(--fs-xxs)] font-mono tabular-nums text-text-500/75 leading-snug truncate"
+              className="text-[length:var(--fs-xxs)] tabular-nums text-text-500/75 leading-snug truncate"
               title={t('version', { version: __APP_VERSION__ })}
             >
               v{__APP_VERSION__}

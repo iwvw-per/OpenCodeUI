@@ -239,7 +239,7 @@ export const TaskHeader = memo(function TaskHeader({
         aria-expanded={expanded}
         aria-label={expanded ? t('showLess') : t('showMore')}
         title={expanded ? t('showLess') : t('showMore')}
-        className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-sm text-text-400 transition-colors hover:bg-bg-200/70 hover:text-text-100 bg-transparent border-none p-0"
+        className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-sm text-text-400 transition-colors hover:bg-bg-200 hover:text-text-100 bg-transparent border-none p-0"
       >
         {/* Expand icon */}
         <span className={`text-text-400 transition-transform ${expanded ? 'rotate-90' : ''}`}>
@@ -278,7 +278,7 @@ export const TaskHeader = memo(function TaskHeader({
           type="button"
           onClick={onStop}
           aria-label={t('task.stop')}
-          className="flex-shrink-0 w-[18px] h-[18px] p-0 flex items-center justify-center text-text-400 hover:text-danger-100 hover:bg-danger-100/10 rounded-sm transition-colors active:scale-90 bg-transparent border-none"
+          className="flex-shrink-0 w-[18px] h-[18px] p-0 flex items-center justify-center text-text-400 hover:text-danger-100 hover:bg-danger-100/10 active:bg-danger-100/20 rounded-sm transition-colors bg-transparent border-none"
           title={t('task.stop')}
         >
           <StopIcon size={10} />
@@ -477,7 +477,7 @@ const ToolBadge = memo(function ToolBadge({ tool }: { tool: ToolPart }) {
     <span
       className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-xs text-[length:var(--fs-xxs)] font-mono ${
         isRunning
-          ? 'bg-accent-main-100/10 text-accent-main-100'
+          ? 'bg-accent-main-100/15 text-accent-main-100'
           : isError
             ? 'bg-danger-100/10 text-danger-100'
             : 'bg-bg-200 text-text-400'

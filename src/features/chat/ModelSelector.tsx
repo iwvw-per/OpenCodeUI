@@ -7,7 +7,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback, memo, forwardRef, useImperativeHandle } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDownIcon, SearchIcon, ThinkingIcon, EyeIcon, CheckIcon, PinIcon } from '../../components/Icons'
+import { ChevronDownIcon, SearchIcon, ThinkingIcon, EyeIcon, PinIcon } from '../../components/Icons'
 import { DropdownMenu } from '../../components/ui'
 import type { ModelInfo } from '../../api'
 import { useInputCapabilities } from '../../hooks/useInputCapabilities'
@@ -208,7 +208,7 @@ const ModelListPanel = memo(function ModelListPanel({
             <div className="text-[length:var(--fs-sm)] text-text-500 mt-1">{noResultsHint}</div>
           </div>
         ) : (
-          <div className="pb-1 pr-1">
+          <div className="flex flex-col gap-1 pb-1 pr-1">
             {flatList.map((item, index) => {
               if (item.type === 'header') {
                 return (
@@ -234,8 +234,8 @@ const ModelListPanel = memo(function ModelListPanel({
                   key={item.key}
                   className={`
                     group flex items-center gap-2 px-2.5 py-2 rounded-lg transition-colors duration-100
-                    ${isSelected ? 'bg-accent-main-100/10 text-accent-main-100' : 'text-text-200'}
-                    ${isHL && !isSelected ? 'bg-bg-200/40 text-text-100' : ''}
+                    ${isSelected ? 'bg-accent-main-100/15 text-accent-main-100' : 'text-text-200'}
+                    ${isHL && !isSelected ? 'bg-bg-200 text-text-100' : ''}
                   `}
                   onMouseMove={e => {
                     if (ignoreMouseRef.current) return
@@ -281,11 +281,6 @@ const ModelListPanel = memo(function ModelListPanel({
                       <span className="text-text-500 max-w-[100px] truncate text-right">{model.providerName}</span>
                       {model.contextLimit > 0 && (
                         <span className="text-text-500 w-[4ch] text-right hidden sm:inline">{formatContext(model.contextLimit)}</span>
-                      )}
-                      {isSelected && (
-                        <span className="w-5 flex items-center justify-center flex-shrink-0 text-accent-secondary-100">
-                          <CheckIcon />
-                        </span>
                       )}
                     </div>
                   </button>
@@ -799,7 +794,7 @@ export const ModelSelector = memo(
           }}
           disabled={disabled || isLoading}
           aria-expanded={isOpen}
-          className="group flex items-center gap-2 px-2 py-1.5 text-text-200 rounded-lg hover:bg-bg-200 hover:text-text-100 transition-all duration-150 active:scale-95 cursor-pointer text-[length:var(--fs-base)]"
+          className="group flex items-center gap-2 px-2 py-1.5 text-text-200 rounded-lg hover:bg-bg-200 hover:text-text-100 transition-colors duration-150 active:bg-bg-300 cursor-pointer text-[length:var(--fs-base)]"
           title={displayName}
         >
           <span className="font-medium truncate max-w-[240px]">{displayName}</span>
@@ -822,7 +817,7 @@ export const ModelSelector = memo(
           }}
           disabled={disabled || isLoading}
           aria-expanded={isOpen}
-          className="flex items-center gap-1 px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-all duration-150 hover:bg-bg-200 active:scale-95 cursor-pointer min-w-0 overflow-hidden w-full"
+          className="flex items-center gap-1 px-2 py-1.5 text-[length:var(--fs-base)] rounded-lg transition-colors duration-150 hover:bg-bg-200 active:bg-bg-300 cursor-pointer min-w-0 overflow-hidden w-full"
           title={selectedModel?.name || t('modelSelector.selectModel')}
         >
           <span className="text-[length:var(--fs-sm)] text-text-300 truncate">{displayName}</span>

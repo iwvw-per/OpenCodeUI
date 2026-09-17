@@ -112,6 +112,16 @@
     "inProgress": "{{count}} in progress",
     "tokenRate": "Last turn output rate (output tokens only)"
   },
+  "sessionStats": {
+    "title": "Session statistics",
+    "modelTime": "Model time",
+    "toolTime": "Tool time",
+    "ttft": "Avg time to first token (TTFT)",
+    "tps": "Output speed (TPS)",
+    "cacheHit": "Cache hit rate",
+    "outputTokens": "Output tokens",
+    "counts": "{{turns}} turns · {{steps}} steps"
+  },
   "inputActions": {
     "scrollToBottom": "Scroll to bottom",
     "reply": "Reply..."
@@ -138,6 +148,9 @@
     "contextUsage": "Context Usage",
     "viewDetails": "View details",
     "appearance": "Appearance",
+    "themeAuto": "Auto",
+    "themeLight": "Light",
+    "themeDark": "Dark",
     "standardWidth": "Standard Width",
     "wideMode": "Wide Mode",
     "shareChat": "Share Chat",

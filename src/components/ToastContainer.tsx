@@ -99,7 +99,7 @@ function Toast({ item, onDismiss, onClick }: { item: ToastItem; onDismiss: () =>
 
       {/* Close — always visible */}
       <button
-        className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md text-text-400 hover:text-text-200 hover:bg-bg-200 transition-all duration-150 active:scale-90"
+        className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md text-text-400 hover:text-text-200 hover:bg-bg-200 active:bg-bg-300 transition-colors duration-150"
         onClick={e => {
           e.stopPropagation()
           onDismiss()
@@ -146,7 +146,7 @@ function UpdateToast({ onOpenAbout }: { onOpenAbout: () => void }) {
       </div>
 
       <button
-        className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md text-text-400 hover:text-text-200 hover:bg-bg-200 transition-all duration-150 active:scale-90"
+        className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md text-text-400 hover:text-text-200 hover:bg-bg-200 active:bg-bg-300 transition-colors duration-150"
         onClick={e => {
           e.stopPropagation()
           updateStore.dismissCurrentVersion()
@@ -205,7 +205,7 @@ export function ToastContainer({ onOpenAbout }: { onOpenAbout: () => void }) {
       {toasts.length >= 2 && (
         <div className="flex justify-end pointer-events-auto">
           <button
-            className="text-[length:var(--fs-xs)] text-text-300 hover:text-text-100 px-2 py-1 rounded-md hover:bg-bg-200/60 transition-all duration-150 active:scale-95"
+            className="text-[length:var(--fs-xs)] text-text-300 hover:text-text-100 px-2 py-1 rounded-md hover:bg-bg-200 active:bg-bg-300 transition-colors duration-150"
             onClick={() => notificationStore.dismissAllToasts()}
           >
             {t('toast.clearAll')}

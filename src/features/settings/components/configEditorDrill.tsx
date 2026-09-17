@@ -137,7 +137,7 @@ export function DrillRow({
       onClick={onClick}
       onFocus={onFocus}
       onBlur={onBlur}
-      className="group grid w-full grid-cols-1 gap-1 py-3 text-left transition-colors sm:grid-cols-[minmax(0,1fr)_auto_14px] sm:items-center sm:gap-4"
+      className="group grid w-full grid-cols-1 gap-1 rounded-lg px-2.5 py-3 text-left transition-colors hover:bg-bg-200 active:bg-bg-300 sm:grid-cols-[minmax(0,1fr)_auto_14px] sm:items-center sm:gap-4"
     >
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-2">

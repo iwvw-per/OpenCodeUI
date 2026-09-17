@@ -6,6 +6,8 @@ import { CircularProgress } from '../../../components/CircularProgress'
 import { useTodos, useTodoStats, useCurrentTask, todoStore } from '../../../store'
 import { getSessionTodos } from '../../../api/session'
 import { useTokenRate } from '../../../hooks/useTokenRate'
+import { useSessionTurnStats } from '../../../hooks/useSessionTurnStats'
+import { SessionStatsPopover } from './SessionStatsPopover'
 import { autoApproveStore, type FullAutoMode } from '../../../store/autoApproveStore'
 import type { TodoItem } from '../../../types/api/event'
 
@@ -21,12 +23,6 @@ function useFullAutoMode(paneId: string): FullAutoMode {
 }
 
 const TODO_SWAP_DURATION_MS = 260
-
-/** 输出速率显示：<10 保留一位小数，其余取整，空闲显示 0 */
-function formatTokenRate(rate: number): string {
-  if (rate < 0.05) return '0 tok/s'
-  return `${rate < 10 ? rate.toFixed(1) : Math.round(rate)} tok/s`
-}
 
 // ============================================
 // InputFooter - disclaimer + todo progress + full auto toggle
@@ -48,6 +44,7 @@ export const InputFooter = memo(function InputFooter({
   const stats = useTodoStats(sessionId ?? null)
   const currentTask = useCurrentTask(sessionId ?? null)
   const { tokensPerSec } = useTokenRate(sessionId ?? null)
+  const turnStats = useSessionTurnStats(sessionId ?? null)
   const [panelState, setPanelState] = useState<'closed' | 'opening' | 'open' | 'closing'>('closed')
   const popoverRef = useRef<HTMLDivElement>(null)
   const loadedRef = useRef<string | null>(null)
@@ -203,13 +200,13 @@ export const InputFooter = memo(function InputFooter({
 
   return (
     <div
-      className="relative flex h-full w-full items-center justify-center gap-2 text-[length:var(--fs-xs)] leading-none text-text-500"
+      className="relative flex h-full w-full items-center justify-center gap-2 px-3 text-[length:var(--fs-xs)] leading-none text-text-300"
       ref={popoverRef}
     >
       {/* Full Auto 三态切换: off -> session -> global -> off */}
       <button
         onClick={() => autoApproveStore.cyclePaneFullAutoMode(paneId)}
-        className="shrink-0 flex items-center justify-center hover:text-text-300 transition-colors"
+        className="shrink-0 flex items-center justify-center hover:text-text-100 transition-colors"
         title={
           fullAutoMode === 'off'
             ? t('inputFooter.autoApproveOff')
@@ -230,35 +227,30 @@ export const InputFooter = memo(function InputFooter({
         />
       </button>
 
-      {/* 待办进度：没有待办时整段（含前面的分隔点）都不渲染，只留 TPS */}
+      <span className="text-text-400/70 shrink-0">·</span>
+
+      {/* 会话统计：点击弹出模型用时 / 工具用时 / TTFT / TPS 等累计指标 */}
+      <SessionStatsPopover stats={turnStats} tokensPerSec={tokensPerSec} />
+
+      {/* 待办进度：整组保持居中，任务名按可用宽度自动截断 */}
       {hasTodos && (
         <>
-          <span className="text-text-500/30 shrink-0">·</span>
+          <span className="text-text-400/70 shrink-0">·</span>
           <button
             onClick={togglePanel}
-            className={`flex items-center gap-1.5 min-w-0 hover:text-text-300 transition-colors ${
-              panelOpen ? 'text-text-300' : ''
+            className={`flex items-center gap-1.5 min-w-0 hover:text-text-100 transition-colors ${
+              panelOpen ? 'text-text-100' : ''
             }`}
           >
             <MiniProgress size={11} progress={progress} done={isAllDone} />
             <span className="tabular-nums shrink-0">
               {stats.completed}/{stats.total}
             </span>
-            <span className="text-text-500/50 shrink-0">·</span>
-            <span className="truncate max-w-[120px] sm:max-w-[200px]">{taskLabel}</span>
+            <span className="text-text-400/60 shrink-0">·</span>
+            <span className="truncate text-left">{taskLabel}</span>
           </button>
         </>
       )}
-
-      <span className="text-text-500/30 shrink-0">·</span>
-
-      {/* 最后一轮输出速率（仅输出 token，纯显示，不可点击） */}
-      <span
-        className="shrink-0 tabular-nums"
-        title={t('inputFooter.tokenRate', { defaultValue: '最后一轮输出速率（仅输出 token）' })}
-      >
-        {formatTokenRate(tokensPerSec)}
-      </span>
 
       {/* Todo Swap Panel */}
       {panelState !== 'closed' && (

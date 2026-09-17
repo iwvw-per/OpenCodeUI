@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CloseIcon, ChevronDownIcon, CopyIcon, CheckIcon, DownloadIcon, ExpandIcon } from '../../components/Icons'
+import { cn } from '../../utils/cn'
+import { interactive } from '../../utils/interaction'
 import { getAttachmentIcon, hasExpandableContent } from './utils'
 import { getMaterialIconUrl } from '../../utils/materialIcons'
 import { useDelayedRender } from '../../hooks/useDelayedRender'
@@ -56,13 +58,13 @@ function AttachmentItemComponent({
     >
       {/* 标签头部 */}
       <div
-        className={`
-          flex items-center gap-1.5 w-full
-          px-2.5 py-1.5 rounded-lg border
-          bg-bg-100/50 border-border-300/50
-          ${size === 'sm' ? 'text-[length:var(--fs-sm)]' : 'text-[length:var(--fs-base)]'}
-          ${canExpand ? 'cursor-pointer hover:bg-bg-200 transition-colors' : ''}
-        `}
+        className={cn(
+          'flex items-center gap-1.5 w-full',
+          'px-2.5 py-1.5 rounded-lg border',
+          'bg-bg-100/50 border-border-300/50',
+          size === 'sm' ? 'text-[length:var(--fs-sm)]' : 'text-[length:var(--fs-base)]',
+          canExpand && interactive.subtle,
+        )}
         onClick={canExpand ? () => setIsExpanded(!isExpanded) : undefined}
       >
         {materialIconUrl ? (
@@ -95,11 +97,12 @@ function AttachmentItemComponent({
         )}
         {onRemove && (
           <button
+            type="button"
             onClick={e => {
               e.stopPropagation()
               onRemove(attachment.id)
             }}
-            className="ml-1 text-text-400 hover:text-text-100 transition-colors"
+            className={cn('ml-1 rounded-sm text-text-400 hover:text-danger-100', interactive.danger)}
             aria-label={t('attachment.removeAttachment')}
           >
             <CloseIcon />
@@ -180,7 +183,7 @@ function ExpandedContent({ attachment, imageError, onImageError, onOpenDetail }:
           alt={attachment.displayName}
           onError={onImageError}
           loading="lazy"
-          className="max-h-64 w-full rounded object-contain bg-bg-300/50"
+          className="max-h-64 w-full rounded-lg object-contain bg-bg-300/50"
         />
       </div>
     )
@@ -337,15 +340,16 @@ function ActionBar({ attachment, hasContent, hasDownloadable, onOpenDetail, show
 
   if (!hasContent && !hasDownloadable) return null
 
-  const btnBase = 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[length:var(--fs-xxs)] transition-colors duration-150'
+  const btnBase = 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[length:var(--fs-xxs)] transition-colors duration-150'
 
   return (
     <div
       className={`flex flex-wrap items-center gap-1 px-2 py-1 bg-bg-100/30 ${showBorderTop ? 'border-t border-border-300/50' : ''}`}
     >
       <button
+        type="button"
         onClick={handleOpenDetail}
-        className={`${btnBase} text-text-400 hover:text-text-200 hover:bg-bg-300/50`}
+        className={cn(btnBase, 'text-text-400 hover:text-text-200', interactive.subtle)}
         title={t('attachment.viewDetail')}
       >
         <ExpandIcon size={11} />
@@ -354,8 +358,12 @@ function ActionBar({ attachment, hasContent, hasDownloadable, onOpenDetail, show
 
       {hasContent && (
         <button
+          type="button"
           onClick={handleCopy}
-          className={`${btnBase} ${copied ? 'text-success-100' : 'text-text-400 hover:text-text-200 hover:bg-bg-300/50'}`}
+          className={cn(
+            btnBase,
+            copied ? 'text-success-100' : cn('text-text-400 hover:text-text-200', interactive.subtle),
+          )}
           title={copied ? t('common:copied') : t('attachment.copyContent')}
         >
           {copied ? <CheckIcon size={11} /> : <CopyIcon size={11} />}
@@ -365,8 +373,9 @@ function ActionBar({ attachment, hasContent, hasDownloadable, onOpenDetail, show
 
       {hasDownloadable && (
         <button
+          type="button"
           onClick={handleDownload}
-          className={`${btnBase} text-text-400 hover:text-text-200 hover:bg-bg-300/50`}
+          className={cn(btnBase, 'text-text-400 hover:text-text-200', interactive.subtle)}
           title={t('attachment.saveToFile')}
         >
           <DownloadIcon size={11} />

@@ -187,7 +187,6 @@ describe('LayoutStore backup import', () => {
       sidebarFolderRecents: true,
       sidebarFolderRecentsShowDiff: false,
       sidebarShowChildSessions: true,
-      sidebarShowGlobal: true,
       sidebarSessionSortField: 'created',
       sidebarSessionSortDesc: false,
       sendOnEnter: false,
@@ -201,7 +200,6 @@ describe('LayoutStore backup import', () => {
     expect(layoutStore.getState().sidebarExpanded).toBe(false)
     expect(layoutStore.getState().sidebarFolderRecents).toBe(true)
     expect(layoutStore.getState().sidebarShowChildSessions).toBe(true)
-    expect(layoutStore.getState().sidebarShowGlobal).toBe(true)
     expect(layoutStore.getState().sidebarSessionSortField).toBe('created')
     expect(layoutStore.getState().sidebarSessionSortDesc).toBe(false)
     expect(layoutStore.getState().sendOnEnter).toBe(false)

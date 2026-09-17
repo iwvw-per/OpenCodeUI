@@ -63,6 +63,7 @@ const PANE_VIEWPORT: ChatViewportValue = {
   presentation: {
     surfaceVariant: 'compact',
     isCompact: true,
+    isWideMode: false,
   },
   interaction: {
     mode: 'pointer',
@@ -1120,11 +1121,21 @@ export const ChatPane = memo(function ChatPane({
   const viewportValue = useMemo((): ChatViewportValue => {
     if (!showCompactShell) return outerViewport ?? PANE_VIEWPORT
     const enableCollapsedInputDock = outerViewport?.interaction.enableCollapsedInputDock ?? false
-    if (enableCollapsedInputDock === PANE_VIEWPORT.interaction.enableCollapsedInputDock) {
+    // 宽屏模式由用户在设置里控制，分屏面板同样要跟随，
+    // 否则分屏下输入框与消息列的宽度会和主视图不一致。
+    const isWideMode = outerViewport?.presentation.isWideMode ?? false
+    if (
+      enableCollapsedInputDock === PANE_VIEWPORT.interaction.enableCollapsedInputDock &&
+      isWideMode === PANE_VIEWPORT.presentation.isWideMode
+    ) {
       return PANE_VIEWPORT
     }
     return {
       ...PANE_VIEWPORT,
+      presentation: {
+        ...PANE_VIEWPORT.presentation,
+        isWideMode,
+      },
       interaction: {
         ...PANE_VIEWPORT.interaction,
         enableCollapsedInputDock,
