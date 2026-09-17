@@ -219,7 +219,7 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
       }}
     >
       {/* Items List */}
-      <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar p-1.5">
+      <div ref={listRef} className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-0.5 p-1.5">
         {loading && <div className="px-2 py-4 text-center text-[length:var(--fs-base)] text-text-400">{t('common:loading')}</div>}
 
         {!loading && filteredCommands.length === 0 && (
@@ -233,7 +233,7 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
             key={cmd.name}
             title={cmd.description}
             className={`w-full px-2.5 py-2 md:py-1.5 flex items-center gap-3 text-left rounded-lg transition-colors ${
-              index === activeIndex ? 'bg-accent-main-100/10 text-text-100' : 'text-text-200 hover:bg-bg-100/40'
+              index === activeIndex ? 'bg-bg-200 text-text-100' : 'text-text-200 hover:bg-bg-200'
             }`}
             onClick={() => onSelect(cmd)}
             onPointerEnter={() => setSelectedIndex(index)}

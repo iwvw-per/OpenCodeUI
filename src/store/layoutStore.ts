@@ -104,8 +104,6 @@ interface LayoutState {
   sidebarFolderRecents: boolean
   sidebarFolderRecentsShowDiff: boolean
   sidebarShowChildSessions: boolean
-  /** 侧栏显示「全局」分组（非 Git 工作区会话），默认关闭 */
-  sidebarShowGlobal: boolean
   /** 侧栏会话排序字段 */
   sidebarSessionSortField: SessionSortField
   /** 侧栏会话排序方向：true = 倒序（新→旧），false = 正序（旧→新） */
@@ -136,7 +134,6 @@ const STORAGE_KEY_SIDEBAR = 'opencode-sidebar-expanded'
 const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS = 'opencode-sidebar-folder-recents'
 const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF = 'opencode-sidebar-folder-recents-show-diff'
 const STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS = 'opencode-sidebar-show-child-sessions'
-const STORAGE_KEY_SIDEBAR_SHOW_GLOBAL = 'opencode-sidebar-show-global'
 const STORAGE_KEY_SIDEBAR_SESSION_SORT = 'opencode-sidebar-session-sort'
 const STORAGE_KEY_SEND_ON_ENTER = 'opencode-send-on-enter'
 const STORAGE_KEY_PANEL_LAYOUT = 'opencode-panel-layout'
@@ -327,7 +324,6 @@ export class LayoutStore {
     sidebarFolderRecents: false,
     sidebarFolderRecentsShowDiff: true,
     sidebarShowChildSessions: false,
-    sidebarShowGlobal: false,
     sidebarSessionSortField: DEFAULT_SESSION_SORT.field,
     sidebarSessionSortDesc: DEFAULT_SESSION_SORT.desc,
     sendOnEnter: true,
@@ -429,11 +425,6 @@ export class LayoutStore {
       const savedShowChildSessions = localStorage.getItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS)
       if (savedShowChildSessions !== null) {
         this.state.sidebarShowChildSessions = savedShowChildSessions === 'true'
-      }
-
-      const savedShowGlobal = localStorage.getItem(STORAGE_KEY_SIDEBAR_SHOW_GLOBAL)
-      if (savedShowGlobal !== null) {
-        this.state.sidebarShowGlobal = savedShowGlobal === 'true'
       }
 
       // 排序偏好存成 JSON；解析失败/字段非法时保持默认（updated + 倒序）
@@ -566,17 +557,6 @@ export class LayoutStore {
     this.state.sidebarShowChildSessions = enabled
     try {
       localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, String(enabled))
-    } catch {
-      /* ignore */
-    }
-    this.notify()
-  }
-
-  setSidebarShowGlobal(enabled: boolean) {
-    if (this.state.sidebarShowGlobal === enabled) return
-    this.state.sidebarShowGlobal = enabled
-    try {
-      localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_GLOBAL, String(enabled))
     } catch {
       /* ignore */
     }
@@ -1254,7 +1234,6 @@ export interface LayoutBackup {
   sidebarFolderRecents: boolean
   sidebarFolderRecentsShowDiff: boolean
   sidebarShowChildSessions: boolean
-  sidebarShowGlobal: boolean
   sidebarSessionSortField: SessionSortField
   sidebarSessionSortDesc: boolean
   sendOnEnter: boolean
@@ -1302,7 +1281,6 @@ export function exportLayoutBackup(): LayoutBackup {
     sidebarFolderRecents: state.sidebarFolderRecents,
     sidebarFolderRecentsShowDiff: state.sidebarFolderRecentsShowDiff,
     sidebarShowChildSessions: state.sidebarShowChildSessions,
-    sidebarShowGlobal: state.sidebarShowGlobal,
     sidebarSessionSortField: state.sidebarSessionSortField,
     sidebarSessionSortDesc: state.sidebarSessionSortDesc,
     sendOnEnter: state.sendOnEnter,
@@ -1356,7 +1334,6 @@ export function importLayoutBackup(raw: unknown): void {
     sidebarFolderRecents: parsed?.sidebarFolderRecents === true,
     sidebarFolderRecentsShowDiff: parsed?.sidebarFolderRecentsShowDiff !== false,
     sidebarShowChildSessions: parsed?.sidebarShowChildSessions === true,
-    sidebarShowGlobal: parsed?.sidebarShowGlobal === true,
     sidebarSessionSortField: isSessionSortField(parsed?.sidebarSessionSortField)
       ? parsed.sidebarSessionSortField
       : DEFAULT_SESSION_SORT.field,
@@ -1379,7 +1356,6 @@ export function importLayoutBackup(raw: unknown): void {
     String(nextState.sidebarFolderRecentsShowDiff),
   )
   localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, String(nextState.sidebarShowChildSessions))
-  localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_GLOBAL, String(nextState.sidebarShowGlobal))
   localStorage.setItem(
     STORAGE_KEY_SIDEBAR_SESSION_SORT,
     JSON.stringify({ field: nextState.sidebarSessionSortField, desc: nextState.sidebarSessionSortDesc }),

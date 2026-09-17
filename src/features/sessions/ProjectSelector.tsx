@@ -109,7 +109,7 @@ export function ProjectSelector({
         onClick={() => setIsOpen(!isOpen)}
         disabled={isLoading}
         aria-expanded={isOpen}
-        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-bg-200/50 transition-colors group text-left"
+        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-bg-200 transition-colors group text-left"
         title={getPath(currentProject)}
       >
         <div className="flex-1 min-w-0">
@@ -143,25 +143,29 @@ export function ProjectSelector({
             {otherProjects.length === 0 ? (
               <div className="px-3 py-4 text-center text-[length:var(--fs-sm)] text-text-400/60">{t('sessions.noOtherProjects')}</div>
             ) : (
-              otherProjects.map(project => (
-                <ProjectItem
-                  key={project.id}
-                  project={project}
-                  displayName={getDisplayName(project)}
-                  path={getPath(project)}
-                  onSelect={() => {
-                    onSelectProject(project.id)
-                    setIsOpen(false)
-                  }}
-                  onRemove={
-                    project.id !== 'global'
-                      ? () => {
-                          setDeleteConfirm({ isOpen: true, projectId: project.id })
-                        }
-                      : undefined
-                  }
-                />
-              ))
+              /* 条目之间留 2px：ProjectItem 是 rounded-lg + hover 底色，
+                 紧贴时相邻圆角会拼成一条凹槽。不用容器 gap，避免撑开分组标题。 */
+              <div className="flex flex-col gap-0.5">
+                {otherProjects.map(project => (
+                  <ProjectItem
+                    key={project.id}
+                    project={project}
+                    displayName={getDisplayName(project)}
+                    path={getPath(project)}
+                    onSelect={() => {
+                      onSelectProject(project.id)
+                      setIsOpen(false)
+                    }}
+                    onRemove={
+                      project.id !== 'global'
+                        ? () => {
+                            setDeleteConfirm({ isOpen: true, projectId: project.id })
+                          }
+                        : undefined
+                    }
+                  />
+                ))}
+              </div>
             )}
           </div>
 
@@ -173,7 +177,7 @@ export function ProjectSelector({
                 onAddProject()
                 setIsOpen(false)
               }}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-100 transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200 active:bg-bg-300 transition-colors"
             >
               <PlusIcon className="w-3.5 h-3.5" />
               {t('sessions.addProject')}
@@ -217,7 +221,10 @@ function ProjectItem({ project, displayName, path, onSelect, onRemove }: Project
   const isGlobal = project.id === 'global'
 
   return (
-    <div className="group w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-bg-100 transition-colors" onClick={onSelect}>
+    <div
+      className="group w-full flex items-center gap-2.5 px-2 py-2 rounded-lg cursor-pointer select-none transition-colors hover:bg-bg-200 active:bg-bg-300"
+      onClick={onSelect}
+    >
       <button
         type="button"
         onClick={e => {

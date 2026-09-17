@@ -667,7 +667,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
             title={`+${totalStats.additions} -${totalStats.deletions} ${fullFileCountLabel}`}
             style={statFadeMaskStyle}
           >
-            <div className="inline-flex h-6 min-w-max items-center gap-1.5 whitespace-nowrap text-[length:var(--fs-xxs)] font-mono tabular-nums">
+            <div className="inline-flex h-6 min-w-max items-center gap-1.5 whitespace-nowrap text-[length:var(--fs-xxs)] tabular-nums">
               <span className="text-success-100">+{totalStats.additions}</span>
               <span className="text-danger-100">-{totalStats.deletions}</span>
               <span className="text-text-400">{compactFileCountLabel}</span>
@@ -696,7 +696,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
               title={activeChangeModeMeta.label}
               className={`
                 inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors
-                ${changeMenuOpen ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:text-text-100 hover:bg-bg-200/50'}
+                ${changeMenuOpen ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:text-text-100 hover:bg-bg-200'}
               `}
             >
               <span className="shrink-0">{activeChangeModeMeta.icon}</span>
@@ -718,7 +718,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                 role="menu"
                 aria-label={t('sessionChanges.mode')}
                 onKeyDown={handleChangeMenuKeyDown}
-                className="space-y-px"
+                className="space-y-0.5"
               >
                 {changeOptions.map(mode => {
                   const meta = changeModeMeta[mode]
@@ -754,7 +754,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                         ${
                           isSelected
                             ? 'bg-bg-200/70 text-text-100 font-medium'
-                            : 'text-text-200 hover:bg-bg-200/60 hover:text-text-100'
+                            : 'text-text-200 hover:bg-bg-200 hover:text-text-100'
                         }
                       `}
                     >
@@ -852,7 +852,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                         onContextMenu={event => handleFileContextMenu(event, diff.file)}
                         className={`
                        w-full min-w-0 flex items-center gap-2 px-3 py-1 text-left
-                       hover:bg-bg-200/50 transition-colors text-[length:var(--fs-sm)]
+                       hover:bg-bg-200 transition-colors text-[length:var(--fs-sm)]
                        text-text-300
                      `}
                       >
@@ -978,7 +978,7 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
       id: `session-change:${diff.file}`,
       title: fileName,
       titleExtra: (
-        <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] font-mono tabular-nums shrink-0">
+        <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] tabular-nums shrink-0">
           {diff.additions > 0 && <span className="text-success-100">+{diff.additions}</span>}
           {diff.deletions > 0 && <span className="text-danger-100">-{diff.deletions}</span>}
         </div>
@@ -1218,7 +1218,7 @@ const ChangesTreeItem = memo(function ChangesTreeItem({
         <button
           type="button"
           onClick={() => onToggleDir(node.path)}
-          className="w-full min-w-0 flex items-center gap-1.5 py-1 hover:bg-bg-200/50 transition-colors text-[length:var(--fs-sm)] text-text-300"
+          className="w-full min-w-0 flex items-center gap-1.5 py-1 hover:bg-bg-200 transition-colors text-[length:var(--fs-sm)] text-text-300"
           style={{ paddingLeft }}
         >
           <ChevronRightIcon size={12} className={`shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
@@ -1267,7 +1267,7 @@ const ChangesTreeItem = memo(function ChangesTreeItem({
       }}
       className={`
          w-full min-w-0 flex items-center gap-1.5 py-1 transition-colors text-[length:var(--fs-sm)]
-         hover:bg-bg-200/50
+         hover:bg-bg-200
          text-text-300
        `}
       style={{ paddingLeft: paddingLeft + 16 }}

@@ -273,7 +273,7 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing, onClos
             </Button>
           </div>
         ) : (
-          <div className="p-1">
+          <div className="flex flex-col gap-0.5 p-1">
             {resourceError && (
               <div className="mx-1 mb-1 flex items-center gap-1.5 rounded-md bg-warning-bg/50 px-2 py-1.5 text-[length:var(--fs-sm)] text-warning-100">
                 <AlertCircleIcon size={13} />

@@ -112,6 +112,16 @@
     "inProgress": "{{count}} 个进行中",
     "tokenRate": "最后一轮输出速率（仅输出 token）"
   },
+  "sessionStats": {
+    "title": "会话统计",
+    "modelTime": "模型用时",
+    "toolTime": "工具调用用时",
+    "ttft": "首 token 平均（TTFT）",
+    "tps": "输出速度（TPS）",
+    "cacheHit": "缓存命中率",
+    "outputTokens": "输出 token",
+    "counts": "{{turns}} 轮 · {{steps}} 步"
+  },
   "inputActions": {
     "scrollToBottom": "滚动到底部",
     "reply": "回复..."
@@ -138,6 +148,9 @@
     "contextUsage": "上下文用量",
     "viewDetails": "查看详情",
     "appearance": "外观",
+    "themeAuto": "自动",
+    "themeLight": "浅色",
+    "themeDark": "深色",
     "standardWidth": "标准宽度",
     "wideMode": "宽屏模式",
     "shareChat": "分享对话",

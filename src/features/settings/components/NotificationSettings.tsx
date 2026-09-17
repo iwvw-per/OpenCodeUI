@@ -18,7 +18,7 @@ import {
   useNotificationEventSettings,
 } from '../../../store/notificationEventSettingsStore'
 import { soundStore, useSoundSettings } from '../../../store/soundStore'
-import { Toggle, SettingRow, SettingField, SettingsSection, SettingsSubgroup } from './SettingsUI'
+import { Toggle, SettingRow, SettingField, SettingsSection, SettingsCardRow } from './SettingsUI'
 import { BUILTIN_SOUNDS, SOUND_OPTIONS, isSoundSupported, playSound } from '../../../utils/soundPlayer'
 import { cn } from '../../../utils/cn'
 import { interactive } from '../../../utils/interaction'
@@ -271,7 +271,7 @@ function EventSoundCard({
         type="button"
         onClick={handlePreview}
         disabled={eventConfig.soundId === 'none'}
-        className="absolute right-2 top-2 inline-flex items-center justify-center w-7 h-7 rounded-md text-text-400 hover:text-text-200 hover:bg-bg-200/60 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-400"
+        className="absolute right-2 top-2 inline-flex items-center justify-center w-7 h-7 rounded-md text-text-400 hover:text-text-200 hover:bg-bg-200 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-400"
         title={t('notifications.preview')}
         aria-label={t('notifications.preview')}
       >
@@ -299,8 +299,8 @@ function EventSoundCard({
           className={`px-2.5 py-1 rounded-md text-[length:var(--fs-sm)] font-medium transition-colors
             ${
               eventConfig.soundId === 'none'
-                ? 'bg-accent-main-100/10 text-accent-main-100'
-                : 'text-text-400 hover:bg-bg-200/60 hover:text-text-200'
+                ? 'bg-accent-main-100/15 text-accent-main-100'
+                : 'text-text-400 hover:bg-bg-200 hover:text-text-200'
             }`}
         >
           {t('notifications.noSound')}
@@ -314,8 +314,8 @@ function EventSoundCard({
             className={`px-2.5 py-1 rounded-md text-[length:var(--fs-sm)] font-medium transition-colors
               ${
                 eventConfig.soundId === sid
-                  ? 'bg-accent-main-100/10 text-accent-main-100'
-                  : 'text-text-400 hover:bg-bg-200/60 hover:text-text-200'
+                  ? 'bg-accent-main-100/15 text-accent-main-100'
+                  : 'text-text-400 hover:bg-bg-200 hover:text-text-200'
               }`}
           >
             {BUILTIN_SOUNDS[sid]}
@@ -329,8 +329,8 @@ function EventSoundCard({
             className={`px-2.5 py-1 rounded-md text-[length:var(--fs-sm)] font-medium transition-colors
               ${
                 eventConfig.soundId === 'custom'
-                  ? 'bg-accent-main-100/10 text-accent-main-100'
-                  : 'text-text-400 hover:bg-bg-200/60 hover:text-text-200'
+                  ? 'bg-accent-main-100/15 text-accent-main-100'
+                  : 'text-text-400 hover:bg-bg-200 hover:text-text-200'
               }`}
           >
             {t('notifications.customSound')}
@@ -428,7 +428,7 @@ export function NotificationSettings() {
     <div>
       <SettingsSection title={t('notifications.systemNotifications')} description={t('notifications.systemNotificationsDesc')}>
         {notificationsSupported ? (
-          <div className="space-y-3">
+          <>
             <SettingRow
               label={t('notifications.notificationsLabel')}
               description={
@@ -465,22 +465,32 @@ export function NotificationSettings() {
             </SettingRow>
 
             {notificationsEnabled && notificationPermission !== 'denied' && (
-              <SettingsSubgroup title={t('notifications.notificationTypes')} description={t('notifications.notificationTypesDesc')}>
-                {EVENT_TYPES.map(evt => (
-                  <EventEnableRow
-                    key={evt.type}
-                    type={evt.type}
-                    labelKey={evt.labelKey}
-                    descKey={evt.descKey}
-                    icon={evt.icon}
-                    color={evt.color}
-                  />
-                ))}
-              </SettingsSubgroup>
+              <SettingsCardRow>
+                <div className="mb-2.5">
+                  <div className="text-[length:var(--fs-sm)] font-medium text-text-100">
+                    {t('notifications.notificationTypes')}
+                  </div>
+                  <div className="mt-0.5 text-[length:var(--fs-xs)] text-text-400 leading-relaxed">
+                    {t('notifications.notificationTypesDesc')}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2.5">
+                  {EVENT_TYPES.map(evt => (
+                    <EventEnableRow
+                      key={evt.type}
+                      type={evt.type}
+                      labelKey={evt.labelKey}
+                      descKey={evt.descKey}
+                      icon={evt.icon}
+                      color={evt.color}
+                    />
+                  ))}
+                </div>
+              </SettingsCardRow>
             )}
-          </div>
+          </>
         ) : (
-          <div className="text-[length:var(--fs-xs)] text-text-300 leading-relaxed">
+          <div className="px-4 py-3 text-[length:var(--fs-xs)] text-text-300 leading-relaxed">
             {t('notifications.notAvailable')}
           </div>
         )}
@@ -499,7 +509,7 @@ export function NotificationSettings() {
 
       <SettingsSection title={t('notifications.soundSettings')} description={t('notifications.soundSettingsDesc')}>
         {soundSupported ? (
-          <div className="space-y-4">
+          <>
             <SettingRow
               label={t('notifications.soundEnabled')}
               description={t('notifications.soundEnabledDesc')}
@@ -543,9 +553,9 @@ export function NotificationSettings() {
                 </div>
               </SettingField>
             )}
-          </div>
+          </>
         ) : (
-          <div className="text-[length:var(--fs-xs)] text-text-300 leading-relaxed">
+          <div className="px-4 py-3 text-[length:var(--fs-xs)] text-text-300 leading-relaxed">
             {t('notifications.soundNotSupported')}
           </div>
         )}

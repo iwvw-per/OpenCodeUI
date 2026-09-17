@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, IconButton } from '../../../components/ui'
+import { Button, IconButton, Switch } from '../../../components/ui'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import {
   TrashIcon,
@@ -10,17 +10,14 @@ import {
   KeyIcon,
   PencilIcon,
   RetryIcon,
-  PlugIcon,
-  CircleIcon,
 } from '../../../components/Icons'
 import { useServerStore, useRouter } from '../../../hooks'
 import { messageStore } from '../../../store'
-import { useMultiServerStore, multiServerStore } from '../../../store/multiServerStore'
-import { settingsFieldClass, SettingsSection, SettingRow, Toggle } from './SettingsUI'
+import { settingsFieldClass, SettingsSection } from './SettingsUI'
 import { cn } from '../../../utils/cn'
 import { interactive } from '../../../utils/interaction'
 import type { ServerConfig, ServerHealth } from '../../../store/serverStore'
-import { AiAgentAccountSettings } from './AiAgentAccountSettings'
+import { AiAgentAccountSettings, PreferencesSyncSettings } from './AiAgentAccountSettings'
 
 const IPV4_PATTERN = /^(?:\d{1,3}\.){3}\d{1,3}$/
 /** 显示名长度上限，避免列表项把右侧操作按钮挤穿 */
@@ -44,24 +41,20 @@ function ServerItem({
   server,
   health,
   isActive,
-  subscribed,
-  multiServerEnabled,
   onSelect,
   onDelete,
   onEdit,
   onCheckHealth,
-  onToggleSubscribe,
+  onToggleEnabled,
 }: {
   server: ServerConfig
   health: ServerHealth | null
   isActive: boolean
-  subscribed: boolean
-  multiServerEnabled: boolean
   onSelect: () => void
   onDelete: () => void
   onEdit: (updates: { name: string; url: string; username?: string; password?: string }) => void
   onCheckHealth: () => void
-  onToggleSubscribe: () => void
+  onToggleEnabled: (enabled: boolean) => void
 }) {
   const { t } = useTranslation(['settings', 'common'])
   const [editing, setEditing] = useState(false)
@@ -111,7 +104,9 @@ function ServerItem({
         onClick={onSelect}
         className={`group flex items-center gap-1.5 p-2.5 rounded-lg border transition-colors min-w-0
           ${
-            isActive ? 'border-accent-main-100/40 bg-accent-main-100/5' : 'border-border-200/40 hover:border-border-300'
+            isActive
+              ? 'border-accent-main-100/50 bg-accent-main-100/10'
+              : 'border-border-200/50 bg-bg-200/40 hover:border-border-200 hover:bg-bg-200/60'
           }`}
       >
         <button
@@ -138,31 +133,7 @@ function ServerItem({
             </div>
           </div>
         </button>
-        <div className="shrink-0 flex items-center gap-0.5">
-          <button
-            type="button"
-            disabled={!multiServerEnabled}
-            onClick={e => {
-              e.stopPropagation()
-              onToggleSubscribe()
-            }}
-            title={
-              !multiServerEnabled
-                ? t('servers.enableMultiServerFirst', { defaultValue: 'Enable multi-server mode first' })
-                : subscribed
-                  ? t('servers.unsubscribe')
-                  : t('servers.subscribe')
-            }
-            aria-label={subscribed ? t('servers.unsubscribe') : t('servers.subscribe')}
-            className={cn(
-              `p-1.5 rounded-md transition-colors ${subscribed ? 'text-accent-main-100' : 'text-text-400 hover:text-text-200 hover:bg-bg-200/70'} ${
-                !multiServerEnabled ? 'opacity-40 cursor-not-allowed' : ''
-              }`,
-              subscribed && interactive.accent,
-            )}
-          >
-            {subscribed ? <PlugIcon size={13} /> : <CircleIcon size={11} className="opacity-50" />}
-          </button>
+        <div className="shrink-0 flex items-center gap-1.5">
           <IconButton
             size="sm"
             onClick={e => {
@@ -202,6 +173,16 @@ function ServerItem({
               </IconButton>
             </>
           )}
+          {/* 启用/停用放最后：它是"这台主机要不要用"的总开关，
+              与其他行内操作（检测/编辑/删除）性质不同，独立在末尾更清楚。
+              停用后不建连接、不参与事件订阅、不出现会话分组，但保留配置。
+              Local 也可停用；若停用的正是当前活动服务器，store 会自动切到
+              另一台已启用的（没有可切目标时拒绝停用）。 */}
+          <Switch
+            checked={server.enabled !== false}
+            onCheckedChange={next => onToggleEnabled(next)}
+            aria-label={t('servers.enableServer', { name: server.name })}
+          />
         </div>
       </div>
 
@@ -535,8 +516,6 @@ function AddServerForm({
 export function ServersSettings() {
   const { t } = useTranslation(['settings', 'common'])
   const [addingServer, setAddingServer] = useState(false)
-  const multiServerConfig = useMultiServerStore()
-  const subscribedCount = multiServerConfig.subscribedServerIds.length
   const {
     servers,
     activeServer,
@@ -547,14 +526,22 @@ export function ServersSettings() {
     checkHealth,
     checkAllHealth,
     getHealth,
+    setServerEnabled,
   } = useServerStore()
   const { navigateHome, sessionId: routeSessionId } = useRouter()
+  /**
+   * 连接清单的显示顺序：Local 固定第一，其余保持配置顺序。
+   *
+   * 此前把「当前活动服务器」提到最前，导致每次切换主机整列表重排
+   * ——用户正在点的行会跳走，也会误以为列表顺序"一直在变"。
+   * 用固定的 Local 优先顺序，活动状态由行内高亮表达即可。
+   */
   const orderedServers = useMemo(() => {
-    if (!activeServer) return servers
-    const active = servers.find(s => s.id === activeServer.id)
-    if (!active) return servers
-    return [active, ...servers.filter(s => s.id !== active.id)]
-  }, [servers, activeServer])
+    const isLocal = (s: ServerConfig) => s.isDefault === true || s.id === 'local'
+    const locals = servers.filter(isLocal)
+    const rest = servers.filter(s => !isLocal(s))
+    return [...locals, ...rest]
+  }, [servers])
 
   useEffect(() => {
     checkAllHealth()
@@ -579,58 +566,36 @@ export function ServersSettings() {
 
   return (
     <>
-      <AiAgentAccountSettings />
-      <SettingsSection
-        title={t('servers.multiServerMode', { defaultValue: 'Multi-server mode' })}
-        description={t('servers.multiServerModeDesc', {
-          defaultValue:
-            'Subscribe to multiple servers at once. Sidebar session list is grouped by server, and you can interact with sessions on any connected server simultaneously.',
-        })}
-      >
-        <SettingRow
-          label={t('servers.multiServerMode', { defaultValue: 'Multi-server mode' })}
-          description={
-            multiServerConfig.enabled
-              ? t('servers.subscribedCountHint', {
-                  defaultValue: '{{count}} servers subscribed. Use the plug icon on each server to join/leave the whitelist.',
-                  count: subscribedCount,
-                })
-              : t('servers.multiServerModeOffHint', {
-                  defaultValue: 'Only the servers you subscribe to appear in the sidebar session list.',
-                })
-          }
-        >
-          <Toggle
-            enabled={multiServerConfig.enabled}
-            onChange={() => multiServerStore.setEnabled(!multiServerConfig.enabled)}
-            ariaLabel={t('servers.multiServerMode', { defaultValue: 'Multi-server mode' })}
-          />
-        </SettingRow>
+      {/* AI Agent 账号：登录第三方面板并同步实例，属于「接入来源」而非日常服务器配置。
+          标题与描述由本区块提供，AiAgentAccountSettings 只渲染内容，不再自带标题。 */}
+      <SettingsSection plain title={t('servers.aiAgentAccount')} description={t('servers.aiAgentAccountDesc')}>
+        <AiAgentAccountSettings />
       </SettingsSection>
 
       <SettingsSection
+        plain
         title={t('servers.connections')}
         description={t('servers.connectionsDesc')}
         actions={
-          <div className="flex items-center gap-2">
-            <button
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={checkAllHealth}
-              className="flex items-center justify-center w-7 h-7 rounded-md text-text-400 hover:text-text-200 hover:bg-bg-200/70 transition-colors"
               title={t('common:refresh')}
               aria-label={t('common:refresh')}
             >
-              <RetryIcon size={14} />
-            </button>
-            <button
+              <RetryIcon size={12} />
+              {t('common:refresh')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => setAddingServer(true)}
               disabled={addingServer}
-              className={cn(
-                'h-7 px-2.5 rounded-md text-[length:var(--fs-sm)] font-medium text-accent-main-100 disabled:opacity-40',
-                interactive.accent,
-              )}
             >
               {t('common:add')}
-            </button>
+            </Button>
           </div>
         }
       >
@@ -641,18 +606,8 @@ export function ServersSettings() {
               server={s}
               health={getHealth(s.id)}
               isActive={activeServer?.id === s.id}
-              subscribed={multiServerStore.isSubscribed(s.id)}
-              multiServerEnabled={multiServerConfig.enabled}
               onSelect={() => handleSelectServer(s.id)}
-              onDelete={() => {
-                // 删除服务器时同步移出多服务器白名单（避免残留订阅连到已删地址）
-                if (multiServerStore.isSubscribed(s.id)) {
-                  multiServerStore.setSubscribedServerIds(
-                    multiServerStore.getSubscribedServerIds().filter(id => id !== s.id),
-                  )
-                }
-                removeServer(s.id)
-              }}
+              onDelete={() => removeServer(s.id)}
               onEdit={updates => {
                 const auth = updates.password
                   ? { username: updates.username || 'opencode', password: updates.password }
@@ -661,7 +616,7 @@ export function ServersSettings() {
                 void checkHealth(s.id)
               }}
               onCheckHealth={() => void checkHealth(s.id)}
-              onToggleSubscribe={() => multiServerStore.setSubscribed(s.id, !multiServerStore.isSubscribed(s.id))}
+              onToggleEnabled={next => setServerEnabled(s.id, next)}
             />
           ))}
 
@@ -682,6 +637,9 @@ export function ServersSettings() {
         )}
       </div>
       </SettingsSection>
+
+      {/* 设置同步与服务器无关，独立成区块放在末尾 */}
+      <PreferencesSyncSettings />
     </>
   )
 }

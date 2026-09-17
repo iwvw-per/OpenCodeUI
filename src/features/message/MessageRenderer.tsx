@@ -103,7 +103,7 @@ const ProcessCollapseHeader = memo(function ProcessCollapseHeader({
       ref={headerRef}
       type="button"
       onClick={onToggle}
-      className={`flex w-full items-center gap-1.5 rounded-md ${MSG_SPACING.header} text-left text-[length:var(--fs-sm)] leading-5 text-text-400 hover:bg-bg-200/30 hover:text-text-200 transition-colors`}
+      className={`flex w-full items-center gap-1.5 rounded-md ${MSG_SPACING.header} text-left text-[length:var(--fs-sm)] leading-5 text-text-400 hover:bg-bg-200 hover:text-text-200 transition-colors`}
     >
       <span className={isActive ? 'reasoning-shimmer-text' : 'text-text-400'}>{label}</span>
       <span className="inline-flex items-center justify-center text-text-500">
@@ -1003,7 +1003,7 @@ const ToolGroup = memo(function ToolGroup({
             type="button"
             ref={stepsHeaderRef}
             onClick={() => withStepsScrollLock(() => setExpanded(!expanded))}
-            className={`flex w-full items-baseline rounded-md ${MSG_SPACING.header} text-left hover:bg-bg-200/30 transition-colors`}
+            className={`flex w-full items-baseline rounded-md ${MSG_SPACING.header} text-left hover:bg-bg-200 transition-colors`}
           >
             <span className="text-[length:var(--fs-sm)] leading-5">
               {stepsSummary?.map((seg, i) => (
@@ -1022,7 +1022,7 @@ const ToolGroup = memo(function ToolGroup({
               ))}
             </span>
             {totalDiffStats && !hasActiveTools && (
-              <span className="ml-1.5 inline-flex items-center gap-1 text-[length:var(--fs-xxs)] font-mono font-medium tabular-nums">
+              <span className="ml-1.5 inline-flex items-center gap-1 text-[length:var(--fs-xxs)] font-medium tabular-nums">
                 {totalDiffStats.additions > 0 && (
                   <span className="text-success-100">+{totalDiffStats.additions}</span>
                 )}
@@ -1035,7 +1035,7 @@ const ToolGroup = memo(function ToolGroup({
             type="button"
             ref={stepsHeaderRef}
             onClick={() => withStepsScrollLock(() => setExpanded(!expanded))}
-            className={`flex items-center gap-1.5 ${MSG_SPACING.header} text-text-400 text-[length:var(--fs-base)] hover:text-text-200 hover:bg-bg-200/30 rounded-md transition-colors`}
+            className={`flex items-center gap-1.5 ${MSG_SPACING.header} text-text-400 text-[length:var(--fs-base)] hover:text-text-200 hover:bg-bg-200 rounded-md transition-colors`}
           >
             <span className="inline-flex w-[14px] items-center justify-center shrink-0">
               {effectiveExpanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}

@@ -13,6 +13,8 @@ import {
   SpinnerIcon,
 } from '../../components/Icons'
 import { Dialog, IconButton } from '../../components/ui'
+import { cn } from '../../utils/cn'
+import { interactive } from '../../utils/interaction'
 import { ShareDialog } from './ShareDialog'
 import { messageStore, useHeaderSessionMeta, notificationStore } from '../../store'
 import { useLayoutStore, layoutStore } from '../../store/layoutStore'
@@ -68,7 +70,13 @@ function SessionTitleControl({
 
   return (
     <div
-      className={`flex items-center ${isEditingTitle ? 'bg-bg-200/50 ring-1 ring-accent-main-100' : 'bg-transparent hover:bg-bg-200/50 border border-transparent hover:border-border-200/50'} rounded-lg transition-all duration-200 p-0.5 min-w-0 shrink`}
+      className={cn(
+        'flex items-center rounded-lg transition-all duration-200 p-0.5 min-w-0 shrink',
+        // hover 只用底色，不用 border：border 占盒模型空间，悬停加边框会撑大 1~2px 推动相邻元素。
+        isEditingTitle
+          ? 'bg-bg-200 ring-1 ring-accent-main-100'
+          : cn('bg-transparent', interactive.subtle),
+      )}
     >
       {isEditingTitle ? (
         <input
@@ -194,7 +202,7 @@ export function Header({
           <IconButton
             aria-label={t('header.openSidebar')}
             onClick={onOpenSidebar}
-            className="hover:bg-bg-200/50 text-text-300 hover:text-text-100"
+            className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
           >
             <SidebarIcon size={16} />
           </IconButton>
@@ -209,11 +217,10 @@ export function Header({
             <IconButton
               aria-label={isPaneFullscreen ? 'Exit fullscreen pane' : 'Fullscreen pane'}
               onClick={onTogglePaneFullscreen}
-              className={`transition-colors ${
-                isPaneFullscreen
-                  ? 'text-accent-main-100 bg-bg-200/50'
-                  : 'text-text-300 hover:text-text-100 hover:bg-bg-200/50'
-              }`}
+              className={cn(
+                isPaneFullscreen ? 'text-accent-main-100 bg-bg-200' : 'text-text-300 hover:text-text-100',
+                interactive.subtle,
+              )}
             >
               {isPaneFullscreen ? <MinimizeIcon size={16} /> : <MaximizeIcon size={16} />}
             </IconButton>
@@ -223,7 +230,7 @@ export function Header({
             <IconButton
               aria-label="Split pane"
               onClick={onSplitPane}
-              className="transition-colors text-text-300 hover:text-text-100 hover:bg-bg-200/50"
+              className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
             >
               <SplitHorizontalIcon size={16} />
             </IconButton>
@@ -232,7 +239,10 @@ export function Header({
           <IconButton
             aria-label={bottomPanelOpen ? t('header.closeBottomPanel') : t('header.openBottomPanel')}
             onClick={() => layoutStore.toggleBottomPanel()}
-            className={`transition-colors ${bottomPanelOpen ? 'text-accent-main-100 bg-bg-200/50' : 'text-text-300 hover:text-text-100 hover:bg-bg-200/50'}`}
+            className={cn(
+              bottomPanelOpen ? 'text-accent-main-100 bg-bg-200' : 'text-text-300 hover:text-text-100',
+              interactive.subtle,
+            )}
           >
             <PanelBottomIcon size={16} />
           </IconButton>
@@ -240,7 +250,10 @@ export function Header({
           <IconButton
             aria-label={rightPanelOpen ? t('header.closePanel') : t('header.openPanel')}
             onClick={onToggleRightPanel ?? (() => layoutStore.toggleRightPanel())}
-            className={`transition-colors ${rightPanelOpen ? 'text-accent-main-100 bg-bg-200/50' : 'text-text-300 hover:text-text-100 hover:bg-bg-200/50'}`}
+            className={cn(
+              rightPanelOpen ? 'text-accent-main-100 bg-bg-200' : 'text-text-300 hover:text-text-100',
+              interactive.subtle,
+            )}
           >
             <PanelRightIcon size={16} />
           </IconButton>
@@ -250,7 +263,7 @@ export function Header({
               aria-label={t('header.openProjectDirectory')}
               title={t('header.openProjectDirectory')}
               onClick={handleOpenDirectory}
-              className="transition-colors text-text-300 hover:text-text-100 hover:bg-bg-200/50"
+              className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
             >
               <FolderIcon size={16} />
             </IconButton>
@@ -261,7 +274,7 @@ export function Header({
             aria-label={t('header.mcpStatus')}
             title={t('header.mcpStatus')}
             onClick={() => setMcpDialogOpen(true)}
-            className="transition-colors text-text-300 hover:text-text-100 hover:bg-bg-200/50"
+            className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
           >
             <PlugIcon size={16} />
           </IconButton>
@@ -272,7 +285,7 @@ export function Header({
               aria-label={t('header.shareSession')}
               title={t('header.shareSession')}
               onClick={() => setShareDialogOpen(true)}
-              className="transition-colors text-text-300 hover:text-text-100 hover:bg-bg-200/50"
+              className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
             >
               <ShareIcon size={16} />
             </IconButton>

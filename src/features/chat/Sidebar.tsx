@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SidePanel } from './sidebar/SidePanel'
 import { ProjectDialog } from './ProjectDialog'
-import { useMultiServerStore, multiServerStore } from '../../store/multiServerStore'
+import { useMultiServerStore } from '../../store/multiServerStore'
 import { useDirectory } from '../../hooks'
 import { isTauri, isTauriMobile } from '../../utils/tauri'
 import { type ApiSession } from '../../api'
@@ -63,7 +63,9 @@ export const Sidebar = memo(function Sidebar({
   const rafRef = useRef<number>(0)
   const transitionResizeTimerRef = useRef<number | null>(null)
 
-  const multiServerConfig = useMultiServerStore()
+  // 订阅多服务器焦点：focusedServerId 变化时本组件需重渲染，
+  // 下方 ProjectDialog 的 serverId 才能跟着更新
+  const { focusedServerId } = useMultiServerStore()
   const handleAddProject = useCallback(
     (path: string) => {
       // 项目目录列表跨服务器共享（saved-directories 不再按服务器隔离），
@@ -326,7 +328,7 @@ export const Sidebar = memo(function Sidebar({
             onClose={closeProjectDialog}
             onSelect={handleAddProject}
             initialPath={projectDialogInitialPath}
-            serverId={multiServerConfig.enabled ? multiServerStore.getFocusedServerId() : undefined}
+            serverId={focusedServerId ?? undefined}
           />
         </>
       )
@@ -382,7 +384,7 @@ export const Sidebar = memo(function Sidebar({
           onClose={closeProjectDialog}
           onSelect={handleAddProject}
           initialPath={projectDialogInitialPath}
-          serverId={multiServerConfig.enabled ? multiServerStore.getFocusedServerId() : undefined}
+          serverId={focusedServerId ?? undefined}
         />
       </>
     )
@@ -437,7 +439,7 @@ export const Sidebar = memo(function Sidebar({
         onClose={closeProjectDialog}
         onSelect={handleAddProject}
         initialPath={projectDialogInitialPath}
-        serverId={multiServerConfig.enabled ? multiServerStore.getFocusedServerId() : undefined}
+        serverId={focusedServerId ?? undefined}
       />
     </>
   )

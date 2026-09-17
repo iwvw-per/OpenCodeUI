@@ -52,7 +52,7 @@ function ProjectNameTitle({ text, className = '' }: { text: string; className?: 
   return (
     <span
       ref={spanRef}
-      className={`min-w-0 flex-1 whitespace-nowrap text-[length:var(--fs-sm)] font-medium ${
+      className={`min-w-0 flex-1 whitespace-nowrap text-[length:var(--fs-sm)] font-semibold ${
         overflows ? 'name-fade-right overflow-hidden' : 'truncate'
       } ${className}`}
     >
@@ -1047,6 +1047,13 @@ function FolderRecentSection({
           ? FolderOpenIcon
           : FolderIcon
 
+  // 当前打开的会话是否属于这个项目：是则文件夹图标上主题色（描边 + 填充），
+  // 用于在长列表里快速定位"正在看的是哪个项目"。
+  // selectedSessionId 形如 `${serverId}::${sessionId}`（多服务器模式），
+  // 与 sessions 里的裸 id 比对前要先剥掉前缀。
+  const activeSessionRawId = selectedSessionId ? splitSessionKey(selectedSessionId).sessionId : null
+  const isProjectActive = !!activeSessionRawId && sessions.some(session => session.id === activeSessionRawId)
+
   // 展开时：文件夹与首条 session 可拼成连续选中块
   const firstVisibleSessionChecked =
     isEditMode &&
@@ -1098,7 +1105,7 @@ function FolderRecentSection({
             'relative flex w-full items-center transition-colors duration-150 select-none',
             getSelectionRoundClass(isEditMode && isProjectChecked, projectCheckedPrev, folderCheckedNext, 'md'),
             interactive.row,
-            isEditMode && isProjectChecked && 'bg-accent-main-100/12 text-text-100',
+            isEditMode && isProjectChecked && interactive.rowSelected,
           )}
           {...(isEditMode
             ? {
@@ -1124,15 +1131,41 @@ function FolderRecentSection({
               onSelectProject()
               onToggle()
             }}
-            className="flex flex-1 min-w-0 items-center gap-1 pl-2 pr-2 py-1.5 text-left cursor-default select-none"
+            className={cn(
+              'flex flex-1 min-w-0 items-center gap-1 pl-2 pr-2 py-1.5 text-left cursor-default select-none rounded-md',
+              // 点击/展开反馈走 transition-colors，与 interactive 词汇表一致；
+              // 再叠一个 150ms 的箭头旋转（见下方 ChevronDownIcon），
+              // 让"点了一下"有明确反馈而不是瞬变。
+              'transition-colors duration-150 active:bg-bg-200/60 active:duration-75',
+            )}
             title={project.worktree}
           >
-            <span className="size-5 shrink-0 flex items-center justify-center">
-              <FolderDisplayIcon size={15} className="text-text-400" />
+            {/* hover 时图标淡出、展开/收起箭头淡入（两者叠放做交叉淡入淡出）。
+                箭头常态不可见但仍占位，避免 hover 瞬间撑开会引起文字位移。
+                图标类型（地球/分支/文件夹）不丢失，鼠标移开即恢复。 */}
+            <span className="relative size-5 shrink-0 flex items-center justify-center">
+              <FolderDisplayIcon
+                size={15}
+                className={`transition-opacity duration-150 group-hover/folder:opacity-0 ${
+                  isProjectActive ? 'text-accent-main-100' : 'text-text-400'
+                }`}
+                // 激活项目：主色描边 + 主色填充（fill 跟随 currentColor），
+                // 与列内其他线性图标区分开；非激活保持原来的灰线框。
+                {...(isProjectActive ? { fill: 'currentColor', fillOpacity: 0.22 } : {})}
+              />
+              <ChevronDownIcon
+                size={13}
+                className={`absolute text-text-300 opacity-0 transition-[opacity,transform] duration-150 group-hover/folder:opacity-100 ${
+                  isExpanded ? '' : '-rotate-90'
+                }`}
+              />
             </span>
             <ProjectNameTitle
               text={projectName}
-              className={isEditMode && isProjectChecked ? 'text-text-100' : 'text-text-300'}
+              // 颜色承担层级：项目名用最强文字色，比下属会话（text-300）明显更亮。
+              // 字重上 medium 与 semibold 都解析到 600（字体只有 400/600 两档），
+              // 无法再靠加粗区分，所以层级只能由颜色表达。
+              className="text-text-100"
             />
           </button>
           {/* 项目行 hover 的 + 按钮：在该项目目录下新建会话（全局/无目录项目不显示）；hover 才显示，与移除按钮一致 */}
@@ -1223,15 +1256,16 @@ function FolderRecentSection({
           ) : null}
         </div>
 
-        {/* Session 列表 */}
-        <ExpandableSection show={isExpanded}>
+        {/* Session 列表 — mt-1 与项目行拉开：项目行自身 py-1.5(6px) + 这里 4px，
+            合计约 10px，比会话之间的 4px 明显，层级更清楚 */}
+        <ExpandableSection show={isExpanded} className="mt-1">
           {shouldRenderBody && (
             <div onTouchStart={e => e.stopPropagation()}>
               {!hasActivated || (!hasWorkspaceTree && isLoading) ? (
                 // 与 minimal SessionListItem 对齐：状态点占位 + spinner 落在标题文字区
                 <div className="flex items-center gap-2 px-2 py-1.5" aria-busy="true">
                   <span className="size-5 shrink-0" aria-hidden="true" />
-                  <SpinnerIcon size={12} className="animate-spin text-text-400" />
+                  <SpinnerIcon size={12} className="animate-spin text-accent-main-100" />
                 </div>
               ) : hasWorkspaceTree ? (
                 <WorkspaceFolderList
@@ -1262,7 +1296,7 @@ function FolderRecentSection({
                     : t('sidebar.noChatsInFolder')}
                 </div>
               ) : (
-                <>
+                <div className="flex flex-col gap-1">
                   {filteredSessions.map((session, index) => {
                     const isChecked = selectedSessionIds?.has(session.id) ?? false
                     // 上：前一条 session，或（首条时）父文件夹已选中
@@ -1339,7 +1373,7 @@ function FolderRecentSection({
                           />
                           <span>{t('sidebar.showMoreChats')}</span>
                           {isLoadingMore ? (
-                            <SpinnerIcon size={12} className="animate-spin text-text-400" />
+                            <SpinnerIcon size={12} className="animate-spin text-accent-main-100" />
                           ) : (
                             <ChevronDownIcon
                               size={12}
@@ -1350,7 +1384,7 @@ function FolderRecentSection({
                       </span>
                     </button>
                   )}
-                </>
+                </div>
               )}
             </div>
           )}

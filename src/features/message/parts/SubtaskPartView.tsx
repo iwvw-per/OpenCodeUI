@@ -54,7 +54,7 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
       {/* Header */}
       <div
         ref={headerRef}
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-bg-200/30 transition-colors"
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-bg-200 transition-colors"
         onClick={() => withScrollLock(() => setExpanded(!expanded))}
       >
         {/* Status indicator */}

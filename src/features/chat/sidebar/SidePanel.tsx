@@ -173,13 +173,11 @@ export function SidePanel({
       ),
     [savedDirectories, currentDirectory],
   )
-  // 多服务器订阅模式配置
+  // 多服务器：Git/路径信息跟随「焦点服务器」（焦点缺省 = 活动服务器）。
+  // 不再用 enabled 门控 —— 现在始终连接所有服务器，多服务器是默认行为。
   const multiServerConfig = useMultiServerStore()
-  // 多服务器模式：Git/路径信息跟随「焦点服务器」（焦点缺省 = 活动服务器）
   const { activeServer } = useServerStore()
-  const catalogServerId = multiServerConfig.enabled
-    ? (multiServerConfig.focusedServerId ?? activeServer?.id)
-    : undefined
+  const catalogServerId = multiServerConfig.focusedServerId ?? activeServer?.id
   // 项目 tab 数据源 = 活动服务器（per-server 存储）；同时发现其服务端项目/目录
   const activeServerId = activeServer?.id ?? 'local'
   const { projects: serverProjects, isLoading: isServerProjectsLoading } = useServerProjects(activeServerId, true)
@@ -191,7 +189,7 @@ export function SidePanel({
     catalogDirectories,
     catalogServerId,
   )
-  const { sidebarShowChildSessions } = useLayoutStore()
+  const { sidebarShowChildSessions, sidebarSessionSortDesc } = useLayoutStore()
   const normalizedCurrentDirectory = useMemo(
     () => (currentDirectory ? normalizeToForwardSlash(currentDirectory) : undefined),
     [currentDirectory],
@@ -494,21 +492,14 @@ export function SidePanel({
   // 开关开 → 拉 /children 全量：选中的 root 或选中子 session 时保持其父展开
   const expandedChildSessionIds = useMemo(() => {
     if (search || !sidebarShowChildSessions || !selectedSessionId) return undefined
-    if (multiServerConfig.enabled) {
-      // 多服务器模式：选中 session 属于任意服务器，直接用全服务器的 childSessionStore 判断
-      if (childSessionStore.getChildSessionIds(selectedSessionId).length > 0) {
-        return new Set([splitSessionKey(selectedSessionId).sessionId])
-      }
-      const pid = findParentId(selectedSessionId)
-      if (pid) return new Set([pid])
-      return undefined
+    // 选中 session 可能属于任意服务器，直接用全服务器的 childSessionStore 判断
+    if (childSessionStore.getChildSessionIds(selectedSessionId).length > 0) {
+      return new Set([splitSessionKey(selectedSessionId).sessionId])
     }
-    const selectedRaw = splitSessionKey(selectedSessionId).sessionId
-    if (rootSessionIds.has(selectedRaw)) return new Set([selectedRaw])
     const pid = findParentId(selectedSessionId)
-    if (pid && rootSessionIds.has(pid)) return new Set([pid])
+    if (pid) return new Set([pid])
     return undefined
-  }, [search, sidebarShowChildSessions, selectedSessionId, rootSessionIds, findParentId, multiServerConfig.enabled])
+  }, [search, sidebarShowChildSessions, selectedSessionId, findParentId])
 
   // 开关关 → 只挂活跃的 + 选中的子 session
   const inlineChildSessions = useMemo(() => {
@@ -525,9 +516,9 @@ export function SidePanel({
     }
     for (const entry of busySessions) {
       const pid = findParentId(entry.sessionId)
-      // 单服务器：父必须在当前列表（rootSessionIds）；多服务器：父在各自服务器列表，放宽
-      const pidOk = multiServerConfig.enabled ? !!pid : (pid ? rootSessionIds.has(pid) : false)
-      if (pid && pidOk) {
+      // 父可能在其它服务器的会话列表里，因此放宽为「只要解析出父 id 就挂上」，
+      // 不再要求父在 rootSessionIds（那只是当前服务器的列表）
+      if (pid) {
         const rawId = splitSessionKey(entry.sessionId).sessionId
         // sessionLookup 只含 active 服务器会话；其他服务器的子 session 用 entry 构造
         const s =
@@ -543,6 +534,7 @@ export function SidePanel({
       selectedSessionId &&
       !rootSessionIds.has(splitSessionKey(selectedSessionId).sessionId)
     ) {
+      // 只挂「当前服务器列表里能确认是父」的，避免把别的服务器的会话误挂上来
       const pid = findParentId(selectedSessionId)
       if (pid && rootSessionIds.has(pid)) {
         const s = sessionLookup.get(splitSessionKey(selectedSessionId).sessionId)
@@ -559,7 +551,6 @@ export function SidePanel({
     expandedChildSessionIds,
     sessionLookup,
     findParentId,
-    multiServerConfig.enabled,
   ])
 
   const buildProjectGroups = useCallback(
@@ -816,6 +807,31 @@ export function SidePanel({
     return map
   }, [recentProjects, globalProjectLastUsed, fetchedProjectLastUsed])
 
+  /**
+   * 项目（文件夹）的最终显示顺序。
+   *
+   * 排序菜单此前只管项目内会话，项目本身是"当前项目置顶 + 保存顺序 + 发现顺序"
+   * 的混排，看起来就像"排序没生效"。这里让同一套方向偏好也作用于项目。
+   *
+   * 数据限制：ProjectItem 没有创建时间字段，因此「创建时间」与「更新时间」
+   * 都只能用 projectLastUsedAt（会话最后活跃时间）—— 差异只在方向。
+   * 缺省视作 0；同名时按名称兜底，保证顺序稳定不抖动。
+   *
+   * 注意：这里对全列表统一排序，会覆盖 folderProjects 里「当前激活项目置顶」
+   * 的初始顺序 —— 那是刻意的，否则置顶项会永远不参与排序。
+   */
+  const sortedFolderProjects = useMemo(() => {
+    const lastUsed = (project: ProjectItem): number =>
+      projectLastUsedAt[normalizeToForwardSlash(project.worktree || '')] ?? 0
+
+    return [...folderProjects].sort((a, b) => {
+      const ta = lastUsed(a)
+      const tb = lastUsed(b)
+      if (ta !== tb) return sidebarSessionSortDesc ? tb - ta : ta - tb
+      return a.name.localeCompare(b.name)
+    })
+  }, [folderProjects, projectLastUsedAt, sidebarSessionSortDesc])
+
   // 需求 3：点击项目目录/名称不跳转（只展开/收起），只有点击会话才导航。
   // 保持签名兼容 FolderRecentList 的 onSelectProject 调用，但不再 setCurrentDirectory。
   const handleSelectFolderProject = useCallback((_project: ProjectItem) => {}, [])
@@ -1017,7 +1033,7 @@ export function SidePanel({
               onClick={onToggleSidebar}
               aria-label={isExpanded ? t('sidebar.collapseSidebar') : t('sidebar.expandSidebar')}
               className={cn(
-                'h-8 w-8 flex items-center justify-center rounded-lg text-text-300 hover:text-text-100 active:scale-[0.98]',
+                'h-8 w-8 flex items-center justify-center rounded-lg text-text-300 hover:text-text-100',
                 interactive.row,
                 'transition-all duration-200',
               )}
@@ -1036,7 +1052,7 @@ export function SidePanel({
           onClick={onNewSession}
           aria-label={t('sidebar.newChat')}
           className={cn(
-            'h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 active:scale-[0.98] group overflow-hidden',
+            'h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 group overflow-hidden',
             interactive.row,
             'transition-all duration-300',
           )}
@@ -1070,7 +1086,7 @@ export function SidePanel({
           onClick={onAddProject}
           aria-label={t('sidebar.newProject')}
           className={cn(
-            'h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 active:scale-[0.98] group overflow-hidden',
+            'h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 group overflow-hidden',
             interactive.row,
             'transition-all duration-300',
           )}
@@ -1130,7 +1146,7 @@ export function SidePanel({
             }}
             aria-label={t('sidebar.searchChats')}
             className={cn(
-              'h-8 mb-1.5 flex items-center rounded-lg text-text-300 hover:text-text-100 active:scale-[0.98] overflow-hidden',
+              'h-8 mb-1.5 flex items-center rounded-lg text-text-300 hover:text-text-100 overflow-hidden',
               interactive.row,
               'transition-all duration-300',
             )}
@@ -1154,7 +1170,11 @@ export function SidePanel({
       >
         {/* Tab Bar: Recents / Active */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <div className="flex items-center mx-2 gap-1 shrink-0">
+          {/* 固定行高：普通态是 TabsList（slider/sm：p-1 + 文字 + 边框，约 36px），
+              管理态是提示文字 + 操作按钮。两态的 padding 天然凑不齐，不固定高度的话
+              点「管理」整行会缩 ~6px，下方列表跟着上跳。这里钉死高度，
+              两个分支的 py 只用来做垂直居中微调。 */}
+          <div className="flex items-center mx-2 gap-1 shrink-0 h-9">
             {isEditMode ? (
               <>
                 {/* 与 tab 同字号字重，左侧文案变成状态提示 */}
@@ -1271,7 +1291,7 @@ export function SidePanel({
               {search ? (
                 /* 搜索：文件夹 + session 就地筛选 */
                 <FolderRecentList
-                  projects={folderProjects}
+                  projects={sortedFolderProjects}
                   {...commonFolderRecentListProps}
                   onReorderProject={handleReorderProjectGroup}
                   workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
@@ -1281,12 +1301,12 @@ export function SidePanel({
               ) : isDiscoveringServerData || (shouldWaitForWorkspaceResolution && folderProjects.length === 0) ? (
                 /* 首次加载/无任何项目可展示时才整列表转圈；已有项目时保持列表，
                    当前项目的工作区解析用文件夹内的局部 spinner 过渡，避免打开会话导致侧栏整体重载 */
-                <div className="flex h-full items-center justify-center text-text-400/70">
+                <div className="flex h-full items-center justify-center text-accent-main-100">
                   <SpinnerIcon size={14} className="animate-spin" />
                 </div>
               ) : (
                 <FolderRecentList
-                  projects={folderProjects}
+                  projects={sortedFolderProjects}
                   {...commonFolderRecentListProps}
                   onReorderProject={handleReorderProjectGroup}
                   workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}

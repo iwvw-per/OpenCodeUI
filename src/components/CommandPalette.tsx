@@ -256,7 +256,7 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
         </div>
 
         {/* Command List */}
-        <div ref={listRef} className="overflow-y-auto custom-scrollbar flex-1 p-1">
+        <div ref={listRef} className="overflow-y-auto custom-scrollbar flex-1 flex flex-col gap-0.5 p-1">
           {filteredCommands.length === 0 ? (
             <div className="px-4 py-8 text-center text-text-400 text-[length:var(--fs-base)]">{t('commandPalette.noCommandsFound')}</div>
           ) : (
@@ -269,7 +269,7 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
                 className={`
                   w-full flex items-center justify-between rounded-md px-2 py-2 text-left
                   transition-colors duration-100
-                  ${index === activeIndex ? 'bg-accent-main-100/10 text-text-100' : 'text-text-300 hover:bg-bg-200/50 hover:text-text-100'}
+                  ${index === activeIndex ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:bg-bg-200 hover:text-text-100'}
                 `}
               >
                 <div className="flex items-center gap-2.5 min-w-0">

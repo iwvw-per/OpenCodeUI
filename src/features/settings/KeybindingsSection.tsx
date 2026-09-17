@@ -282,6 +282,7 @@ export function KeybindingsSection() {
 
   return (
     <SettingsSection
+      plain
       title={t('keybindings.title')}
       description={t('keybindings.clickToRebind')}
       actions={
@@ -325,16 +326,20 @@ export function KeybindingsSection() {
               <div className="px-3 py-1 text-[length:var(--fs-xs)] font-medium text-text-400 uppercase tracking-wider">
                 {t(CATEGORY_LABELS[category])}
               </div>
-              {items.map(item => (
-                <KeybindingRow
-                  key={item.action}
-                  config={item}
-                  onEdit={setKeybinding}
-                  onReset={resetKeybinding}
-                  isKeyUsed={isKeyUsed}
-                  t={t}
-                />
-              ))}
+              {/* 条目之间留 2px：KeybindingRow 是 rounded-md + hover 底色，
+                  紧贴时相邻圆角会拼成一条凹槽 */}
+              <div className="flex flex-col gap-0.5">
+                {items.map(item => (
+                  <KeybindingRow
+                    key={item.action}
+                    config={item}
+                    onEdit={setKeybinding}
+                    onReset={resetKeybinding}
+                    isKeyUsed={isKeyUsed}
+                    t={t}
+                  />
+                ))}
+              </div>
             </div>
           ))
         )}

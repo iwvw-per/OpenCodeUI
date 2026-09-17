@@ -18,6 +18,8 @@ import {
   MinimizeIcon,
 } from '../../components/Icons'
 import { IconButton } from '../../components/ui'
+import { cn } from '../../utils/cn'
+import { interactive } from '../../utils/interaction'
 import { paneLayoutStore } from '../../store/paneLayoutStore'
 import { useSessionState } from '../../store'
 import { layoutStore, useLayoutStore } from '../../store/layoutStore'
@@ -207,7 +209,7 @@ export function PaneHeader({
                 e.stopPropagation()
                 handleClose()
               }}
-              className="text-text-300 hover:text-red-400 hover:bg-bg-200/50"
+              className={cn('text-text-300 hover:text-danger-100', interactive.danger)}
             >
               <CloseIcon size={14} />
             </IconButton>
@@ -221,11 +223,10 @@ export function PaneHeader({
                 e.stopPropagation()
                 onTogglePaneFullscreen()
               }}
-              className={`transition-colors ${
-                isPaneFullscreen
-                  ? 'text-accent-main-100 bg-bg-200/50'
-                  : 'text-text-300 hover:text-text-100 hover:bg-bg-200/50'
-              }`}
+              className={cn(
+                isPaneFullscreen ? 'text-accent-main-100 bg-bg-200' : 'text-text-300 hover:text-text-100',
+                interactive.subtle,
+              )}
             >
               {isPaneFullscreen ? <MinimizeIcon size={14} /> : <MaximizeIcon size={14} />}
             </IconButton>
@@ -240,7 +241,7 @@ export function PaneHeader({
                   e.stopPropagation()
                   handleSplitH()
                 }}
-                className="text-text-300 hover:text-text-100 hover:bg-bg-200/50"
+                className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
               >
                 <SplitHorizontalIcon size={14} />
               </IconButton>
@@ -252,7 +253,7 @@ export function PaneHeader({
                   e.stopPropagation()
                   handleSplitV()
                 }}
-                className="text-text-300 hover:text-text-100 hover:bg-bg-200/50"
+                className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
               >
                 <SplitVerticalIcon size={14} />
               </IconButton>
@@ -270,7 +271,7 @@ export function PaneHeader({
                   e.stopPropagation()
                   onOpenSidebar()
                 }}
-                className="text-text-300 hover:text-text-100 hover:bg-bg-200/50"
+                className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
               >
                 <SidebarIcon size={14} />
               </IconButton>
@@ -283,11 +284,10 @@ export function PaneHeader({
                 e.stopPropagation()
                 layoutStore.toggleBottomPanel()
               }}
-              className={`transition-colors ${
-                bottomPanelOpen
-                  ? 'text-accent-main-100 bg-bg-200/50'
-                  : 'text-text-300 hover:text-text-100 hover:bg-bg-200/50'
-              }`}
+              className={cn(
+                bottomPanelOpen ? 'text-accent-main-100 bg-bg-200' : 'text-text-300 hover:text-text-100',
+                interactive.subtle,
+              )}
             >
               <PanelBottomIcon size={14} />
             </IconButton>
@@ -303,11 +303,10 @@ export function PaneHeader({
                   layoutStore.toggleRightPanel()
                 }
               }}
-              className={`transition-colors ${
-                rightPanelOpen
-                  ? 'text-accent-main-100 bg-bg-200/50'
-                  : 'text-text-300 hover:text-text-100 hover:bg-bg-200/50'
-              }`}
+              className={cn(
+                rightPanelOpen ? 'text-accent-main-100 bg-bg-200' : 'text-text-300 hover:text-text-100',
+                interactive.subtle,
+              )}
             >
               <PanelRightIcon size={14} />
             </IconButton>

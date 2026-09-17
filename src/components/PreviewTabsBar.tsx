@@ -1,5 +1,7 @@
 import { memo, useCallback, useEffect, useState, useRef, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'
 import { CloseIcon } from './Icons'
+import { cn } from '../utils/cn'
+import { interactive } from '../utils/interaction'
 import { getMaterialIconUrl } from '../utils/materialIcons'
 import { getInternalDragSnapshot, startInternalDrag, subscribeInternalDrag, subscribeInternalDrop } from '../lib/internalDragCore'
 import { useDragEdgeAutoScroll } from '../hooks/useDragEdgeAutoScroll'
@@ -110,11 +112,18 @@ export const PreviewTabsBar = memo(function PreviewTabsBar({
                   event.stopPropagation()
                   onClose(item.id)
                 }}
-                className={
+                className={cn(
+                  'relative mx-px flex shrink-0 select-none items-center gap-1',
+                  tabWidthClassName,
                   isActive
-                    ? `tab-active relative z-10 mx-px flex h-full ${tabWidthClassName} shrink-0 select-none items-center gap-1 bg-bg-100 text-text-100`
-                    : `relative mx-px flex h-[24px] ${tabWidthClassName} shrink-0 select-none items-center gap-1 overflow-hidden rounded-md border-x-[5px] border-transparent bg-transparent text-text-400 hover:bg-bg-200/50 hover:text-text-100 transition-colors ${isDragOver ? 'bg-accent-main-100/8' : ''}`
-                }
+                    ? // 激活标签：实底 + 主文字色，与浏览器标签一致（肩部弧线由 .tab-active 提供）
+                      'tab-active z-10 h-full bg-bg-100 text-text-100'
+                    : cn(
+                        'h-[24px] overflow-hidden rounded-md border-x-[5px] border-transparent bg-transparent text-text-400 hover:text-text-100',
+                        // 拖拽落点用浅 accent 底提示，与 hover 底色可区分
+                        isDragOver ? 'bg-accent-main-100/8' : interactive.row,
+                      ),
+                )}
                 title={item.title}
               >
                 <button
@@ -143,7 +152,10 @@ export const PreviewTabsBar = memo(function PreviewTabsBar({
                     event.stopPropagation()
                     onClose(item.id)
                   }}
-                  className="mr-1.5 shrink-0 rounded p-1 text-text-500 hover:bg-bg-300 hover:text-text-100 transition-colors"
+                  className={cn(
+                    'mr-1.5 shrink-0 rounded-sm p-1 text-text-500 hover:text-text-100',
+                    interactive.subtle,
+                  )}
                   title={item.closeTitle}
                 >
                   <CloseIcon size={10} />
@@ -158,7 +170,10 @@ export const PreviewTabsBar = memo(function PreviewTabsBar({
         {rightActions}
         <button
           onClick={onCloseAll}
-          className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-300/50 rounded transition-colors shrink-0"
+          className={cn(
+            'shrink-0 rounded-sm p-1 text-text-400 hover:text-text-100',
+            interactive.subtle,
+          )}
           title={closeAllTitle}
         >
           <CloseIcon size={12} />

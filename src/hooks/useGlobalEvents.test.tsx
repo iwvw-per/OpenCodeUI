@@ -119,6 +119,9 @@ vi.mock('../store', () => ({
     getActiveServerId: getActiveServerIdMock,
     checkHealth: checkHealthMock,
     onServerChange: onServerChangeMock,
+    // collectActiveServerIds 遍历所有「已启用」服务器并订阅其变化
+    getEnabledServers: () => [],
+    subscribe: () => () => {},
   },
 }))
 

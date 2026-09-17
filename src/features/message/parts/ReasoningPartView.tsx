@@ -159,7 +159,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
           ref={headerRef}
           onClick={toggleExpanded}
           aria-expanded={expanded}
-          className={`group/reasoning flex w-full min-w-0 items-center gap-1.5 rounded-md ${MSG_SPACING.header} m-0 border-0 bg-transparent text-left cursor-pointer text-text-400 hover:bg-bg-200/30 hover:text-text-200 transition-colors`}
+          className={`group/reasoning flex w-full min-w-0 items-center gap-1.5 rounded-md ${MSG_SPACING.header} m-0 border-0 bg-transparent text-left cursor-pointer text-text-400 hover:bg-bg-200 hover:text-text-200 transition-colors`}
         >
           <div ref={summaryContainerRef} className="relative min-w-0 flex-1 overflow-hidden">
             <span className="relative block min-w-0 max-w-full">
@@ -270,7 +270,7 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
         ref={headerRef}
         onClick={toggleExpanded}
         disabled={!hasContent && !isPartStreaming}
-        className={`w-full grid grid-cols-[auto_minmax(0,1fr)_12px] items-center gap-x-1.5 px-2 py-2 text-text-500 hover:bg-bg-200/50 transition-colors ${
+        className={`w-full grid grid-cols-[auto_minmax(0,1fr)_12px] items-center gap-x-1.5 px-2 py-2 text-text-500 hover:bg-bg-200 transition-colors ${
           !hasContent ? 'cursor-default' : ''
         }`}
       >

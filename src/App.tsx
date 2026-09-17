@@ -149,9 +149,9 @@ function App() {
     serverStore.setActiveServer(routeServerId)
   }, [routeSessionKey, routeServerId])
 
-  // 多服务器模式：项目选择器焦点跟随当前聚焦 pane 的 session（切换 pane / 分屏聚焦时同步）
+  // 项目选择器焦点跟随当前聚焦 pane 的 session（切换 pane / 分屏聚焦时同步）。
+  // 始终生效：多服务器是默认行为，不再由模式开关门控。
   useEffect(() => {
-    if (!multiServerStore.isEnabled()) return
     const focusedSessionKey = paneLayout.focusedSessionId
     if (!focusedSessionKey) return
     // 只同步焦点服务器；目录由 URL 派生（pane -> URL 同步会写入对应 dir，不再手动 setCurrentDirectory
@@ -200,15 +200,11 @@ function App() {
       // 多服务器模式：进入 home（新建对话）时切到焦点服务器。
       // 切到不同服务器：server-switch 会清掉 currentDirectory/目录参数（新服务器不一定有旧目录）；
       // 同一服务器内新建：保留当前工作区目录
-      if (multiServerStore.isEnabled()) {
-        const focusedServerId = multiServerStore.getFocusedServerId()
-        if (serverStore.getActiveServerId() !== focusedServerId) {
-          serverStore.setActiveServer(focusedServerId)
-        }
-        navigateRouteHome(focusedServerId)
-      } else {
-        navigateRouteHome()
+      const focusedServerId = multiServerStore.getFocusedServerId()
+      if (serverStore.getActiveServerId() !== focusedServerId) {
+        serverStore.setActiveServer(focusedServerId)
       }
+      navigateRouteHome(focusedServerId)
     },
     [navigateRouteHome],
   )

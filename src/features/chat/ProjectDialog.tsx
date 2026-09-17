@@ -454,7 +454,7 @@ function ListItem({ id, icon, label, isSelected, onClick, onMouseEnter, action }
         ${
           isSelected
             ? 'bg-bg-200/60 text-text-100'
-            : 'text-text-300 hover:bg-bg-200/50 hover:text-text-100'
+            : 'text-text-300 hover:bg-bg-200 hover:text-text-100'
         }
       `}
     >

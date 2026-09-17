@@ -136,7 +136,7 @@ export function SettingsSearch<T extends SearchMenuItem>({ items, placeholder, c
             inputRef.current?.focus()
           }}
           aria-label={clearLabel}
-          className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-text-400 hover:bg-bg-200/60 hover:text-text-100"
+          className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-text-400 hover:bg-bg-200 hover:text-text-100"
         >
           <CloseIcon size={12} />
         </button>
@@ -147,7 +147,7 @@ export function SettingsSearch<T extends SearchMenuItem>({ items, placeholder, c
           ref={listboxRef}
           id={listboxId}
           role="listbox"
-          className="absolute left-0 top-[calc(100%+6px)] max-h-72 min-w-full max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-border-200 bg-bg-000/95 p-1 shadow-xl backdrop-blur-xl custom-scrollbar"
+          className="absolute left-0 top-[calc(100%+6px)] max-h-72 min-w-full max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-border-200 bg-bg-000/95 flex flex-col gap-0.5 p-1 shadow-xl backdrop-blur-xl custom-scrollbar"
         >
           {results.length === 0 ? (
             <div className="px-2.5 py-3 text-[length:var(--fs-xs)] text-text-400" role="status">
@@ -170,7 +170,7 @@ export function SettingsSearch<T extends SearchMenuItem>({ items, placeholder, c
                 onMouseDown={event => event.preventDefault()}
                 onClick={() => select(item)}
                 className={`flex w-full min-w-0 items-center justify-between gap-3 rounded px-2.5 py-2 text-left transition-colors ${
-                  index === safeActiveIndex ? 'bg-accent-main-100/12 text-text-100' : 'hover:bg-bg-200/50'
+                  index === safeActiveIndex ? 'bg-bg-200 text-text-100' : 'hover:bg-bg-200'
                 }`}
               >
                 <span className="min-w-0 flex-1">

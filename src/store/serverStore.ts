@@ -37,6 +37,11 @@ export interface ServerConfig {
   name: string // 显示名称
   url: string // 服务器 URL (不含尾部斜杠)
   isDefault?: boolean // 是否为默认服务器
+  /**
+   * 是否启用。停用后不建立连接、不参与事件订阅，也不出现在侧栏会话分组里，
+   * 但保留配置（区别于「删除」）。缺省视为启用，兼容旧数据。
+   */
+  enabled?: boolean
   auth?: ServerAuth // 认证信息 (可选)
 }
 
@@ -286,6 +291,56 @@ class ServerStore {
 
   getStoredServers(): ServerConfig[] {
     return [...this.servers]
+  }
+
+  /**
+   * 服务器是否启用。
+   * 缺省（undefined）视为启用，兼容未写入该字段的旧数据。
+   */
+  isServerEnabled(serverId: string): boolean {
+    const server = this.servers.find(s => s.id === serverId)
+    return server ? server.enabled !== false : false
+  }
+
+  /** 获取所有启用的服务器（建立连接、事件订阅、侧栏分组的依据） */
+  getEnabledServers(): ServerConfig[] {
+    return this.servers.filter(s => s.enabled !== false)
+  }
+
+  /**
+   * 启用/停用一台服务器。
+   *
+   * 停用的若是当前活动服务器，必须同时切到另一台已启用的：
+   * getActiveServerId() 有 `?? DEFAULT_SERVER_ID` 的兜底，会一直返回被停用的 id，
+   * 而连接集合已把它排除 —— 不切走就会出现「活动服务器没连接」的空转状态。
+   *
+   * @returns 成功返回 true；无其它已启用服务器可切换时返回 false（不改动）
+   */
+  setServerEnabled(id: string, enabled: boolean): boolean {
+    const index = this.servers.findIndex(s => s.id === id)
+    if (index === -1) return false
+    const server = this.servers[index]
+    if ((server.enabled !== false) === enabled) return true
+
+    let nextActiveId: string | null = null
+    if (!enabled && this.getActiveServerId() === id) {
+      const fallback = this.servers.find(s => s.id !== id && s.enabled !== false)
+      // 没有可切换的目标时拒绝停用，避免把面板置于无后端可用
+      if (!fallback) return false
+      nextActiveId = fallback.id
+    }
+
+    this.servers[index] = { ...server, enabled }
+    if (nextActiveId) {
+      this.activeServerId = nextActiveId
+      this.saveToStorage()
+      this.notify()
+      this.notifyServerChange(nextActiveId, 'server-switch')
+      return true
+    }
+    this.saveToStorage()
+    this.notify()
+    return true
   }
 
   /**
@@ -686,6 +741,8 @@ function normalizeServerBackup(raw: unknown): ServerSettingsBackup {
           name: item.name,
           url: item.url.replace(/\/+$/, ''),
           isDefault: item.isDefault === true,
+          // 缺省启用：旧备份没有该字段时不应被当成停用
+          enabled: item.enabled !== false,
           auth:
             item.auth &&
             typeof item.auth === 'object' &&

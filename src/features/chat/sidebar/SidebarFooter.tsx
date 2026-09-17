@@ -13,17 +13,16 @@ import {
   ShareIcon,
 } from '../../../components/Icons'
 import { CircularProgress } from '../../../components/CircularProgress'
+import { SegmentedControl } from '../../settings/components/SettingsUI'
 import { formatTokens, formatCost, useTheme, useSessionStats } from '../../../hooks'
 import { useHasMessages } from '../../../store'
 
-// 状态指示器 - 圆环 + 右下角状态点
+// 状态指示器 - 上下文占用圆环
 function StatusIndicator({
   percent,
-  connectionState,
   size = 24,
 }: {
   percent: number
-  connectionState: string
   size?: number
 }) {
   const clampedPercent = Math.min(Math.max(percent, 0), 100)
@@ -38,16 +37,6 @@ function StatusIndicator({
           ? 'text-warning-100'
           : 'text-accent-main-100'
 
-  // 连接状态颜色
-  const statusColor =
-    connectionState === 'connected'
-      ? 'bg-success-100'
-      : connectionState === 'connecting'
-        ? 'bg-warning-100 animate-pulse'
-        : connectionState === 'error'
-          ? 'bg-danger-100'
-          : 'bg-text-500'
-
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <CircularProgress
@@ -56,11 +45,6 @@ function StatusIndicator({
         strokeWidth={3}
         trackClassName="text-text-100/10"
         progressClassName={progressColor}
-      />
-
-      {/* 右下角状态点 - 带背景边框以突出显示 */}
-      <div
-        className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-bg-200 ${statusColor}`}
       />
     </div>
   )
@@ -246,7 +230,7 @@ export function SidebarFooter({
                 style={{ transform: `scaleX(${Math.min(100, stats.contextPercent) / 100})` }}
               />
             </div>
-            <div className="flex justify-between text-[length:var(--fs-xxs)] text-text-400 font-mono">
+            <div className="flex justify-between text-[length:var(--fs-xxs)] text-text-400 tabular-nums">
               <span>
                 {formatTokens(stats.contextUsed)} / {formatTokens(stats.contextLimit)}
               </span>
@@ -260,44 +244,32 @@ export function SidebarFooter({
             <div className="text-[length:var(--fs-xxs)] font-bold text-text-400 uppercase tracking-wider px-1 mb-1.5">
               {t('sidebar.appearance')}
             </div>
-            <div className="flex bg-bg-200/50 p-1 rounded-md border border-border-200/30 relative isolate">
-              <div
-                className="absolute top-1 bottom-1 left-1 w-[calc((100%-8px)/3)] bg-bg-000 rounded-sm shadow-sm ring-1 ring-border-200/50 transition-transform duration-300 ease-out -z-10"
-                style={{
-                  transform:
-                    themeMode === 'system'
-                      ? 'translateX(0%)'
-                      : themeMode === 'light'
-                        ? 'translateX(100%)'
-                        : 'translateX(200%)',
-                }}
-              />
-              {(['system', 'light', 'dark'] as const).map(m => (
-                <button
-                  key={m}
-                  onClick={e => onThemeChange(m, e)}
-                  className={`flex-1 flex items-center justify-center py-1.5 rounded-sm text-[length:var(--fs-sm)] font-medium transition-colors duration-200 ${
-                    themeMode === m ? 'text-text-100' : 'text-text-400 hover:text-text-200'
-                  }`}
-                >
-                  {m === 'system' && <SystemIcon size={14} />}
-                  {m === 'light' && <SunIcon size={14} />}
-                  {m === 'dark' && <MoonIcon size={14} />}
-                </button>
-              ))}
-            </div>
+            {/* 主题切换：复用设置里的 SegmentedControl（底层是共享 Tabs slider），
+                不再手写容器与指示层。此前手写版在底色/边框/圆角/指示层 ring 上
+                都与侧栏其他 tab 不一致。 */}
+            <SegmentedControl
+              value={themeMode}
+              size="lg"
+              fullWidth
+              options={[
+                { value: 'system' as const, label: t('sidebar.themeAuto'), icon: <SystemIcon size={14} /> },
+                { value: 'light' as const, label: t('sidebar.themeLight'), icon: <SunIcon size={14} /> },
+                { value: 'dark' as const, label: t('sidebar.themeDark'), icon: <MoonIcon size={14} /> },
+              ]}
+              onChange={(mode, e) => onThemeChange(mode, e)}
+            />
             <div className="pointer-events-none absolute inset-x-3 bottom-0 h-px bg-border-200/30" />
           </div>
 
           {/* Menu Items */}
-          <div className="p-1">
+          <div className="flex flex-col gap-0.5 p-1">
             {toggleWideMode && (
               <button
                 onClick={() => {
                   toggleWideMode()
                   closeMenu()
                 }}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200/50 transition-colors text-left"
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200 transition-colors text-left"
               >
                 {isWideMode ? <MinimizeIcon size={14} /> : <MaximizeIcon size={14} />}
                 <span>{isWideMode ? t('sidebar.standardWidth') : t('sidebar.wideMode')}</span>
@@ -309,7 +281,7 @@ export function SidebarFooter({
                 closeMenu()
                 setShareDialogOpen(true)
               }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200/50 transition-colors text-left"
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200 transition-colors text-left"
             >
               <ShareIcon size={14} />
               <span>{t('sidebar.shareChat')}</span>
@@ -320,7 +292,7 @@ export function SidebarFooter({
                 closeMenu()
                 onOpenSettings?.()
               }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200/50 transition-colors text-left"
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200 transition-colors text-left"
             >
               <CogIcon size={14} />
               <span>{t('sidebar.settings')}</span>
@@ -357,14 +329,14 @@ export function SidebarFooter({
           title={`Context: ${formatTokens(hasMessages ? stats.contextUsed : 0)} tokens • ${Math.round(stats.contextPercent)}% • ${formatCost(stats.totalCost)}`}
         >
           {/* 状态指示器 */}
-          <StatusIndicator percent={stats.contextPercent} connectionState={connectionState} size={24} />
+          <StatusIndicator percent={stats.contextPercent} size={24} />
 
           {/* 展开时显示详细信息 */}
           <span
             className="ml-2 flex-1 flex items-center justify-between min-w-0 transition-opacity duration-300"
             style={{ opacity: showLabels ? 1 : 0 }}
           >
-            <span className="text-[length:var(--fs-sm)] font-mono text-text-300 truncate">
+            <span className="text-[length:var(--fs-sm)] tabular-nums text-text-300 truncate">
               {hasMessages ? formatTokens(stats.contextUsed) : '0'} / {formatTokens(stats.contextLimit)}
             </span>
             <span

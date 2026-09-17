@@ -83,7 +83,6 @@ export const SETTINGS_SEARCH_DEFINITIONS: SettingsSearchDefinition[] = [
     'appearance.folderStyleRecents',
     'appearance.folderStyleRecentsShowDiff',
     'appearance.showChildSessions',
-    'appearance.showGlobal',
   ]),
   ...definitions('appearance', [
     'appearance.themePresets',

@@ -84,26 +84,30 @@ export function SessionSortMenu() {
           <div className="px-2 pt-1 pb-1.5 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider text-text-400/60 select-none">
             {t('sidebar.sortBy', { defaultValue: '排序方式' })}
           </div>
-          {fields.map(({ field, label, icon }) => (
-            <button
-              key={field}
-              type="button"
-              role="menuitemradio"
-              aria-checked={sidebarSessionSortField === field}
-              onClick={() => apply(field, sidebarSessionSortDesc)}
-              className={`w-full px-2 py-2 rounded-lg flex items-center gap-2 text-left bg-transparent border-none cursor-pointer transition-colors duration-150 hover:bg-bg-200 ${
-                sidebarSessionSortField === field ? 'text-text-100' : 'text-text-300'
-              }`}
-            >
-              <span className="w-4 h-4 flex items-center justify-center shrink-0 text-text-400">{icon}</span>
-              <span className="flex-1 min-w-0 truncate text-[length:var(--fs-sm)]">{label}</span>
-              {sidebarSessionSortField === field && (
-                <span className="w-4 flex items-center justify-center shrink-0 text-accent-main-100">
-                  <CheckIcon size={14} />
-                </span>
-              )}
-            </button>
-          ))}
+          {/* 条目之间留 2px：item 是 rounded-lg + hover 底色，紧贴时相邻圆角会拼成一条凹槽。
+             不用容器 gap，避免把分组标题和分隔线的间距也一起撑开。 */}
+          <div className="flex flex-col gap-0.5">
+            {fields.map(({ field, label, icon }) => (
+              <button
+                key={field}
+                type="button"
+                role="menuitemradio"
+                aria-checked={sidebarSessionSortField === field}
+                onClick={() => apply(field, sidebarSessionSortDesc)}
+                className={`w-full px-2 py-2 rounded-lg flex items-center gap-2 text-left bg-transparent border-none cursor-pointer transition-colors duration-150 hover:bg-bg-200 ${
+                  sidebarSessionSortField === field ? 'text-text-100' : 'text-text-300'
+                }`}
+              >
+                <span className="w-4 h-4 flex items-center justify-center shrink-0 text-text-400">{icon}</span>
+                <span className="flex-1 min-w-0 truncate text-[length:var(--fs-sm)]">{label}</span>
+                {sidebarSessionSortField === field && (
+                  <span className="w-4 flex items-center justify-center shrink-0 text-accent-main-100">
+                    <CheckIcon size={14} />
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
 
           <div className="mx-1 my-1 h-px bg-border-200/50" />
 

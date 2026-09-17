@@ -7,6 +7,7 @@ import { childSessionStore, autoApproveStore } from '../../store'
 import { makeSessionKey, splitSessionKey } from '../../utils/sessionKey'
 import { usePresence } from '../../hooks'
 import { useChatViewport } from './chatViewport'
+import { getContentMaxWidthClass } from './contentWidth'
 
 interface PermissionDialogProps {
   request: ApiPermissionRequest
@@ -77,7 +78,7 @@ export function PermissionDialog({
   return (
     <div ref={animRef} className="absolute bottom-0 left-0 right-0 z-[10]">
       <div
-        className="mx-auto max-w-3xl pointer-events-auto transition-[max-width] duration-300 ease-in-out pb-2"
+        className={`mx-auto ${getContentMaxWidthClass(presentation.isWideMode)} pointer-events-auto transition-[max-width] duration-300 ease-in-out pb-2`}
         style={{
           paddingLeft: isCompact ? 6 : 14,
           paddingRight: isCompact ? 6 : 14,

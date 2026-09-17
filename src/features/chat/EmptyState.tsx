@@ -4,6 +4,8 @@ import { MessageSquareIcon, FolderIcon, ChevronDownIcon, NewChatIcon } from '../
 import { getPath, type ApiProject, type ApiPath } from '../../api'
 import { serverStore } from '../../store/serverStore'
 import { handleError } from '../../utils'
+import { cn } from '../../utils/cn'
+import { interactive } from '../../utils/interaction'
 
 interface EmptyStateProps {
   currentProject: ApiProject | null
@@ -148,7 +150,13 @@ export function EmptyState({ currentProject, projects, onStartChat }: EmptyState
             <div ref={dropdownRef} className="relative">
               <button
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="w-full flex items-center justify-between px-3 py-2.5 bg-bg-200 border border-border-300/30 rounded-lg text-[length:var(--fs-base)] text-text-100 hover:border-border-300/50 transition-colors text-left"
+                className={cn(
+                  'w-full flex items-center justify-between px-3 py-2.5 bg-bg-200 border border-border-300/30 rounded-lg text-[length:var(--fs-base)] text-text-100 text-left',
+                  // 该触发器自带静态 bg-bg-200，故 hover 需再进一档才有可见反馈；
+                  // 不能沿用 interactive.subtle 的 hover:bg-bg-200（同色，等于无反馈）。
+                  'cursor-pointer transition-colors hover:bg-bg-300 active:bg-bg-300',
+                  interactive.focusRingCompact,
+                )}
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <FolderIcon className="w-4 h-4 text-text-400 flex-shrink-0" />
@@ -166,7 +174,10 @@ export function EmptyState({ currentProject, projects, onStartChat }: EmptyState
                     {/* Current directory */}
                     <button
                       onClick={() => handleSelectDirectory(currentDirectory)}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-bg-200/50 transition-colors text-[length:var(--fs-base)] text-text-200"
+                      className={cn(
+                        'w-full flex items-center gap-2 px-3 py-2 text-left text-[length:var(--fs-base)] text-text-200',
+                        interactive.row,
+                      )}
                     >
                       <FolderIcon className="w-4 h-4 text-accent-main-100 flex-shrink-0" />
                       <span className="truncate">{currentDirectory}</span>
@@ -180,7 +191,10 @@ export function EmptyState({ currentProject, projects, onStartChat }: EmptyState
                       <button
                         key={dir}
                         onClick={() => handleSelectDirectory(dir)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-bg-200/50 transition-colors text-[length:var(--fs-base)] text-text-300"
+                        className={cn(
+                          'w-full flex items-center gap-2 px-3 py-2 text-left text-[length:var(--fs-base)] text-text-300',
+                          interactive.row,
+                        )}
                       >
                         <FolderIcon className="w-4 h-4 text-text-500 flex-shrink-0" />
                         <span className="truncate">{dir}</span>
@@ -191,7 +205,10 @@ export function EmptyState({ currentProject, projects, onStartChat }: EmptyState
                     <div className="border-t border-border-300/20">
                       <button
                         onClick={handleCustomPath}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-bg-200/50 transition-colors text-[length:var(--fs-base)] text-text-400"
+                        className={cn(
+                          'w-full flex items-center gap-2 px-3 py-2 text-left text-[length:var(--fs-base)] text-text-400',
+                          interactive.row,
+                        )}
                       >
                         <NewChatIcon className="w-4 h-4 flex-shrink-0" />
                         <span>{t('emptyState.enterCustomPath')}</span>

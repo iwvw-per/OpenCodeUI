@@ -11,6 +11,8 @@ import { useTranslation } from 'react-i18next'
 import { useServerStore } from '../../../hooks/useServerStore'
 import { subscribeToServerConnectionState, getServerConnectionInfo, type ConnectionInfo } from '../../../api/events'
 import { CogIcon } from '../../../components/Icons'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 
 function useServerConnectionState(serverId: string): ConnectionInfo {
   const subscribe = useCallback(
@@ -55,9 +57,11 @@ const HostRow = memo(function HostRow({
     <button
       type="button"
       onClick={() => onSelect(serverId)}
-      className={`group flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors duration-150 select-none ${
-        isActive ? 'bg-bg-200/70' : 'hover:bg-bg-200/40'
-      }`}
+      className={cn(
+        'group flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left',
+        interactive.row,
+        isActive && interactive.rowSelected,
+      )}
       title={url}
     >
       <span className="relative size-5 shrink-0 flex items-center justify-center">
@@ -94,11 +98,14 @@ export function HostList({
   const { t } = useTranslation(['chat', 'common'])
   const { servers, activeServer, getHealth, setActiveServer } = useServerStore()
   const activeId = activeServer?.id ?? null
+  // 停用的主机不出现在侧栏：开关语义是「这台主机要不要用」，
+  // 停用后不建连接也不该出现在切换列表里（配置仍保留在设置页）。
+  const visibleServers = servers.filter(server => server.enabled !== false)
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-1.5 py-1 space-y-0.5">
-        {servers.map(server => {
+        {visibleServers.map(server => {
           const health = getHealth(server.id)
           return (
             <HostRow
@@ -115,12 +122,22 @@ export function HostList({
             />
           )
         })}
+
+        {/* 全部主机都停用时给出说明，避免只剩一个空白列表 */}
+        {visibleServers.length === 0 && (
+          <div className="px-2 py-6 text-center text-[length:var(--fs-xs)] text-text-400">
+            {t('sidebar.noEnabledHosts', { defaultValue: 'No hosts enabled' })}
+          </div>
+        )}
       </div>
       <div className="shrink-0 px-2 py-1.5 border-t border-border-200/40">
         <button
           type="button"
           onClick={onOpenSettings}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[length:var(--fs-sm)] text-text-400 hover:text-text-200 hover:bg-bg-200/50 transition-colors duration-150"
+          className={cn(
+            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[length:var(--fs-sm)] text-text-400 hover:text-text-200',
+            interactive.subtle,
+          )}
         >
           <CogIcon size={14} />
           <span className="truncate">{t('sidebar.openServerSettings', { defaultValue: 'Open Server Settings' })}</span>

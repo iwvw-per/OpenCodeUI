@@ -297,7 +297,7 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
           type="button"
           onClick={() => setShowCreateForm(true)}
           disabled={!!actionLoading || !canManageWorktrees}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-text-400 hover:text-text-100 hover:bg-bg-200/50 transition-colors"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-text-400 hover:text-text-100 hover:bg-bg-200 transition-colors"
           title={t('worktreePanel.createWorktree')}
           aria-label={t('worktreePanel.createWorktree')}
         >
@@ -357,7 +357,7 @@ export const WorktreePanel = memo(function WorktreePanel({ isResizing: _isResizi
             </button>
           </div>
         ) : (
-          <div className="p-1">
+          <div className="flex flex-col gap-0.5 p-1">
             {worktrees.map(wt => (
               <WorktreeItem
                 key={wt}

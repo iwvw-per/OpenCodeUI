@@ -93,7 +93,7 @@ export const FullscreenViewer = memo(function FullscreenViewer({
                 type="button"
                 onClick={onClose}
                 aria-label={t('closeEsc')}
-                className="p-1.5 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded-lg transition-colors"
+                className="p-1.5 text-text-400 hover:text-text-100 hover:bg-bg-200 rounded-lg transition-colors"
                 title={t('closeEsc')}
               >
                 <CloseIcon size={16} />

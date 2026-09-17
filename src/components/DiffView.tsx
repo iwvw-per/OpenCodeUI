@@ -84,7 +84,7 @@ export const DiffView = memo(function DiffView({
             id: `diff-view:${generatedFullscreenId}`,
             title: fileName,
             titleExtra: (
-              <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] font-mono tabular-nums shrink-0">
+              <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] tabular-nums shrink-0">
                 {stats.additions > 0 && <span className="text-success-100">+{stats.additions}</span>}
                 {stats.deletions > 0 && <span className="text-danger-100">-{stats.deletions}</span>}
               </div>

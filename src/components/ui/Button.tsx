@@ -14,10 +14,11 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles: Record<ButtonVariant, string> = {
-  primary: 'bg-accent-main-000 hover:bg-accent-main-200 text-oncolor-100',
-  secondary: 'bg-bg-200 hover:bg-bg-300 text-text-200 hover:text-text-100',
-  ghost: 'bg-transparent hover:bg-bg-200 text-text-300 hover:text-text-100',
-  danger: 'bg-danger-100 hover:bg-danger-200 text-oncolor-100',
+  // 按下反馈只用底色加深，不做 scale/translate —— 点击不应改变元素边界
+  primary: 'bg-accent-main-000 hover:bg-accent-main-200 active:bg-accent-main-100 text-oncolor-100',
+  secondary: 'bg-bg-200 hover:bg-bg-300 active:bg-bg-300 text-text-200 hover:text-text-100',
+  ghost: 'bg-transparent hover:bg-bg-200 active:bg-bg-300 text-text-300 hover:text-text-100',
+  danger: 'bg-danger-100 hover:bg-danger-200 active:bg-danger-200 text-oncolor-100',
 }
 
 const sizeStyles: Record<ButtonSize, string> = {
@@ -38,9 +39,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || isLoading}
         className={cn(
           'inline-flex items-center justify-center gap-2 font-medium',
-          'transition-[color,background-color,transform] duration-150',
-          // 按下时轻微收缩，松手即恢复；禁用态不收缩，避免"还能点"的错觉
-          'active:scale-95 disabled:active:scale-100',
+          'transition-colors duration-150',
           interactive.focusRingCompact,
           interactive.disabled,
           variantStyles[variant],

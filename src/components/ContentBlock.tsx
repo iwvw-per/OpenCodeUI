@@ -159,7 +159,7 @@ export const ContentBlock = memo(function ContentBlock({
   const fullscreenTitleExtra = useMemo(
     () =>
       diffStats && (
-        <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] font-mono tabular-nums shrink-0">
+        <div className="flex items-center gap-1.5 text-[length:var(--fs-xs)] tabular-nums shrink-0">
           {diffStats.additions > 0 && <span className="text-success-100">+{diffStats.additions}</span>}
           {diffStats.deletions > 0 && <span className="text-danger-100">-{diffStats.deletions}</span>}
         </div>

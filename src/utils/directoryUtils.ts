@@ -11,7 +11,6 @@
 
 import { serverStorage } from './perServerStorage'
 import { serverStore } from '../store/serverStore'
-import { multiServerStore } from '../store/multiServerStore'
 
 // ============================================
 // Path Mode Configuration
@@ -139,12 +138,15 @@ export function setDetectedPathStyle(style: DetectedPathStyle, serverId?: string
 
 /**
  * 获取实际生效的路径风格（按服务器）
- * - 多服务器模式：强制 auto（每服务器按各自检测结果，避免本地 Windows + 远程 Linux 冲突）
- * - 单服务器模式：auto 返回检测结果；否则返回用户设置的模式
+ * - auto：按该服务器各自检测的结果（本地 Windows + 远程 Linux 混用时不冲突）
+ * - 显式指定 unix / windows：尊重用户选择
+ *
+ * 注意：现在始终连接多台服务器，跨服务器风格差异是常态。用户显式指定时仍按
+ * 指定值走（那是明确的偏好），auto 时才按每台服务器各自的检测结果。
  */
 export function getEffectivePathStyle(serverId?: string): DetectedPathStyle {
   const mode = getPathMode()
-  if (mode === 'auto' || multiServerStore.isEnabled()) {
+  if (mode === 'auto') {
     return getDetectedPathStyle(serverId)
   }
   return mode

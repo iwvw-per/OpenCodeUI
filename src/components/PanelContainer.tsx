@@ -357,7 +357,7 @@ export const PanelContainer = memo(function PanelContainer({
               }}
               className={`
                 p-2 ml-1 rounded-md transition-colors shrink-0
-                ${addMenuPos ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:text-text-100 hover:bg-bg-200/50'}
+                ${addMenuPos ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:text-text-100 hover:bg-bg-200'}
               `}
               title={t('panelContainer.addTab')}
             >
@@ -373,7 +373,7 @@ export const PanelContainer = memo(function PanelContainer({
             aria-label={t('terminal.hidePanel')}
             title={t('terminal.hidePanel')}
             onClick={handleCollapse}
-            className="hover:bg-bg-200/50 text-text-400 hover:text-text-100"
+            className="hover:bg-bg-200 text-text-400 hover:text-text-100"
           >
             {position === 'bottom' ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />}
           </IconButton>
@@ -408,7 +408,7 @@ export const PanelContainer = memo(function PanelContainer({
         createPortal(
           <div
             ref={addMenuRef}
-            className="fixed z-[9999] bg-bg-100 border border-border-200 rounded-lg shadow-lg p-1 min-w-[140px]"
+            className="fixed z-[9999] bg-bg-100 border border-border-200 rounded-lg shadow-lg flex flex-col gap-0.5 p-1 min-w-[140px]"
             style={{
               top: addMenuPos.y,
               left: addMenuPos.align === 'left' ? addMenuPos.x : undefined,
@@ -569,7 +569,7 @@ const PanelTabButton = memo(function PanelTabButton({
         ${
           isActive
             ? 'bg-bg-000 text-text-100 shadow-sm border-border-200/50'
-            : 'text-text-300 hover:text-text-200 hover:bg-bg-200/50'
+            : 'text-text-300 hover:text-text-200 hover:bg-bg-200'
         }
         ${isDragging ? 'opacity-40 scale-95' : ''}
         ${isDragOver ? 'border-accent-main-100 bg-accent-main-100/10' : ''}

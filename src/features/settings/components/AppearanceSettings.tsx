@@ -66,11 +66,11 @@ function PresetCard({
   return (
     <button
       onClick={onClick}
-      className={`flex items-start gap-3 p-3 rounded-lg border transition-all text-left w-full
+      className={`flex items-start gap-3 p-3 rounded-lg border transition-colors text-left w-full
         ${
           isActive
             ? 'border-accent-main-100/60 bg-accent-main-100/5 ring-1 ring-accent-main-100/20'
-            : 'border-border-200/50 hover:border-border-300 hover:bg-bg-100/50'
+            : 'border-border-200/50 hover:border-border-300 hover:bg-bg-200'
         }`}
     >
       <div
@@ -438,7 +438,7 @@ function CustomCSSEditor({
             <Button
               variant="ghost"
               size="sm"
-              className="text-text-400 hover:bg-danger-100/10 hover:text-danger-100"
+              className={cn('text-text-400 hover:text-danger-100', interactive.danger)}
               onClick={() => {
                 cancelPendingChange()
                 setDraft({ source: value, value: '' })
@@ -484,7 +484,7 @@ function SavedSnippetItem({
         ${
           isActive
             ? 'border-accent-main-100/40 bg-accent-main-100/[0.04]'
-            : 'border-border-200/50 bg-bg-100/40 hover:border-border-300/60 hover:bg-bg-100/60'
+            : 'border-border-200/50 bg-bg-100/40 hover:border-border-300/60 hover:bg-bg-200'
         }`}
     >
       <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
@@ -650,7 +650,7 @@ export function AppearanceSettings() {
   return (
     <div>
       {availablePresets.length > 0 && (
-        <SettingsSection title={t('appearance.themePresets')} description={t('appearance.themePresetsDesc')}>
+        <SettingsSection plain title={t('appearance.themePresets')} description={t('appearance.themePresetsDesc')}>
           <div className="grid gap-2 sm:grid-cols-2">
             {availablePresets.map(p => (
               <PresetCard
@@ -667,7 +667,7 @@ export function AppearanceSettings() {
         </SettingsSection>
       )}
 
-      <SettingsSection title={t('appearance.customCss')} description={t('appearance.customCssDesc')}>
+      <SettingsSection plain title={t('appearance.customCss')} description={t('appearance.customCssDesc')}>
         <CustomCSSEditor
           value={customCSS}
           onChange={setCustomCSS}
@@ -746,19 +746,17 @@ export function AppearanceSettings() {
       </SettingsSection>
 
       <SettingsSection title={t('appearance.display')} description={t('appearance.displayDesc')}>
-        <SettingField label={t('appearance.colorMode')}>
-          <div className="w-full max-w-[320px]">
-            <SegmentedControl
-              value={themeMode}
-              options={[
-                { value: 'system', label: t('appearance.modeAuto'), icon: <SystemIcon size={14} /> },
-                { value: 'light', label: t('appearance.modeLight'), icon: <SunIcon size={14} /> },
-                { value: 'dark', label: t('appearance.modeDark'), icon: <MoonIcon size={14} /> },
-              ]}
-              onChange={(v, e) => setThemeWithAnimation(v, e)}
-            />
-          </div>
-        </SettingField>
+        <SettingRow label={t('appearance.colorMode')}>
+          <SegmentedControl
+            value={themeMode}
+            options={[
+              { value: 'system', label: t('appearance.modeAuto'), icon: <SystemIcon size={14} /> },
+              { value: 'light', label: t('appearance.modeLight'), icon: <SunIcon size={14} /> },
+              { value: 'dark', label: t('appearance.modeDark'), icon: <MoonIcon size={14} /> },
+            ]}
+            onChange={(v, e) => setThemeWithAnimation(v, e)}
+          />
+        </SettingRow>
 
         <SettingRow
           label={t('appearance.glassEffect')}
@@ -778,7 +776,7 @@ export function AppearanceSettings() {
                 onClick={() => setUIFontScale(0)}
                 title={t('appearance.fontScaleReset')}
                 aria-label={t('appearance.fontScaleReset')}
-                className="p-1 rounded-md text-text-400 hover:text-text-200 hover:bg-bg-200/60 transition-colors"
+                className={cn('p-1 rounded-md text-text-400 hover:text-text-200', interactive.subtle)}
               >
                 <UndoIcon size={12} />
               </button>
@@ -798,7 +796,7 @@ export function AppearanceSettings() {
                 onClick={() => setCodeFontScale(0)}
                 title={t('appearance.fontScaleReset')}
                 aria-label={t('appearance.fontScaleReset')}
-                className="p-1 rounded-md text-text-400 hover:text-text-200 hover:bg-bg-200/60 transition-colors"
+                className={cn('p-1 rounded-md text-text-400 hover:text-text-200', interactive.subtle)}
               >
                 <UndoIcon size={12} />
               </button>

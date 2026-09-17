@@ -10,7 +10,7 @@ import {
 } from '../../../lib/codeBlockThemes'
 import { highlightHtmlInWorker } from '../../../lib/shikiWorkerClient'
 import { fieldClass } from './configEditorControls'
-import { SegmentedControl, SettingRow, SettingsSection } from './SettingsUI'
+import { SegmentedControl, SettingRow, SettingsSection, SettingsCardRow } from './SettingsUI'
 
 const PREVIEW_CODE = `// greet user by name
 function greet(name: string): string {
@@ -209,7 +209,7 @@ function CodeBlockThemeSelect({
             ref={menuRef}
             role="listbox"
             aria-label={ariaLabel}
-            className="fixed z-[400] max-h-64 overflow-y-auto rounded-lg border border-border-200 glass p-1 shadow-lg custom-scrollbar"
+            className="fixed z-[400] max-h-64 overflow-y-auto rounded-lg border border-border-200 glass flex flex-col gap-0.5 p-1 shadow-lg custom-scrollbar"
             style={pos}
           >
             {!hasResults && (
@@ -286,6 +286,7 @@ function CodeBlockPreview({
           />
         </div>
       </div>
+      {/* 预览块贴卡片内缘，与上方两行左对齐（行内边距 px-4） */}
       <div className="overflow-hidden rounded-md border border-border-200/50 text-[length:var(--fs-code)] leading-[var(--fs-code-line-height)]">
         {html ? (
           <div className="shiki-preview-container overflow-x-auto" dangerouslySetInnerHTML={{ __html: html }} />
@@ -343,7 +344,11 @@ export function CodeBlockThemeSettings() {
         />
       </SettingRow>
 
-      <CodeBlockPreview themeId={previewThemeId} mode={previewMode} onModeChange={setPreviewMode} />
+      {/* 预览不是标准设置行，但同属这张卡片，用 SettingsCardRow 取齐
+          内边距与上分隔线，否则会贴着卡片边、与上方两行错位 */}
+      <SettingsCardRow>
+        <CodeBlockPreview themeId={previewThemeId} mode={previewMode} onModeChange={setPreviewMode} />
+      </SettingsCardRow>
     </SettingsSection>
   )
 }

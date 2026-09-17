@@ -27,7 +27,7 @@ export const ContextMenuItem = forwardRef<HTMLButtonElement, ContextMenuItemProp
         'text-[length:var(--fs-sm)] transition-colors duration-150',
         tone === 'danger'
           ? 'text-danger-100 hover:bg-danger-100/10'
-          : 'text-text-200 hover:bg-bg-200/60 hover:text-text-100',
+          : 'text-text-200 hover:bg-bg-200 hover:text-text-100',
         disabled && 'cursor-not-allowed opacity-40 hover:bg-transparent hover:text-text-200',
         className,
       )}

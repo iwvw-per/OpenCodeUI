@@ -244,3 +244,74 @@ describe('serverStore health check', () => {
     expect(serverStore.getHealth('local')?.status).toBe('online')
   })
 })
+
+describe('serverStore enable/disable', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('defaults to enabled when the field is absent', async () => {
+    const { serverStore } = await import('./serverStore')
+    // 默认 Local 没有写 enabled 字段，应视为启用
+    expect(serverStore.isServerEnabled('local')).toBe(true)
+    expect(serverStore.getEnabledServers().map(s => s.id)).toContain('local')
+  })
+
+  it('disabling a non-active server keeps the active one untouched', async () => {
+    const { serverStore } = await import('./serverStore')
+    const extra = serverStore.addServer({ name: 'Remote', url: 'http://example.com' })
+    const activeBefore = serverStore.getActiveServerId()
+
+    expect(serverStore.setServerEnabled(extra.id, false)).toBe(true)
+    expect(serverStore.isServerEnabled(extra.id)).toBe(false)
+    expect(serverStore.getActiveServerId()).toBe(activeBefore)
+  })
+
+  it('excludes disabled servers from the enabled set', async () => {
+    const { serverStore } = await import('./serverStore')
+    const extra = serverStore.addServer({ name: 'Remote', url: 'http://example.com' })
+    serverStore.setServerEnabled(extra.id, false)
+
+    const ids = serverStore.getEnabledServers().map(s => s.id)
+    expect(ids).not.toContain(extra.id)
+  })
+
+  it('auto-switches to an enabled server when the active one is disabled', async () => {
+    const { serverStore } = await import('./serverStore')
+    const extra = serverStore.addServer({ name: 'Remote', url: 'http://example.com' })
+    serverStore.setActiveServer('local')
+
+    expect(serverStore.setServerEnabled('local', false)).toBe(true)
+    // 活动指针必须离开被停用的服务器，否则 getActiveServerId 的兜底
+    // 会一直返回它，而连接集合已排除，形成「活动但无连接」的空转
+    expect(serverStore.getActiveServerId()).toBe(extra.id)
+    expect(serverStore.isServerEnabled(extra.id)).toBe(true)
+  })
+
+  it('refuses to disable the last enabled server', async () => {
+    const { serverStore } = await import('./serverStore')
+    // 只剩 Local 一台时拒绝停用，避免面板没有可用后端
+    serverStore.setActiveServer('local')
+    const onlyServer = serverStore.getServers().length === 1
+    expect(onlyServer).toBe(true)
+
+    expect(serverStore.setServerEnabled('local', false)).toBe(false)
+    expect(serverStore.isServerEnabled('local')).toBe(true)
+  })
+
+  it('allows re-enabling and returns true for a no-op toggle', async () => {
+    const { serverStore } = await import('./serverStore')
+    const extra = serverStore.addServer({ name: 'Remote', url: 'http://example.com' })
+
+    expect(serverStore.setServerEnabled(extra.id, true)).toBe(true)
+    serverStore.setServerEnabled(extra.id, false)
+    expect(serverStore.setServerEnabled(extra.id, true)).toBe(true)
+    expect(serverStore.isServerEnabled(extra.id)).toBe(true)
+  })
+})

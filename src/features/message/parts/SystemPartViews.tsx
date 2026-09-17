@@ -109,7 +109,7 @@ export const PatchPartView = memo(function PatchPartView({ part }: PatchPartView
         ref={headerRef}
         onClick={() => withScrollLock(() => setExpanded(!expanded))}
         aria-expanded={expanded}
-        className="flex h-8 w-full items-center gap-2 px-3 text-left bg-transparent border-none hover:bg-bg-200/30 transition-colors"
+        className="flex h-8 w-full items-center gap-2 px-3 text-left bg-transparent border-none hover:bg-bg-200 transition-colors"
       >
         <PatchIcon className="w-4 h-4 text-text-400 flex-shrink-0" />
         <div className="flex-1 min-w-0">

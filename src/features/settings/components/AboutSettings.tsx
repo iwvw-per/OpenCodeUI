@@ -100,17 +100,17 @@ export function AboutSettings() {
 
   return (
     <div>
-      <SettingsSection title={t('about.versionCardTitle')} description={t('about.versionCardDesc')}>
+      <SettingsSection plain title={t('about.versionCardTitle')} description={t('about.versionCardDesc')}>
         <div className="divide-y divide-border-200/35">
           <div className="flex items-center justify-between gap-4 py-2.5">
             <div className="text-[length:var(--fs-sm)] text-text-300">{t('about.currentVersion')}</div>
-            <div className="shrink-0 text-[length:var(--fs-sm)] font-semibold text-text-100 font-mono tabular-nums">
+            <div className="shrink-0 text-[length:var(--fs-sm)] font-semibold text-text-100 tabular-nums">
               v{updateState.currentVersion}
             </div>
           </div>
           <div className="flex items-center justify-between gap-4 py-2.5">
             <div className="text-[length:var(--fs-sm)] text-text-300">{t('about.latestVersion')}</div>
-            <div className="shrink-0 text-[length:var(--fs-sm)] font-semibold text-text-100 font-mono tabular-nums">{latestVersion}</div>
+            <div className="shrink-0 text-[length:var(--fs-sm)] font-semibold text-text-100 tabular-nums">{latestVersion}</div>
           </div>
         </div>
 
@@ -131,7 +131,7 @@ export function AboutSettings() {
         </div>
       </SettingsSection>
 
-      <SettingsSection title={t('about.backupCardTitle')} description={t('about.backupCardDesc')}>
+      <SettingsSection plain title={t('about.backupCardTitle')} description={t('about.backupCardDesc')}>
         <input
           ref={fileInputRef}
           type="file"

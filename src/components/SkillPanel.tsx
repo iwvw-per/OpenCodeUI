@@ -74,7 +74,7 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
           onClick={loadSkills}
           disabled={loading}
           aria-label={t('common:refresh')}
-          className="inline-flex h-6 w-6 items-center justify-center hover:bg-bg-200/50 rounded-md text-text-300 hover:text-text-100 transition-colors disabled:opacity-50"
+          className="inline-flex h-6 w-6 items-center justify-center hover:bg-bg-200 rounded-md text-text-300 hover:text-text-100 transition-colors disabled:opacity-50"
           title={t('common:refresh')}
         >
           <RetryIcon size={12} className={loading ? 'animate-spin' : ''} />
@@ -125,7 +125,7 @@ export const SkillPanel = memo(function SkillPanel({ isResizing: _isResizing }: 
             <span>{t('skillPanel.noSkills')}</span>
           </div>
         ) : (
-          <div className="p-1">
+          <div className="flex flex-col gap-0.5 p-1">
             {filteredSkills.map(skill => (
               <SkillItem key={skill.name} skill={skill} />
             ))}
@@ -148,7 +148,7 @@ const SkillItem = memo(function SkillItem({ skill }: { skill: Skill }) {
       <button
         type="button"
         aria-expanded={expanded}
-        className="flex w-full items-start gap-2 rounded-md px-2 py-2 hover:bg-bg-200/50 transition-colors bg-transparent border-none text-left"
+        className="flex w-full items-start gap-2 rounded-md px-2 py-2 hover:bg-bg-200 transition-colors bg-transparent border-none text-left"
         onClick={() => setExpanded(!expanded)}
       >
         <span className="text-text-400 shrink-0 mt-0.5">

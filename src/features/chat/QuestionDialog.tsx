@@ -4,6 +4,7 @@ import { QuestionIcon, CheckIcon, ReturnIcon, ChevronDownIcon } from '../../comp
 import type { ApiQuestionRequest, ApiQuestionInfo, QuestionAnswer } from '../../api'
 import { usePresence } from '../../hooks'
 import { useChatViewport } from './chatViewport'
+import { getContentMaxWidthClass } from './contentWidth'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
 
 interface QuestionDialogProps {
@@ -183,7 +184,7 @@ export function QuestionDialog({
   return (
     <div ref={animRef} className="absolute bottom-0 left-0 right-0 z-[10]" onKeyDown={handleKeyDown}>
       <div
-        className="mx-auto max-w-3xl pointer-events-auto transition-[max-width] duration-300 ease-in-out pb-2"
+        className={`mx-auto ${getContentMaxWidthClass(presentation.isWideMode)} pointer-events-auto transition-[max-width] duration-300 ease-in-out pb-2`}
         style={{
           paddingLeft: isCompact ? 6 : 14,
           paddingRight: isCompact ? 6 : 14,

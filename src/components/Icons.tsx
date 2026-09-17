@@ -100,6 +100,10 @@ import {
   MoreHorizontal,
   FolderPlus,
   Archive,
+  ChartNoAxesColumn,
+  Gauge,
+  Timer,
+  Database,
 } from 'lucide-react'
 
 export interface IconProps extends SVGProps<SVGSVGElement> {
@@ -218,6 +222,10 @@ export const GitDiffIcon = wrap(GitCompare)
 export const PermissionListIcon = wrap(ListTodo)
 export const ListFilterIcon = wrap(ListFilter)
 export const LayersIcon = wrap(Layers)
+export const StatsIcon = wrap(ChartNoAxesColumn)
+export const GaugeIcon = wrap(Gauge)
+export const TimerIcon = wrap(Timer)
+export const DatabaseIcon = wrap(Database)
 export const MinusIcon = wrap(Minus)
 export const PaperclipIcon = wrap(Paperclip)
 export const FastForwardIcon = wrap(FastForward)
