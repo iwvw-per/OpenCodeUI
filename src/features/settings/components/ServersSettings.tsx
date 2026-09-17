@@ -18,6 +18,7 @@ import { messageStore } from '../../../store'
 import { useMultiServerStore, multiServerStore } from '../../../store/multiServerStore'
 import { settingsFieldClass, SettingsSection, SettingRow, Toggle } from './SettingsUI'
 import type { ServerConfig, ServerHealth } from '../../../store/serverStore'
+import { AiAgentAccountSettings } from './AiAgentAccountSettings'
 
 const IPV4_PATTERN = /^(?:\d{1,3}\.){3}\d{1,3}$/
 /** 显示名长度上限，避免列表项把右侧操作按钮挤穿 */
@@ -576,6 +577,7 @@ export function ServersSettings() {
 
   return (
     <>
+      <AiAgentAccountSettings />
       <SettingsSection
         title={t('servers.multiServerMode', { defaultValue: 'Multi-server mode' })}
         description={t('servers.multiServerModeDesc', {

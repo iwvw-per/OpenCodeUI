@@ -8,7 +8,7 @@
 // ============================================
 
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2/client'
-import { serverStore, makeBasicAuthHeader } from '../store/serverStore'
+import { serverStore, makeAuthHeader } from '../store/serverStore'
 import { isTauri } from '../utils/tauri'
 
 // Tauri fetch 缓存
@@ -90,8 +90,8 @@ function buildCacheKey(serverId?: string): string {
 function buildHeaders(serverId?: string): Record<string, string> {
   const headers: Record<string, string> = {}
   const auth = serverId ? serverStore.getServerAuth(serverId) : serverStore.getActiveAuth()
-  if (auth?.password) {
-    headers['Authorization'] = makeBasicAuthHeader(auth)
+  if (auth?.token || auth?.password) {
+    headers['Authorization'] = makeAuthHeader(auth)
   }
   return headers
 }

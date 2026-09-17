@@ -52,6 +52,7 @@ pub async fn is_service_running(url: &str) -> bool {
 /// 启动 opencode serve 进程
 fn spawn_opencode_serve(
     binary_path: &str,
+    url: &str,
     env_vars: &std::collections::HashMap<String, String>,
 ) -> Result<SpawnedOpencodeServe, String> {
     log::info!("Starting opencode serve with binary: {}", binary_path);
@@ -59,7 +60,18 @@ fn spawn_opencode_serve(
         log::info!("Injecting {} environment variable(s)", env_vars.len());
     }
 
-    let serve_args = ["serve".to_string()];
+    let mut serve_args = vec!["serve".to_string()];
+    // 用配置地址里的端口固定监听端口：opencode 默认 --port 0 会随机分配，
+    // 导致 AI Agent 网关等外部接入方无法确定目标端口。端口已被占用且健康时
+    // 由调用方的健康检查直接复用，不会走到这里重复启动。
+    if let Some(port) = reqwest::Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.port())
+    {
+        log::info!("Pinning opencode serve to port {}", port);
+        serve_args.push("--port".to_string());
+        serve_args.push(port.to_string());
+    }
 
     let mut cmd = build_opencode_command(binary_path, &serve_args);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -289,7 +301,7 @@ pub async fn start_opencode_service(
         });
     }
 
-    let mut spawned = spawn_opencode_serve(&binary_path, &env_vars)?;
+    let mut spawned = spawn_opencode_serve(&binary_path, &url, &env_vars)?;
     let pid = spawned.child.id();
     log::info!("Started opencode serve, PID: {}", pid);
 
