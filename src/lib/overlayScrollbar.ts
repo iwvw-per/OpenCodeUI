@@ -33,13 +33,30 @@ function wantsNoScrollbar(el: HTMLElement): boolean {
   return el.classList.contains('no-scrollbar') || el.classList.contains('scrollbar-none')
 }
 
+/** 读取 overflow 样式并缓存：getComputedStyle 会强制样式重算，同一元素只读一次 */
+function getOverflow(el: HTMLElement): { x: string; y: string; direction: string; flexDirection: string } {
+  const cached = overflowCache.get(el)
+  if (cached) return cached
+  const style = getComputedStyle(el)
+  const value = {
+    x: style.overflowX,
+    y: style.overflowY,
+    direction: style.direction,
+    flexDirection: style.flexDirection,
+  }
+  overflowCache.set(el, value)
+  return value
+}
+
+const overflowCache = new WeakMap<HTMLElement, { x: string; y: string; direction: string; flexDirection: string }>()
+
 function isScrollableY(el: HTMLElement): boolean {
   if (el === document.documentElement || el === document.body) return false
   if (el.tagName === 'INPUT') return false
   if (wantsNoScrollbar(el)) return false
   if (el.tagName === 'TEXTAREA') return el.scrollHeight > el.clientHeight + 1
 
-  const oy = getComputedStyle(el).overflowY
+  const oy = getOverflow(el).y
   if (oy !== 'auto' && oy !== 'scroll' && oy !== 'overlay') return false
   return el.scrollHeight > el.clientHeight + 1
 }
@@ -49,7 +66,7 @@ function isScrollableX(el: HTMLElement): boolean {
   if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return false
   if (wantsNoScrollbar(el)) return false
 
-  const ox = getComputedStyle(el).overflowX
+  const ox = getOverflow(el).x
   if (ox !== 'auto' && ox !== 'scroll' && ox !== 'overlay') return false
   return el.scrollWidth > el.clientWidth + 1
 }
@@ -224,8 +241,28 @@ interface Entry {
   onScroll: () => void
   onEnter: () => void
   onLeave: () => void
+  /** 需要复查方向（尺寸/样式变化后）。稳定 entry 不再每批 mutation 都 getComputedStyle */
+  dirty: boolean
 }
 const entries = new Map<HTMLElement, Entry>()
+
+/** 标记某容器需要复查方向 */
+function markDirty(el: HTMLElement) {
+  const entry = entries.get(el)
+  if (entry) entry.dirty = true
+}
+
+/** 从节点沿祖先链标记已跟踪的滚动容器脏（内容变化会影响 scrollHeight/clientHeight） */
+function markTrackedAncestorsDirty(el: HTMLElement) {
+  let cur: HTMLElement | null = el
+  while (cur && cur !== document.documentElement) {
+    if (entries.has(cur)) {
+      markDirty(cur)
+      return
+    }
+    cur = cur.parentElement
+  }
+}
 
 function ensurePositioned(parent: HTMLElement) {
   const pos = getComputedStyle(parent).position
@@ -299,11 +336,15 @@ function attach(vp: HTMLElement) {
   vp.addEventListener('pointerenter', onEnter)
   vp.addEventListener('pointerleave', onLeave)
 
-  const ro = new ResizeObserver(() => update())
+  const ro = new ResizeObserver(() => {
+    // 尺寸变化可能改变滚动方向需求：标记脏，由下一批 reconcile 复查
+    markDirty(vp)
+    update()
+  })
   ro.observe(vp)
   update()
 
-  const entry: Entry = { vp, parent, v, h, ro, onScroll, onEnter, onLeave }
+  const entry: Entry = { vp, parent, v, h, ro, onScroll, onEnter, onLeave, dirty: false }
   entries.set(vp, entry)
 }
 
@@ -347,7 +388,6 @@ function reconcile(vp: HTMLElement, entry: Entry) {
     entry.h = null
   }
 }
-
 // ── 扫描 DOM ────────────────────────────────────────────
 
 function tryAttach(el: HTMLElement) {
@@ -373,12 +413,17 @@ function scanTree(root: HTMLElement) {
   }
 }
 
-/** 核对已有 entry：是否仍在 DOM / 方向是否变化 */
+/** 核对已有 entry：不在 DOM 的直接移除并 detach；方向只对「可能变化」的 entry 复查 */
 function reconcileAll() {
   for (const [vp, entry] of entries) {
-    if (!document.contains(vp) || !isScrollable(vp)) {
+    // document.contains 是廉价的原生检查；已从 DOM 摘除的 entry 直接清理，
+    // 不再对其调用 isScrollable（避免无意义的 getComputedStyle）
+    if (!document.contains(vp)) {
       detach(vp)
-    } else {
+      continue
+    }
+    if (entry.dirty) {
+      entry.dirty = false
       reconcile(vp, entry)
     }
   }
@@ -402,17 +447,27 @@ function tryAttachAncestors(el: HTMLElement) {
   }
 }
 
+/** 该节点或其祖先链上是否存在已跟踪的滚动容器（用于过滤无关 mutation） */
+function isNearTrackedContainer(node: HTMLElement): boolean {
+  let cur: HTMLElement | null = node
+  while (cur && cur !== document.documentElement) {
+    if (entries.has(cur)) return true
+    cur = cur.parentElement
+  }
+  return false
+}
+
 /**
  * 增量扫描：只处理 mutation 触及的节点及其子树，避免流式 DOM 更新时
  * 每次都 TreeWalker 整页 + getComputedStyle。
  */
 function scanMutations(mutations: MutationRecord[]) {
-  reconcileAll()
-
   for (const mutation of mutations) {
     if (mutation.type === 'childList') {
-      // 子节点增减可能让 mutation.target 自身变成可滚动
+      // 子节点增减可能让 mutation.target 自身变成可滚动，也可能改变祖先容器的
+      // scrollHeight/clientHeight → 标记最近的已跟踪祖先脏，下一批复查方向
       if (mutation.target instanceof HTMLElement) {
+        markTrackedAncestorsDirty(mutation.target)
         tryAttachAncestors(mutation.target)
       }
       mutation.addedNodes.forEach(node => {
@@ -424,7 +479,11 @@ function scanMutations(mutations: MutationRecord[]) {
     if (mutation.type === 'attributes' && mutation.target instanceof HTMLElement) {
       const el = mutation.target
       if (el.classList.contains('os-thumb')) continue
-      // class/style 变了：自身与祖先都可能新变成可滚动
+      // class/style 变了：overflow 缓存作废，自身与祖先都可能新变成可滚动。
+      // 与已跟踪容器无关的子树（如流式正文里的行内 class）直接跳过全量祖先遍历
+      overflowCache.delete(el)
+      if (!isNearTrackedContainer(el)) continue
+      markDirty(el)
       tryAttachAncestors(el)
     }
   }
@@ -460,7 +519,8 @@ export function initOverlayScrollbars() {
     timer = setTimeout(flushScan, 200)
   }
 
-  new MutationObserver(mutations => debounceScan(mutations)).observe(document.body, {
+  const observer = new MutationObserver(mutations => debounceScan(mutations))
+  observer.observe(document.body, {
     childList: true,
     subtree: true,
     attributes: true,
@@ -468,8 +528,28 @@ export function initOverlayScrollbars() {
   })
 
   // resize 时布局全变，走全量 scan
-  window.addEventListener('resize', () => debounceScan(), { passive: true })
+  const onResize = () => debounceScan()
+  window.addEventListener('resize', onResize, { passive: true })
+
+  teardown = () => {
+    observer.disconnect()
+    window.removeEventListener('resize', onResize)
+    if (timer) clearTimeout(timer)
+    timer = null
+    pendingMutations = []
+    // 清掉所有 entry 的 thumb 与监听，允许重新 init（测试 / HMR）
+    for (const vp of Array.from(entries.keys())) detach(vp)
+    inited = false
+    teardown = null
+  }
 
   // 每个 entry 已有 scroll 监听更新自身 thumb。
   // 祖先滚动时，子 vp 与其 parent 同位移，相对定位不变，无需全量刷新所有 entry。
+}
+
+let teardown: (() => void) | null = null
+
+/** 停止全局滚动条注入并清理所有 thumb（测试 / HMR 用；正常运行时无需调用） */
+export function disposeOverlayScrollbars() {
+  teardown?.()
 }

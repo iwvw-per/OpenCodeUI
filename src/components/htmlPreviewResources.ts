@@ -19,7 +19,10 @@ function normalizeHtmlPath(htmlPath: string, directory?: string): string | null 
   const comparablePath = caseInsensitive ? normalizedHtmlPath.toLowerCase() : normalizedHtmlPath
   const comparableDirectory = caseInsensitive ? normalizedDirectory.toLowerCase() : normalizedDirectory
   if (comparablePath !== comparableDirectory && !comparablePath.startsWith(`${comparableDirectory}/`)) return null
-  return normalizedHtmlPath.slice(normalizedDirectory.length).replace(/^\/+/, '')
+  // 切割长度取自比较串：大小写折叠不改变长度，comparableDirectory.length
+  // 恒等于 normalizedDirectory.length，用同一来源的下标避免大小写处理不一致。
+  // 返回值仍取原串，保留真实大小写供后续 file API 使用。
+  return normalizedHtmlPath.slice(comparableDirectory.length).replace(/^\/+/, '')
 }
 
 export function resolveHtmlResourcePath(htmlPath: string, reference: string, directory?: string): string | null {

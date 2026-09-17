@@ -8,10 +8,20 @@
 
 interface CacheEntry {
   at: number
+  /** 写入时已知的 TTL；未知则视为无过期（仅靠显式失效或再次读取时判定） */
+  ttlMs: number | null
   value: unknown
 }
 
 const store = new Map<string, CacheEntry>()
+
+/** 惰性清理：entry 只在读取命中时删除，长期不读的 key 会累积；写入时顺带扫一遍过期项 */
+function pruneExpired(): void {
+  const now = Date.now()
+  for (const [key, entry] of store) {
+    if (entry.ttlMs !== null && now - entry.at > entry.ttlMs) store.delete(key)
+  }
+}
 
 export function ttlCacheGet<T>(key: string, ttlMs: number): T | undefined {
   const entry = store.get(key)
@@ -23,8 +33,9 @@ export function ttlCacheGet<T>(key: string, ttlMs: number): T | undefined {
   return entry.value as T
 }
 
-export function ttlCacheSet<T>(key: string, value: T): void {
-  store.set(key, { at: Date.now(), value })
+export function ttlCacheSet<T>(key: string, value: T, ttlMs?: number): void {
+  if (store.size > 0) pruneExpired()
+  store.set(key, { at: Date.now(), ttlMs: ttlMs ?? null, value })
 }
 
 /** 按 key 前缀失效（如某服务器的所有缓存） */

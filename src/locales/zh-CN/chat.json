@@ -33,7 +33,9 @@
   "inputBox": {
     "dropFilesHere": "拖放文件到此处",
     "replyToAgentMobile": "回复 Agent...",
-    "replyToAgent": "回复 Agent（输入 @ 提及，/ 执行命令）"
+    "replyToAgent": "回复 Agent（输入 @ 提及，/ 执行命令）",
+    "fileTooLarge": "文件过大",
+    "fileTooLargeBody": "{{name}} 超过 {{size}} 附件上限，未添加"
   },
   "modelSelector": {
     "selectModel": "选择模型",

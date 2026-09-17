@@ -13,7 +13,7 @@ async function getCurrentProjectCached(directory: string, serverId?: string): Pr
   const cached = ttlCacheGet<ApiProject>(key, CACHE_TTL_MS)
   if (cached) return cached
   const project = await getCurrentProject(directory, serverId)
-  ttlCacheSet(key, project)
+  ttlCacheSet(key, project, CACHE_TTL_MS)
   return project
 }
 
@@ -22,7 +22,7 @@ async function listWorktreesCached(rootDirectory: string, serverId?: string) {
   const cached = ttlCacheGet<string[]>(key, CACHE_TTL_MS)
   if (cached) return cached
   const worktrees = await listWorktrees(rootDirectory, serverId)
-  ttlCacheSet(key, worktrees)
+  ttlCacheSet(key, worktrees, CACHE_TTL_MS)
   return worktrees
 }
 

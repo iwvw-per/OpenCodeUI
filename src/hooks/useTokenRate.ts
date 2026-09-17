@@ -74,10 +74,17 @@ export function useTokenRate(sessionId: string | null): TokenRateState {
           tokensPerSec = tokens / ((completed - created) / 1000)
         }
 
-        setState({ tokensPerSec, hasData: true })
+        // 订阅挂在整条 session 上（流式期间每帧触发；messageStore 已按 RAF 批量）。
+        // 但流式增量不改变「最后一条已完成消息」的结果，值未变时不 setState，
+        // 避免每帧一次无意义的重渲染，也跳过值相同（含 NaN）的重复更新。
+        setState(prev =>
+          prev.hasData && prev.tokensPerSec === tokensPerSec && !Number.isNaN(tokensPerSec)
+            ? prev
+            : { tokensPerSec, hasData: true },
+        )
         return
       }
-      setState({ tokensPerSec: 0, hasData: false })
+      setState(prev => (prev.hasData || prev.tokensPerSec !== 0 ? { tokensPerSec: 0, hasData: false } : prev))
     }
 
     const unsubscribe = messageStore.subscribeSession(sessionId, update)

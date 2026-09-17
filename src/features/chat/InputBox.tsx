@@ -29,6 +29,7 @@ import {
 } from './input/inputUtils'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
 import { themeStore } from '../../store/themeStore'
+import { notificationStore } from '../../store/notificationStore'
 import { useLayoutStore } from '../../store/layoutStore'
 import { useChatViewport } from './chatViewport'
 import type { ApiAgent } from '../../api/client'
@@ -72,6 +73,9 @@ const INPUT_FOOTER_FALLBACK_HEIGHT = 32
 const COMPOSER_MIN_HEIGHT = 144
 const COMPOSER_DESKTOP_MAX_HEIGHT = 420
 const COMPOSER_COMPACT_MAX_HEIGHT = 320
+
+const MAX_DROPPED_FILE_SIZE = 20 * 1024 * 1024
+const MAX_DROPPED_FILE_SIZE_LABEL = `${MAX_DROPPED_FILE_SIZE / (1024 * 1024)}MB`
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
@@ -1113,13 +1117,28 @@ function InputBoxComponent({
       const mime = getMimeFromPath(fileInfo.path)
       if (!isFileSupported(mime, fileCaps)) return null
 
+      const displayName = fileInfo.name || getFileName(fileInfo.path)
+
       try {
-        const { readFile } = await import('@tauri-apps/plugin-fs')
+        const { readFile, stat } = await import('@tauri-apps/plugin-fs')
+
+        // 先读取元数据判断大小，避免先把整个文件读进内存再转 base64（膨胀约 1.33 倍）
+        const fileStat = await stat(fileInfo.path)
+        if (fileStat.size > MAX_DROPPED_FILE_SIZE) {
+          notificationStore.push(
+            'error',
+            t('inputBox.fileTooLarge'),
+            t('inputBox.fileTooLargeBody', { name: displayName, size: MAX_DROPPED_FILE_SIZE_LABEL }),
+            sessionId ?? '',
+          )
+          return null
+        }
+
         const bytes = await readFile(fileInfo.path)
         return {
           id: crypto.randomUUID(),
           type: 'file',
-          displayName: fileInfo.name || getFileName(fileInfo.path),
+          displayName,
           url: bytesToDataUrl(bytes, mime),
           mime,
         }
@@ -1128,7 +1147,7 @@ function InputBoxComponent({
         return null
       }
     },
-    [fileCaps],
+    [fileCaps, sessionId, t],
   )
 
   const handleTauriExternalDrop = useCallback(

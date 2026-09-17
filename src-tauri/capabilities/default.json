@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for OpenCode UI",
+  "description": "Default capabilities for OpenCode UI. SECURITY NOTE: opener:allow-open-path is scoped to ** on purpose. The app opens arbitrary absolute paths that the user explicitly clicks (project directories chosen in the native folder picker, and local file links parsed out of agent markdown output). These paths can live on any drive or network share, so no narrower prefix is correct; restricting the scope would break open-project-directory and open-referenced-file. Likewise fs read/write are only ever driven by the native open/save dialogs (paths returned by the OS picker), and plugin-http must reach arbitrary user-configured OpenCode server URLs (local, remote, LAN). The real trust boundary is that these commands are only reachable from trusted app UI; keep the CSP in tauri.conf.json configured if that boundary changes.",
   "windows": ["main", "win-*"],
   "permissions": [
     "core:default",
