@@ -64,6 +64,11 @@ export function useVcsInfo(directory?: string, serverId?: string): UseVcsInfoRes
     setError(null)
     setIsLoading(Boolean(directory))
     void fetchVcs()
+
+    // 卸载时同样递增，让在途请求的结果失效，避免在已卸载组件上 setState
+    return () => {
+      requestIdRef.current += 1
+    }
   }, [directory, serverId, fetchVcs])
 
   // 轮询

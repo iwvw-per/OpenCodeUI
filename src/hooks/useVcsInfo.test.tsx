@@ -83,4 +83,5 @@ describe('useVcsInfo request race handling', () => {
     await waitFor(() => expect(result.current.vcsInfo?.branch).toBe('current-branch'))
     expect(result.current.isLoading).toBe(false)
   })
+
 })

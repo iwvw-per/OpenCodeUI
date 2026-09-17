@@ -115,4 +115,37 @@ describe('settingsBackup', () => {
     // 关键：导入不应擦掉本机已有的密码
     expect(stored[0].auth?.password).toBe('local-pass')
   })
+  it('syncs the in-memory server store when importing', async () => {
+    const { serverStore, importServerSettingsBackup } = await import('../store/serverStore')
+
+    localStorage.setItem(
+      'opencode-servers',
+      JSON.stringify([{ id: 'local', name: 'Local', url: 'http://127.0.0.1:4096', isDefault: true }]),
+    )
+
+    importServerSettingsBackup({
+      servers: [{ id: 'new-srv', name: 'New', url: 'https://new.example' }],
+      activeServerId: 'new-srv',
+    })
+
+    // 只写 localStorage 会让 UI 继续读到旧列表，这里断言内存已同步
+    expect(serverStore.getStoredServers().map(s => s.id)).toEqual(['new-srv'])
+    expect(serverStore.getActiveServerId()).toBe('new-srv')
+  })
+  it('rejects entries with empty required fields on both import and load', async () => {
+    const { importServerSettingsBackup } = await import('../store/serverStore')
+
+    // 空 name/url 的条目在导入时就应被过滤，而不是写进存储后等到下次启动才丢弃
+    importServerSettingsBackup({
+      servers: [
+        { id: 'ok', name: 'OK', url: 'https://ok.example' },
+        { id: 'bad', name: '', url: 'https://bad.example' },
+        { id: '', name: 'NoId', url: 'https://noid.example' },
+      ],
+      activeServerId: 'ok',
+    })
+
+    const stored = JSON.parse(localStorage.getItem('opencode-servers') || '[]') as Array<{ id: string }>
+    expect(stored.map(s => s.id)).toEqual(['ok'])
+  })
 })
