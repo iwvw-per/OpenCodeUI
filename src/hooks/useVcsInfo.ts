@@ -21,14 +21,15 @@ export function useVcsInfo(directory?: string, serverId?: string): UseVcsInfoRes
   const [vcsInfo, setVcsInfo] = useState<VcsInfo | null>(null)
   const [isLoading, setIsLoading] = useState(Boolean(directory))
   const [error, setError] = useState<string | null>(null)
-  const mountedRef = useRef(true)
+  // 序号校验替代 mountedRef：每次目录/服务器变化自增，只有最新序号的请求结果才会落地。
+  // 旧序号请求（切换目录/服务器前发出的）天然被丢弃，且不会误伤当前请求。
   const requestIdRef = useRef(0)
 
   const fetchVcs = useCallback(async () => {
     const requestId = ++requestIdRef.current
 
     if (!directory) {
-      if (mountedRef.current && requestId === requestIdRef.current) {
+      if (requestId === requestIdRef.current) {
         setVcsInfo(null)
         setError(null)
         setIsLoading(false)
@@ -39,17 +40,17 @@ export function useVcsInfo(directory?: string, serverId?: string): UseVcsInfoRes
     setIsLoading(true)
     try {
       const info = await getVcsInfo(directory, serverId)
-      if (mountedRef.current && requestId === requestIdRef.current) {
+      if (requestId === requestIdRef.current) {
         setVcsInfo(info)
         setError(null)
       }
     } catch (e) {
-      if (mountedRef.current && requestId === requestIdRef.current) {
+      if (requestId === requestIdRef.current) {
         setError(e instanceof Error ? e.message : 'Failed to fetch VCS info')
         setVcsInfo(null)
       }
     } finally {
-      if (mountedRef.current && requestId === requestIdRef.current) {
+      if (requestId === requestIdRef.current) {
         setIsLoading(false)
       }
     }
@@ -57,14 +58,12 @@ export function useVcsInfo(directory?: string, serverId?: string): UseVcsInfoRes
 
   // 初始加载 + 目录/服务器变化时重新获取
   useEffect(() => {
-    mountedRef.current = true
+    // 递增序号，使上一次 effect 周期发出的在途请求立即失效
+    requestIdRef.current += 1
     setVcsInfo(null)
     setError(null)
     setIsLoading(Boolean(directory))
     void fetchVcs()
-    return () => {
-      mountedRef.current = false
-    }
   }, [directory, serverId, fetchVcs])
 
   // 轮询

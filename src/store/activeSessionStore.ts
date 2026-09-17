@@ -150,6 +150,15 @@ class ActiveSessionStore {
   getBusySessionsSnapshot = (): ActiveSessionEntry[] => this.cachedBusySessions
   getBusyCountSnapshot = (): number => this.cachedBusyCount
 
+  /**
+   * 取单个 session 的活跃条目。
+   * cachedBusySessions 内容不变时数组引用稳定，且 recomputeDerived 复用旧数组，
+   * 因此未命中（undefined）与命中（同一元素引用）都满足 useSyncExternalStore 的稳定引用契约。
+   */
+  getBusySessionEntry(sessionId: string): ActiveSessionEntry | undefined {
+    return this.cachedBusySessions.find(entry => entry.sessionId === sessionId)
+  }
+
   private applyStatusSnapshot(statusMap: SessionStatusMap, baseMap: SessionStatusMap): SessionStatusMap {
     const nextMap = { ...baseMap }
 
@@ -407,10 +416,18 @@ export function useBusyCount(): number {
   return useSyncExternalStore(activeSessionStore.subscribe, activeSessionStore.getBusyCountSnapshot)
 }
 
-/** 按 sessionId 查活跃状态，不活跃时返回 undefined */
+/**
+ * 按 sessionId 查活跃状态，不活跃时返回 undefined。
+ *
+ * 说明：仍使用 store 级别的 subscribe（任意 session 变化都会触发本 hook 回调），
+ * 但 getSnapshot 返回的是 cachedBusySessions 中已缓存的元素引用，未命中时为 undefined，
+ * 两者引用都稳定，因此 useSyncExternalStore 不会因引用抖动导致额外渲染。
+ * 若后续要彻底避免无关 session 变化带来的回调开销，可在 store 内增加按 sessionId 的订阅表
+ * （参考 messageStore.subscribeSession）。
+ */
 export function useSessionActiveEntry(sessionId: string): ActiveSessionEntry | undefined {
   const getSnapshot = useCallback(
-    () => activeSessionStore.getBusySessions().find(e => e.sessionId === sessionId),
+    () => activeSessionStore.getBusySessionEntry(sessionId),
     [sessionId],
   )
   return useSyncExternalStore(activeSessionStore.subscribe, getSnapshot)

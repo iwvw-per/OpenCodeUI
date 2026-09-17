@@ -77,6 +77,10 @@ class PaneControllerStore {
     return this.controllers.get(paneId) ?? null
   }
 
+  /**
+   * 返回内部快照数组的稳定引用（供 useSyncExternalStore 的 getSnapshot 使用）。
+   * 快照仅在 setController/removeController 时整体重建，调用方不得就地修改（sort/reverse/push 等）。
+   */
   getControllers(): PaneControllerState[] {
     return this.snapshot
   }
