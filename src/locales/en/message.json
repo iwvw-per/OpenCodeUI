@@ -152,6 +152,7 @@
     "messageAbortedDesc": "The message generation was interrupted.",
     "apiError": "API Error",
     "apiErrorWithCode": "API Error ({{code}})",
+    "rawDiagnostics": "View raw diagnostics",
     "unknownError": "Error",
     "unknownErrorDesc": "An unknown error occurred."
   }

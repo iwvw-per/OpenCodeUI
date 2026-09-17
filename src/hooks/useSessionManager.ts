@@ -111,6 +111,8 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
   const loadSequenceRef = useRef<Map<string, number>>(new Map())
   /** 每个 session 当前已请求的消息 limit（cursor），loadMore 时递增 */
   const cursorRef = useRef<Map<string, number>>(new Map())
+  /** 每个 session 是否正在加载更早的历史，防止并发 loadMore 造成分页错位 */
+  const isLoadingMoreRef = useRef<Map<string, boolean>>(new Map())
   const loadSessionRef = useRef<(sid: string, options?: { force?: boolean }) => Promise<void>>(async () => {})
 
   // 使用 ref 保存 directory，避免依赖变化
@@ -255,6 +257,9 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
   const loadMoreHistory = useCallback(async () => {
     if (!sessionId) return
 
+    // 并发保护：同一 session 只允许一个 loadMore 在途
+    if (isLoadingMoreRef.current.get(sessionId)) return
+
     const state = messageStore.getSessionState(sessionId)
     if (!state) return
 
@@ -262,8 +267,19 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
     const currentCursor = cursorRef.current.get(sessionId) ?? Math.max(INITIAL_MESSAGE_LIMIT, state.messages.length)
     const targetCursor = currentCursor + HISTORY_LOAD_BATCH_SIZE
 
+    // 与 loadSession 相同的序号校验：仅当本次请求仍是最新请求时才应用结果
+    const seq = (loadSequenceRef.current.get(sessionId) ?? 0) + 1
+    loadSequenceRef.current.set(sessionId, seq)
+    const isStale = () => loadSequenceRef.current.get(sessionId) !== seq
+
+    isLoadingMoreRef.current.set(sessionId, true)
     try {
       const apiMessages = await getSessionMessages(sessionId, targetCursor, dir, sessionKeyToServerId(sessionId))
+
+      // 期间发生了新的加载（loadSession 或再次 loadMore），丢弃本次结果
+      if (isStale()) return
+
+      // 校验通过后再写 cursor，避免失败/过期请求污染分页游标
       cursorRef.current.set(sessionId, targetCursor)
 
       const latestState = messageStore.getSessionState(sessionId)
@@ -279,6 +295,8 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
       messageStore.prependMessages(sessionId, prependCandidates, hasMore)
     } catch (error) {
       sessionErrorHandler('load more history', error)
+    } finally {
+      isLoadingMoreRef.current.set(sessionId, false)
     }
   }, [sessionId])
 

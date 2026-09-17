@@ -1,6 +1,10 @@
 export type HtmlColorScheme = 'light' | 'dark'
 
-export const HTML_SANDBOX_SECURITY_HEAD = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'; img-src https: http: data: blob:; media-src https: http: data: blob:; font-src https: http: data:; style-src 'unsafe-inline' https: http:; script-src 'unsafe-inline' 'unsafe-eval' https: http: blob:; connect-src https: http:">`
+// connect-src must stay 'none': the iframe renders untrusted model output, so any
+// network egress (fetch/XHR/WebSocket/sendBeacon) is a prompt-injection exfiltration
+// channel. Remote images/media/fonts remain allowed because they are preview-only
+// and cannot carry data back to the attacker.
+export const HTML_SANDBOX_SECURITY_HEAD = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'; img-src https: http: data: blob:; media-src https: http: data: blob:; font-src https: http: data:; style-src 'unsafe-inline' https: http:; script-src 'unsafe-inline' 'unsafe-eval' https: http: blob:; connect-src 'none'">`
 export const HTML_SANDBOX_VIEWPORT_HEAD = '<meta name="viewport" content="width=device-width, initial-scale=1">'
 export const HTML_SANDBOX_EDGE_OVERFLOW_TOLERANCE = 2
 const HTML_SANDBOX_THEME_VARIABLES = {
@@ -91,7 +95,7 @@ export function createSandboxedHtmlDocument(
 ): string {
   const overflow = options.overflow ?? 'hidden'
   const securityHead = options.allowDataScripts
-    ? HTML_SANDBOX_SECURITY_HEAD.replace('http: blob:', 'http: blob: data:')
+    ? HTML_SANDBOX_SECURITY_HEAD.replace("script-src 'unsafe-inline' 'unsafe-eval' https: http: blob:", "script-src 'unsafe-inline' 'unsafe-eval' https: http: blob: data:")
     : HTML_SANDBOX_SECURITY_HEAD
   const parsed = new DOMParser().parseFromString(source, 'text/html')
   const viewportHead = parsed.head.querySelector('meta[name="viewport"]') ? '' : HTML_SANDBOX_VIEWPORT_HEAD

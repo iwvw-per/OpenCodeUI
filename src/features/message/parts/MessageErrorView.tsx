@@ -25,6 +25,13 @@ export const MessageErrorView = memo(function MessageErrorView({ error, stateKey
   const shouldRenderBody = useMessageExpandRender(expanded)
   const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
 
+  const rawDiagnostics = error.name === 'APIError' ? error.data.metadata?.rawDiagnostics : undefined
+  const [showRawDiagnostics, setShowRawDiagnostics] = useUiDisclosureState(
+    `${stateKey ?? `message-error:${title}`}:raw-diagnostics`,
+    false,
+  )
+  const shouldRenderRawDiagnostics = useMessageExpandRender(showRawDiagnostics)
+
   const colorClass = severity === 'error' ? 'text-danger-100' : 'text-warning-100'
   const borderClass = severity === 'error' ? 'border-danger-100/20' : 'border-warning-100/20'
 
@@ -66,6 +73,23 @@ export const MessageErrorView = memo(function MessageErrorView({ error, stateKey
           <div className={`mt-2 pt-2 space-y-1.5 border-t ${borderClass}`}>
             <p className="text-[length:var(--fs-sm)] text-text-300 break-words">{description}</p>
             {formattedDetails && <CodeBlock code={formattedDetails} language={detailsLang} maxHeight={240} />}
+            {rawDiagnostics && (
+              <div>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-[length:var(--fs-sm)] text-text-400 hover:text-text-200 cursor-pointer"
+                  onClick={() => withScrollLock(() => setShowRawDiagnostics(!showRawDiagnostics))}
+                >
+                  <ChevronDownIcon className={chevronClass(showRawDiagnostics)} />
+                  <span>{t('errors.rawDiagnostics')}</span>
+                </button>
+                <MessageExpandPanel open={showRawDiagnostics} variant="fade" innerClassName="overflow-hidden">
+                  {shouldRenderRawDiagnostics && (
+                    <CodeBlock code={rawDiagnostics} language="text" maxHeight={240} />
+                  )}
+                </MessageExpandPanel>
+              </div>
+            )}
           </div>
         )}
       </MessageExpandPanel>

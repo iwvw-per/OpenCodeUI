@@ -170,7 +170,22 @@ class ServerStore {
       // 加载服务器列表
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
-        this.servers = JSON.parse(stored)
+        const parsed: unknown = JSON.parse(stored)
+        // 存储可能被写坏（对象、null、字符串等），非数组一律回退到默认服务器。
+        // 逐项过滤缺少必要字段的条目，避免 .find()/.map() 在损坏数据上抛错后无法自愈。
+        this.servers = Array.isArray(parsed)
+          ? parsed.filter(
+              (item): item is ServerConfig =>
+                !!item &&
+                typeof item === 'object' &&
+                typeof (item as Record<string, unknown>).id === 'string' &&
+                (item as Record<string, unknown>).id !== '' &&
+                typeof (item as Record<string, unknown>).name === 'string' &&
+                (item as Record<string, unknown>).name !== '' &&
+                typeof (item as Record<string, unknown>).url === 'string' &&
+                (item as Record<string, unknown>).url !== '',
+            )
+          : []
       }
 
       // 如果没有服务器，添加默认的本地服务器

@@ -1201,7 +1201,8 @@ function MediaPreview({ category, dataUrl, mimeType, fileName }: MediaPreviewPro
         </div>
       )
     case 'pdf':
-      return <iframe src={dataUrl} title={fileName} className="w-full h-full border-0" />
+      // Intentional strictest sandbox: PDF preview only needs to render, not run scripts.
+      return <iframe src={dataUrl} title={fileName} sandbox="" className="w-full h-full border-0" />
   }
 }
 

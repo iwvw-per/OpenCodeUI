@@ -47,6 +47,7 @@ import {
   subscribeInternalDrag,
   subscribeInternalDrop,
 } from '../../lib/internalDragCore'
+import { uiErrorHandler } from '../../utils/errorHandling'
 
 // ============================================
 // Types
@@ -496,6 +497,10 @@ function InputBoxComponent({
 
         onSuccess?.()
         return true
+      } catch (err) {
+        uiErrorHandler('send message', err)
+        onFailure?.()
+        return false
       } finally {
         setIsSubmitting(false)
       }
