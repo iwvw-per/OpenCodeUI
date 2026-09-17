@@ -29,10 +29,26 @@ export function isTauriDropPointInsideElement(
   )
 }
 
+/**
+ * 判断是否为拖放事件可能产生的绝对路径。
+ *
+ * 拖放给出的路径必然是绝对路径（Windows `C:\...` / UNC `\\server\share\...`，
+ * Unix `/...`）。这里据此过滤，避免该命令被当作任意路径探测工具使用——
+ * Rust 侧只做 metadata 查询，无来源校验，这层是唯一约束。
+ */
+function isAbsoluteDropPath(path: string): boolean {
+  const trimmed = path.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('/')) return true
+  if (trimmed.startsWith('\\\\')) return true
+  return /^[A-Za-z]:[\\/]/.test(trimmed)
+}
+
 export async function getDroppedPathsInfo(paths: string[]): Promise<DroppedPathInfo[]> {
-  if (paths.length === 0) return []
+  const safePaths = paths.filter(isAbsoluteDropPath)
+  if (safePaths.length === 0) return []
   const { invoke } = await import('@tauri-apps/api/core')
-  return invoke<DroppedPathInfo[]>('get_dropped_paths_info', { paths })
+  return invoke<DroppedPathInfo[]>('get_dropped_paths_info', { paths: safePaths })
 }
 
 function trackCleanup(disposed: () => boolean, cleanups: Array<() => void>, unlisten: () => void) {
