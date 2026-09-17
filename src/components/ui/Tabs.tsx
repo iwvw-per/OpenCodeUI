@@ -24,7 +24,7 @@ const listBase: Record<TabsVariant, string> = {
  * 容器圆角按尺寸取值。
  *
  * 紧凑的 sm 整体只有约 25px 高（11px 文字 + py-1 + p-0.5 + 边框），
- * 沿用常规容器的 8px 会让圆角占高度 32%，明显偏圆；故收两档取 4px。
+ * 若与 md 同用 8px 会占高度 32%，明显偏圆；故降一档取 4px。
  * 内层相应取 2px，满足同心：内层 = 外层 − p-0.5 的 2px。
  */
 const listRadius: Record<TabsSize, string> = {
@@ -32,7 +32,7 @@ const listRadius: Record<TabsSize, string> = {
   md: 'rounded-lg',
 }
 
-/** 内层 trigger 的圆角，与外层保持同心 */
+/** 内层 trigger 的圆角，与外层保持同心（外层值 − p-0.5 的 2px） */
 const triggerRadius: Record<TabsSize, string> = {
   sm: 'rounded-xs',
   md: 'rounded-md',
