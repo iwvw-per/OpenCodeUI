@@ -165,7 +165,7 @@ export function PaneHeader({
     <div
       ref={headerRef}
       className={`relative mobile-safe-topbar-10 flex items-center justify-between px-2 select-none transition-colors duration-200 shrink-0 z-20 ${
-        isDragOver ? 'bg-accent-main-100/10' : 'bg-bg-100'
+        isDragOver ? 'bg-accent-main-100/10' : 'bg-bg-000'
       }`}
       onClick={onFocus}
       onPointerDown={handlePointerDragStart}

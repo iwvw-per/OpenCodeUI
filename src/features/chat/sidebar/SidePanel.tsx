@@ -7,6 +7,7 @@ import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
 import { getProjectGroupIdentity } from './projectGrouping'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
+import { IconButton } from '../../../components/ui/IconButton'
 import { Tabs, TabsList, TabsTrigger } from '../../../components/ui/Tabs'
 import { SidebarFooter } from './SidebarFooter'
 import {
@@ -1189,15 +1190,16 @@ export function SidePanel({
               </>
             ) : (
               <>
-                {/* 视图切换：主机/项目 — 紧凑分段控件（带边框背景，与侧栏区分） */}
+                {/* 视图切换：主机/项目 — 与「变更」面板的列表/树形切换同一视觉语言 */}
                 <Tabs
+                  variant="slider"
                   value={sidebarTab}
                   onValueChange={value => {
                     setSidebarTab(value as 'hosts' | 'projects')
                     if (value !== sidebarTab) exitEditMode()
                   }}
                 >
-                  <TabsList>
+                  <TabsList activeIndex={sidebarTab === 'hosts' ? 0 : 1} itemCount={2} className="shrink-0">
                     <TabsTrigger value="hosts" title={t('sidebar.hostsHint', { defaultValue: 'Switch between hosts' })}>
                       <GlobeIcon size={13} />
                       <span className="truncate">{t('sidebar.hosts', { defaultValue: 'Hosts' })}</span>
@@ -1212,16 +1214,15 @@ export function SidePanel({
                 {sidebarTab === 'projects' && (
                   <div className="ml-auto shrink-0 flex items-center gap-0.5">
                     <SessionSortMenu />
-                    <button
-                      type="button"
+                    <IconButton
+                      size="sm"
                       onMouseDown={e => e.preventDefault()}
                       onClick={enterEditMode}
                       aria-label={t('sidebar.manageSessions')}
-                      className="shrink-0 p-1 rounded-md text-text-500 hover:text-text-300 hover:bg-bg-200/50 transition-colors duration-150"
                       title={t('sidebar.manageSessions')}
                     >
                       <ManageSessionsIcon size={14} />
-                    </button>
+                    </IconButton>
                   </div>
                 )}
               </>

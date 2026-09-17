@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ClockIcon, CalendarPlusIcon, SortIcon, SortDescIcon, CheckIcon } from '../../../components/Icons'
-import { DropdownMenu } from '../../../components/ui'
+import { DropdownMenu, IconButton } from '../../../components/ui'
 import { useLayoutStore, layoutStore } from '../../../store'
 import type { SessionSortField } from '../../../utils'
 
@@ -58,19 +58,19 @@ export function SessionSortMenu() {
 
   return (
     <>
-      <button
+      <IconButton
         ref={triggerRef}
-        type="button"
+        size="sm"
         onMouseDown={e => e.preventDefault()}
         onClick={() => setIsOpen(open => !open)}
         aria-haspopup="menu"
         aria-expanded={isOpen}
         aria-label={t('sidebar.sortSessions', { defaultValue: '排序' })}
-        className="shrink-0 p-1 rounded-md text-text-500 hover:text-text-300 hover:bg-bg-200/50 transition-colors duration-150"
+        className={isOpen ? 'bg-bg-200 text-text-100' : undefined}
         title={t('sidebar.sortSessions', { defaultValue: '排序' })}
       >
         {sidebarSessionSortDesc ? <SortDescIcon size={14} /> : <SortIcon size={14} />}
-      </button>
+      </IconButton>
 
       <DropdownMenu
         triggerRef={triggerRef}

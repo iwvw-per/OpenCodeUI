@@ -80,12 +80,12 @@ interface TabsProps extends React.ComponentPropsWithoutRef<typeof TabsPrimitive.
  * （例如 TabsList 用默认 sm 而 TabsTrigger 传 md，内层圆角反而大于外层）。
  */
 const TabsConfigContext = createContext<{ variant: TabsVariant; size: TabsSize }>({
-  variant: 'segmented',
+  variant: 'slider',
   size: 'sm',
 })
 
 export const Tabs = forwardRef<React.ElementRef<typeof TabsPrimitive.Root>, TabsProps>(
-  ({ className, variant = 'segmented', size = 'sm', ...props }, ref) => (
+  ({ className, variant = 'slider', size = 'sm', ...props }, ref) => (
     <TabsConfigContext.Provider value={{ variant, size }}>
       <TabsPrimitive.Root
         ref={ref}

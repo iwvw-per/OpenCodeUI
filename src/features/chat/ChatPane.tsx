@@ -1084,10 +1084,10 @@ export const ChatPane = memo(function ChatPane({
           showCompactShell
             ? `relative h-full flex flex-col overflow-hidden rounded-lg transition-colors duration-200 ${
                 isFocused
-                  ? 'ring-1 ring-accent-main-100/60 bg-bg-100'
-                  : 'ring-1 ring-border-200/30 bg-bg-100 hover:ring-border-200/50'
+                  ? 'ring-1 ring-accent-main-100/60 bg-bg-000'
+                  : 'ring-1 ring-border-200/30 bg-bg-000 hover:ring-border-200/50'
               }`
-            : 'relative h-full flex flex-col overflow-hidden bg-bg-100'
+            : 'relative h-full flex flex-col overflow-hidden bg-bg-000'
         }
         onClick={handlePaneFocus}
       >

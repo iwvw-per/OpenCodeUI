@@ -170,7 +170,7 @@ export const RightPanel = memo(function RightPanel({
 
   if (inline) {
     return (
-      <div className="flex h-full w-full flex-col overflow-hidden bg-bg-100 [contain:layout_paint]">
+      <div className="flex h-full w-full flex-col overflow-hidden bg-bg-000 [contain:layout_paint]">
         {renderPanelContent ? (
           <PanelContainer
             position="right"
