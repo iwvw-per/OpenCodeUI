@@ -115,6 +115,37 @@ describe('serverStore local runtime URL', () => {
   })
 })
 
+describe('serverStore storage recovery', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  it.each(['{}', 'null', '"nope"', '[1,2,3]'])('falls back to the default server for corrupt storage %s', async stored => {
+    localStorage.setItem('opencode-servers', stored)
+    const { serverStore } = await import('./serverStore')
+
+    expect(serverStore.getStoredServers().map(server => server.id)).toEqual(['local'])
+  })
+
+  it('drops entries missing required string fields', async () => {
+    localStorage.setItem(
+      'opencode-servers',
+      JSON.stringify([
+        { id: 'ok', name: 'OK', url: 'http://ok.test' },
+        { id: '', name: 'Empty id', url: 'http://bad.test' },
+        { id: 'no-name', url: 'http://bad.test' },
+        { id: 'no-url', name: 'No URL' },
+        null,
+      ]),
+    )
+    const { serverStore } = await import('./serverStore')
+
+    expect(serverStore.getStoredServers().map(server => server.id)).toEqual(['ok'])
+  })
+})
+
 describe('serverStore health check', () => {
   beforeEach(() => {
     vi.resetModules()

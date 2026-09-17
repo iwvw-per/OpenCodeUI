@@ -126,6 +126,7 @@
     "messageAbortedDesc": "消息生成已被中断。",
     "apiError": "API 错误",
     "apiErrorWithCode": "API 错误 ({{code}})",
+    "rawDiagnostics": "查看原始诊断信息",
     "unknownError": "错误",
     "unknownErrorDesc": "发生未知错误。"
   }

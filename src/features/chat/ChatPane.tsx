@@ -430,12 +430,9 @@ export const ChatPane = memo(function ChatPane({
         : '',
     ].filter(Boolean)
 
-    const responseBody = [
-      lines.join('\n'),
-      activeServerHealth.details ? `Raw diagnostics:\n${activeServerHealth.details}` : '',
-    ]
-      .filter(Boolean)
-      .join('\n\n')
+    // Summary only: raw headers/body/stack must not be part of the always-rendered
+    // error text. They stay in metadata for the explicit "view raw diagnostics" disclosure.
+    const responseBody = lines.join('\n')
 
     return {
       name: 'APIError',
@@ -444,6 +441,7 @@ export const ChatPane = memo(function ChatPane({
         statusCode: activeServerHealth.status === 'unauthorized' ? 401 : undefined,
         isRetryable: activeServerHealth.status !== 'unauthorized',
         responseBody,
+        metadata: activeServerHealth.details ? { rawDiagnostics: activeServerHealth.details } : undefined,
       },
     }
   }, [activeServer, activeServerHealth])

@@ -139,6 +139,36 @@ const pendingQuestions = new Map<string, PendingRequest<ApiQuestionRequest>[]>()
 // 5秒后过期，防止内存泄漏
 const PENDING_TIMEOUT = 5000
 
+// late pending 请求（权限/问答）的驻留上限与过期时间。
+// 断连窗口内 replied 事件可能永久丢失，必须靠 TTL 兜底清理，否则条目会无限累积
+const LATE_PENDING_TIMEOUT = 5 * 60 * 1000
+const LATE_PENDING_MAX = 200
+
+interface LatePendingRequest {
+  requestId: string
+  sessionId: string
+  type: 'permission' | 'question'
+  description?: string
+  scopeKey: string
+  directory?: string
+  timestamp: number
+}
+
+function pruneLatePendingRequests(map: Map<string, LatePendingRequest>) {
+  const now = Date.now()
+  for (const [key, entry] of map) {
+    if (now - (entry.timestamp ?? 0) > LATE_PENDING_TIMEOUT) {
+      map.delete(key)
+    }
+  }
+  // Map 保持插入顺序，超容量时从最旧的条目开始淘汰
+  while (map.size > LATE_PENDING_MAX) {
+    const oldest = map.keys().next()
+    if (oldest.done) break
+    map.delete(oldest.value)
+  }
+}
+
 function cleanupExpired<T>(map: Map<string, PendingRequest<T>[]>) {
   const now = Date.now()
   for (const [key, arr] of map) {
@@ -347,17 +377,7 @@ export function useGlobalEvents(directories?: string[]) {
     const fetchVersions = new Map<string, number>()
     const activeFetchVersions = new Map<string, number>()
     let disposed = false
-    const latePendingRequests = new Map<
-      string,
-      {
-        requestId: string
-        sessionId: string
-        type: 'permission' | 'question'
-        description?: string
-        scopeKey: string
-        directory?: string
-      }
-    >()
+    const latePendingRequests = new Map<string, LatePendingRequest>()
 
     const scheduleScroll = (sessionId: string) => {
       pendingScrollSessionIds.add(sessionId)
@@ -403,7 +423,10 @@ export function useGlobalEvents(directories?: string[]) {
               : pending.scopeKey === currentScopeKey
             if (!matchesScope) continue
             activeSessionStore.addPendingRequest(pending.requestId, pending.sessionId, pending.type, pending.description)
+            // 已消费的条目立即移除，避免下次重连重复处理
+            latePendingRequests.delete(pending.requestId)
           }
+          pruneLatePendingRequests(latePendingRequests)
           activeSessionStore.setSessionMetaBulk(sessionMetaEntries)
         })
         .catch(() => {
@@ -539,6 +562,7 @@ export function useGlobalEvents(directories?: string[]) {
           // 清理过期缓存
           cleanupExpired(pendingPermissions)
           cleanupExpired(pendingQuestions)
+          pruneLatePendingRequests(latePendingRequests)
         },
 
         onSessionIdle: data => {
@@ -641,7 +665,9 @@ export function useGlobalEvents(directories?: string[]) {
               description: desc,
               scopeKey: getScopeKey(directoriesRef.current),
               directory: meta?.directory,
+              timestamp: Date.now(),
             })
+            pruneLatePendingRequests(latePendingRequests)
           }
 
           // Toast 通知 — 不属于当前 session family 的才弹
@@ -687,7 +713,9 @@ export function useGlobalEvents(directories?: string[]) {
               description: desc,
               scopeKey: getScopeKey(directoriesRef.current),
               directory: meta?.directory,
+              timestamp: Date.now(),
             })
+            pruneLatePendingRequests(latePendingRequests)
           }
 
           // Toast 通知

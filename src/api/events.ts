@@ -642,7 +642,6 @@ function disconnectServerConnection(conn: ServerConnection) {
   const serverId = conn.serverId
   if (conn.heartbeatTimer) clearTimeout(conn.heartbeatTimer)
   if (conn.reconnectTimer) clearTimeout(conn.reconnectTimer)
-  stopBackgroundKeepalive()
 
   // 断开传输层（Tauri bridge / browser fetch）
   conn.generation++
@@ -651,6 +650,9 @@ function disconnectServerConnection(conn: ServerConnection) {
   connectionListeners.delete(serverId)
 
   if (connections.size === 0) {
+    // keepalive 的生命周期与「存在任意活跃连接」绑定：
+    // 只有最后一个连接被移除时才能停掉全局保活巡检
+    stopBackgroundKeepalive()
     unregisterLifecycleListeners()
   }
 }
@@ -663,6 +665,7 @@ function handleVisibilityChange() {
   if (document.visibilityState === 'visible') {
     // 页面恢复前台
     isInBackground = false
+    // 回到前台后不再需要后台轮询，keepalive 只服务于「存在活跃连接」的后台场景
     stopBackgroundKeepalive()
 
     for (const conn of connections.values()) {
@@ -747,10 +750,11 @@ function handleOffline() {
       teardownConnectionTransport(conn)
       if (conn.heartbeatTimer) clearTimeout(conn.heartbeatTimer)
       if (conn.reconnectTimer) clearTimeout(conn.reconnectTimer)
-      stopBackgroundKeepalive()
       updateConnectionState(conn.serverId, { state: 'disconnected', error: 'Network offline' })
     }
   }
+  // 网络离线后所有连接都已断连，keepalive 已无服务对象，此时停止是安全的
+  stopBackgroundKeepalive()
 }
 
 function registerLifecycleListeners() {
@@ -922,7 +926,8 @@ export function reconnectServerSSE(serverId: string) {
   if (conn.heartbeatTimer) clearTimeout(conn.heartbeatTimer)
   if (conn.reconnectTimer) clearTimeout(conn.reconnectTimer)
   conn.reconnectTimer = null
-  stopBackgroundKeepalive()
+  // 这是单个 server 的重连，连接仍然存在（马上会重连），
+  // 因此不能停全局 keepalive，否则其余服务器会失去后台兜底
 
   // 标记为服务器切换，重连成功时 onReconnected 会携带 'server-switch' reason
   serverSwitchFlags.set(serverId, true)
