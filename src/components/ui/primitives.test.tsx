@@ -52,8 +52,9 @@ describe('Tabs', () => {
     )
     const tab = screen.getByRole('tab', { name: '主机' })
     // 回归保护：激活态曾用 bg-accent-main-100 + 白字（各主题下对比度最低仅 2.1:1）。
+    // 现在默认是用滑块呈现激活态（bg-bg-000 指示层），同样不依赖高饱和实色。
     expect(tab.className).not.toContain('text-white')
-    expect(tab.className).toContain('bg-accent-main-100/15')
+    expect(tab.className).not.toContain('bg-accent-main-100 ')
     expect(tab.className).toContain('text-text-100')
   })
 
