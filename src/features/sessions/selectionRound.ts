@@ -1,13 +1,17 @@
-/** 多选连续高亮的圆角：中间项直角，首尾保留外侧圆角 */
+/**
+ * 多选行的圆角。
+ *
+ * 历史实现会在连续选中时让中间项变直角、首尾只圆外侧，用于把相邻选中行
+ * 「拼成一条」。但列表行之间始终存在间距（space-y-0.5 / space-y-1），
+ * 拼接效果并不成立，反而让选中块缺角。
+ *
+ * 因此现在一律返回完整圆角；参数保留是为兼容调用点。
+ */
 export function getSelectionRoundClass(
-  isChecked: boolean,
-  checkedPrev: boolean,
-  checkedNext: boolean,
+  _isChecked: boolean,
+  _checkedPrev: boolean,
+  _checkedNext: boolean,
   radius: 'md' | 'lg' = 'md',
 ): string {
-  if (!isChecked) return radius === 'lg' ? 'rounded-lg' : 'rounded-md'
-  if (checkedPrev && checkedNext) return 'rounded-none'
-  if (checkedPrev) return radius === 'lg' ? 'rounded-b-lg' : 'rounded-b-md'
-  if (checkedNext) return radius === 'lg' ? 'rounded-t-lg' : 'rounded-t-md'
   return radius === 'lg' ? 'rounded-lg' : 'rounded-md'
 }
