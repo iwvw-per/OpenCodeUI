@@ -7,7 +7,7 @@
 // 数据经主机 Agent 的原生流通道到达本机 Agent 服务，不需要开放公网端口。
 // ============================================
 
-import { serverStore, type ServerConfig } from '../store/serverStore'
+import { getUnifiedFetch, serverStore, type ServerConfig } from '../store/serverStore'
 
 const STORAGE_KEY = 'opencode-aiagent-account'
 
@@ -88,8 +88,9 @@ function serverIdForInstance(instance: AiAgentInstance): string {
   return `aiagent:${instance.id}`
 }
 
-async function accountRequest<T>(account: AiAgentAccount, path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${account.domain}${path}`, {
+export async function accountRequest<T>(account: AiAgentAccount, path: string, init?: RequestInit): Promise<T> {
+  const requestFetch = await getUnifiedFetch()
+  const response = await requestFetch(`${account.domain}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -114,7 +115,8 @@ export async function login(domainInput: string, username: string, password: str
   if (!username.trim()) throw new Error('请填写用户名')
   if (!password) throw new Error('请填写密码')
 
-  const response = await fetch(`${domain}/api/aiagent/auth/login`, {
+  const requestFetch = await getUnifiedFetch()
+  const response = await requestFetch(`${domain}/api/aiagent/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: username.trim(), password, deviceLabel: deviceLabel || undefined }),

@@ -1,12 +1,8 @@
 import type { ReactNode } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  MessageRenderer,
-  messageHasFinalContent,
-  messageHasProcessContent,
-  splitProcessRenderItems,
-} from './MessageRenderer'
+import { MessageRenderer } from './MessageRenderer'
+import { messageHasFinalContent, messageHasProcessContent, splitProcessRenderItems } from './messageRenderLogic'
 import type { Message, Part, StepFinishPart, TextPart, ToolPart } from '../../types/message'
 
 let mockRenderUserMarkdown = false

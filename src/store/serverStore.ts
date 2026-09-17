@@ -9,7 +9,7 @@ import { isTauri } from '../utils/tauri'
 let _tauriFetch: typeof globalThis.fetch | null = null
 let _tauriFetchLoading: Promise<typeof globalThis.fetch> | null = null
 
-async function getUnifiedFetch(): Promise<typeof globalThis.fetch> {
+export async function getUnifiedFetch(): Promise<typeof globalThis.fetch> {
   if (!isTauri()) return globalThis.fetch
   if (_tauriFetch) return _tauriFetch
   if (_tauriFetchLoading) return _tauriFetchLoading

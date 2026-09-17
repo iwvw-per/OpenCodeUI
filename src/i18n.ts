@@ -38,4 +38,23 @@ i18n
     },
   })
 
+/**
+ * 让 <html lang> 跟随当前界面语言。
+ *
+ * index.html 里的初始值是静态的，用户在设置里切换语言（或首次按浏览器语言
+ * 自动识别）后就会与实际内容不符。lang 影响断词、字体回退与屏幕阅读器发音，
+ * 因此这里在初始化与每次切换时同步。
+ *
+ * 用 resolvedLanguage 而非 language：前者是实际加载到资源的语言键（如 en），
+ * 后者可能是区域变体（如 en-US）。languageChanged 回调传入的正是后者，
+ * 直接采用会让 lang 与真实资源不一致。
+ */
+function syncDocumentLang(): void {
+  if (typeof document === 'undefined') return
+  document.documentElement.lang = i18n.resolvedLanguage || i18n.language || 'en'
+}
+
+syncDocumentLang()
+i18n.on('languageChanged', syncDocumentLang)
+
 export default i18n

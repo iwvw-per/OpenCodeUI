@@ -17,6 +17,12 @@ if (typeof globalThis.localStorage === 'undefined' || typeof globalThis.localSto
       clear: () => {
         storage = new Map<string, string>()
       },
+      // 供「枚举全部键」的代码使用（备份导出、偏好同步等）；
+      // 真实 localStorage 会把这些键作为属性暴露，缺失时那些功能无法被测试覆盖。
+      key: (index: number) => Array.from(storage.keys())[index] ?? null,
+      get length() {
+        return storage.size
+      },
     },
   })
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '../../../components/ui/Button'
+import { Button, IconButton } from '../../../components/ui'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import {
   TrashIcon,
@@ -160,9 +160,8 @@ function ServerItem({
           >
             {subscribed ? <PlugIcon size={13} /> : <CircleIcon size={11} className="opacity-50" />}
           </button>
-          <button
-            type="button"
-            className="p-1.5 rounded-md text-text-400 hover:text-text-200 hover:bg-bg-200/70 transition-colors"
+          <IconButton
+            size="sm"
             onClick={e => {
               e.stopPropagation()
               onCheckHealth()
@@ -171,12 +170,12 @@ function ServerItem({
             aria-label={statusTitle()}
           >
             {statusIcon()}
-          </button>
+          </IconButton>
           {!server.isDefault && (
             <>
-              <button
-                type="button"
-                className="p-1.5 rounded-md text-text-400 hover:text-accent-main-100 hover:bg-accent-main-100/10 transition-colors"
+              <IconButton
+                size="sm"
+                className="hover:text-accent-main-100 hover:bg-accent-main-100/10"
                 onClick={e => {
                   e.stopPropagation()
                   setEditing(true)
@@ -185,10 +184,10 @@ function ServerItem({
                 aria-label={t('servers.editServer')}
               >
                 <PencilIcon size={13} />
-              </button>
-              <button
-                type="button"
-                className="p-1.5 rounded-md text-text-400 hover:text-danger-100 hover:bg-danger-100/10 transition-colors"
+              </IconButton>
+              <IconButton
+                size="sm"
+                variant="danger"
                 onClick={e => {
                   e.stopPropagation()
                   setConfirmDelete(true)
@@ -197,7 +196,7 @@ function ServerItem({
                 aria-label={t('common:remove')}
               >
                 <TrashIcon size={13} />
-              </button>
+              </IconButton>
             </>
           )}
         </div>

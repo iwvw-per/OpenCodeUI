@@ -5,12 +5,14 @@ import './index.css'
 import './i18n'
 import { initOverlayScrollbars } from './lib/overlayScrollbar'
 import App from './App.tsx'
+import { TooltipProvider } from './components/ui/Tooltip'
 import { DirectoryProvider, FullscreenProvider, SessionProvider } from './contexts'
 import { themeStore } from './store/themeStore'
 import { serverStore } from './store/serverStore'
 import { autoApproveStore } from './store/autoApproveStore'
 import { serviceStore } from './store/serviceStore'
 import { reconnectSSE } from './api/events'
+import { startPreferencesSync } from './api/preferencesSyncEngine'
 import { getSDKClientAsync, invalidateSDKClient } from './api/sdk'
 import { resetPathModeCache } from './utils/directoryUtils'
 import { isTauri, isTauriMobile } from './utils/tauri'
@@ -155,13 +157,15 @@ function bootstrap() {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <Suspense fallback={null}>
-        <DirectoryProvider>
-          <SessionProvider>
-            <FullscreenProvider>
-              <App />
-            </FullscreenProvider>
-          </SessionProvider>
-        </DirectoryProvider>
+        <TooltipProvider delayDuration={300}>
+          <DirectoryProvider>
+            <SessionProvider>
+              <FullscreenProvider>
+                <App />
+              </FullscreenProvider>
+            </SessionProvider>
+          </DirectoryProvider>
+        </TooltipProvider>
       </Suspense>
     </StrictMode>,
   )
@@ -175,6 +179,9 @@ function startApp() {
   if (isNativeTauri) {
     void getSDKClientAsync().catch(err => apiErrorHandler('initialize sdk client', err))
   }
+
+  // 多端设置同步：仅在已启用且已登录时启动；未登录时由设置页登录成功后触发。
+  void startPreferencesSync().catch(err => apiErrorHandler('start preferences sync', err))
 }
 
 startApp()

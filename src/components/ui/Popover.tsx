@@ -1,0 +1,34 @@
+import { forwardRef } from 'react'
+import * as PopoverPrimitive from '@radix-ui/react-popover'
+import { cn } from '../../utils/cn'
+
+/**
+ * Popover - 锚定浮层
+ *
+ * 基于 Radix Popover：点击外部关闭、焦点管理、碰撞避让由原语负责。
+ * 适合承载表单、详情等需要交互的内容；纯菜单场景请用 DropdownMenu。
+ */
+export const Popover = PopoverPrimitive.Root
+export const PopoverTrigger = PopoverPrimitive.Trigger
+export const PopoverAnchor = PopoverPrimitive.Anchor
+export const PopoverClose = PopoverPrimitive.Close
+
+export const PopoverContent = forwardRef<
+  React.ElementRef<typeof PopoverPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
+>(({ className, align = 'center', sideOffset = 8, ...props }, ref) => (
+  <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Content
+      ref={ref}
+      align={align}
+      sideOffset={sideOffset}
+      className={cn(
+        'z-[200] rounded-xl border border-border-200/60 glass p-3 shadow-lg outline-none',
+        'text-[length:var(--fs-sm)] text-text-200',
+        className,
+      )}
+      {...props}
+    />
+  </PopoverPrimitive.Portal>
+))
+PopoverContent.displayName = 'PopoverContent'

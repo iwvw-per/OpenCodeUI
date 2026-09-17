@@ -16,6 +16,7 @@ import {
   QuestionIcon,
   CogIcon,
 } from '../../../components/Icons'
+import { Button } from '../../../components/ui/Button'
 import { Dialog } from '../../../components/ui/Dialog'
 import { SettingsSearch } from '../SettingsSearch'
 import { getConfig, getGlobalConfig, getProviderConfigs, listAvailableShells, updateGlobalConfig } from '../../../api'
@@ -416,15 +417,10 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         <UndoIcon size={13} />
         {t('config.reset')}
       </button>
-      <button
-        type="button"
-        disabled={!dirty || busy}
-        onClick={save}
-        className="inline-flex h-7 items-center justify-center gap-1 rounded-md bg-accent-main-100 px-2.5 text-[length:var(--fs-xs)] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-      >
+      <Button size="sm" disabled={!dirty || busy} onClick={save}>
         <CheckIcon size={13} />
         {saving ? t('config.saving') : validating ? tx('Validating…', '校验中…', lang) : t('config.saveAll')}
-      </button>
+      </Button>
     </div>
   )
 
@@ -503,15 +499,10 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                     <UndoIcon size={14} />
                     {t('config.reset')}
                   </button>
-                  <button
-                    type="button"
-                    disabled={!dirty || busy}
-                    onClick={save}
-                    className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md bg-accent-main-100 px-3 py-2 text-[length:var(--fs-sm)] font-medium text-white transition-opacity disabled:opacity-40"
-                  >
+                  <Button size="sm" className="min-w-0 flex-1" disabled={!dirty || busy} onClick={save}>
                     <CheckIcon size={14} />
                     {saving ? t('config.saving') : validating ? tx('Validating…', '校验中…', lang) : t('config.saveAll')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>

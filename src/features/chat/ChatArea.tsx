@@ -20,7 +20,7 @@ import {
   useMemo,
   useState,
 } from 'react'
-import { useVirtualizer, elementScroll, defaultRangeExtractor, type VirtualItem } from '@tanstack/react-virtual'
+import { useVirtualizer, elementScroll, defaultRangeExtractor, type VirtualItem, type Virtualizer } from '@tanstack/react-virtual'
 import { useTranslation } from 'react-i18next'
 import { MessageRenderer, ProcessCollapseBlock, messageHasFinalContent, messageHasProcessContent } from '../message'
 import { MessageErrorView } from '../message/parts'
@@ -555,8 +555,8 @@ export const ChatArea = memo(
       if (!overridesApplied.current) {
         const origResize = virtualizer.resizeItem
         virtualizer.resizeItem = (index: number, size: number) => {
-          const item = (virtualizer as any).measurementsCache[index]
-          const prev = item ? ((virtualizer as any).itemSizeCache.get(item.key) ?? item.size) : undefined
+          const item = virtualizer.measurementsCache[index]
+          const prev = item ? (virtualizer.itemSizeCache.get(item.key) ?? item.size) : undefined
           const root = scrollRef.current
           if (root && prev !== undefined && Math.abs(size - prev) > root.clientHeight) {
             const view = root.getBoundingClientRect()
@@ -582,7 +582,7 @@ export const ChatArea = memo(
           // userScrolledRef 由 handleWheel 上滚设 true，只由 handleWheel 下滚回底设 false，
           // handleScroll 不清它（避免流式增长推回时误清）。
           if (userScrolledRef.current) {
-            const opts = (virtualizer as any).options
+            const opts = virtualizer.options
             const origAnchor = opts.anchorTo
             opts.anchorTo = 'start'
             origResize(index, size)
@@ -590,12 +590,12 @@ export const ChatArea = memo(
           } else {
             origResize(index, size)
           }
-          if (root && shouldAnchorBottom() && !resizeAnchorScheduled.current && (virtualizer as any).isAtEnd?.(80)) {
+          if (root && shouldAnchorBottom() && !resizeAnchorScheduled.current && virtualizer.isAtEnd?.(80)) {
             resizeAnchorScheduled.current = true
             queueMicrotask(() => {
               resizeAnchorScheduled.current = false
               if (!shouldAnchorBottom()) return
-              if (!(virtualizer as any).isAtEnd?.(80)) return
+              if (!virtualizer.isAtEnd?.(80)) return
               const el = scrollRef.current
               if (!el) return
               autoMarkAuto(el)
@@ -604,9 +604,20 @@ export const ChatArea = memo(
             })
           }
         }
-        virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item: VirtualItem, _delta: number, instance: any) => {
+        virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
+          item: VirtualItem,
+          _delta: number,
+          instance: Virtualizer<HTMLDivElement, HTMLDivElement>,
+        ) => {
           if (shouldAnchorBottom()) return false
-          return item.end <= (instance.getScrollOffset?.() ?? 0) + (instance.scrollAdjustments ?? 0)
+          // scrollAdjustments 与 getScrollOffset 是 virtual-core 的 private 成员，
+          // 但对齐 oc 的行为依赖它们。private 成员无法用交叉类型扩展（会被收窄为
+          // never），因此经 unknown 断言为描述所依赖形态的局部类型，而非 any。
+          const internals = instance as unknown as {
+            scrollAdjustments?: number
+            getScrollOffset?: () => number
+          }
+          return item.end <= (internals.getScrollOffset?.() ?? 0) + (internals.scrollAdjustments ?? 0)
         }
         overridesApplied.current = true
       }

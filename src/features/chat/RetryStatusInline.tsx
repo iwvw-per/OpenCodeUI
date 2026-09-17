@@ -2,7 +2,8 @@ import { memo, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDownIcon, RetryIcon } from '../../components/Icons'
 import { useNow } from '../../hooks/useNow'
-import { chevronClass, MessageExpandPanel, useMessageExpandRender } from '../message/messageExpand'
+import { MessageExpandPanel } from '../message/messageExpand'
+import { chevronClass, useMessageExpandRender } from '../message/messageExpandShared'
 
 export interface RetryStatusInlineData {
   sessionID: string

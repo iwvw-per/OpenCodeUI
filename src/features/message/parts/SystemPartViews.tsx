@@ -4,7 +4,8 @@ import { RetryIcon, PatchIcon, ChevronDownIcon, FileIcon } from '../../../compon
 import { useDisclosureScrollLock } from '../../../hooks'
 import type { RetryPart, CompactionPart, PatchPart } from '../../../types/message'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
-import { chevronClass, MessageExpandPanel, useMessageExpandRender } from '../messageExpand'
+import { MessageExpandPanel } from '../messageExpand'
+import { chevronClass, useMessageExpandRender } from '../messageExpandShared'
 
 // ============================================
 // Retry Part View - 显示重试状态

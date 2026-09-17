@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
-import { Button } from '../../../components/ui/Button'
-import { DropdownMenu } from '../../../components/ui/DropdownMenu'
-import { MenuItem } from '../../../components/ui/MenuItem'
+import { Button, Select, SelectContent, SelectItem, SelectTrigger, Textarea } from '../../../components/ui'
 import { SunIcon, MoonIcon, SystemIcon, CheckIcon, GlobeIcon, UndoIcon } from '../../../components/Icons'
-import { settingsFieldAreaClass, settingsFieldClass, Toggle, SegmentedControl, SettingRow, SettingField, SettingsSection } from './SettingsUI'
+import { settingsFieldClass, Toggle, SegmentedControl, SettingRow, SettingField, SettingsSection } from './SettingsUI'
 import { CodeBlockThemeSettings } from './CodeBlockThemeSettings'
 import { useTheme } from '../../../hooks'
 import { getThemePreset } from '../../../themes'
@@ -412,44 +410,50 @@ function CustomCSSEditor({
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <input ref={fileInputRef} type="file" accept=".css" onChange={handleFileImport} className="hidden" />
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-accent-main-100 hover:bg-accent-main-100/10 hover:text-accent-main-200"
             onClick={() => fileInputRef.current?.click()}
-            className="text-[length:var(--fs-xs)] text-accent-main-100 hover:text-accent-main-200 transition-colors px-2 py-1 rounded-md hover:bg-accent-main-100/10"
           >
             {t('appearance.importCss')}
-          </button>
+          </Button>
           {!localValue.trim() && (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-accent-main-100 hover:bg-accent-main-100/10 hover:text-accent-main-200"
               onClick={() => {
                 cancelPendingChange()
                 setDraft({ source: value, value: template })
                 onLoadTemplate(template)
               }}
-              className="text-[length:var(--fs-xs)] text-accent-main-100 hover:text-accent-main-200 transition-colors px-2 py-1 rounded-md hover:bg-accent-main-100/10"
             >
               {t('appearance.loadTemplate')}
-            </button>
+            </Button>
           )}
           {localValue.trim() && (
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-text-400 hover:bg-danger-100/10 hover:text-danger-100"
               onClick={() => {
                 cancelPendingChange()
                 setDraft({ source: value, value: '' })
                 onClear()
               }}
-              className="text-[length:var(--fs-xs)] text-text-400 hover:text-danger-100 transition-colors px-2 py-1 rounded-md hover:bg-danger-100/10"
             >
               {t('common:clear')}
-            </button>
+            </Button>
           )}
         </div>
       </div>
-      <textarea
+      <Textarea
         value={localValue}
         onChange={e => handleChange(e.target.value)}
         placeholder={template}
         spellCheck={false}
-        className={`${settingsFieldAreaClass} h-48 font-mono`}
+        className="h-48 font-mono"
       />
     </div>
   )
@@ -520,7 +524,7 @@ function SavedSnippetItem({
 }
 
 // ============================================
-// Language Picker (DropdownMenu based)
+// Language Picker
 // ============================================
 
 const LANGUAGE_OPTIONS = [
@@ -528,6 +532,13 @@ const LANGUAGE_OPTIONS = [
   { value: 'zh-CN', labelKey: 'appearance.languages.zh-CN' },
 ] as const
 
+/**
+ * 语言选择器。
+ *
+ * 原先手写了一套 listbox（约 90 行）：自己管理开关状态、外部点击、方向键
+ * 导航、Esc 关闭与焦点归还。这些行为 Radix Select 已完备实现，因此改为
+ * 直接复用，仅保留视觉与选项数据。
+ */
 function LanguagePicker({
   current,
   onSelect,
@@ -537,88 +548,26 @@ function LanguagePicker({
   onSelect: (lang: string) => void
   t: (key: string) => string
 }) {
-  const [isOpen, setIsOpen] = useState(false)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
   const activeLabel = LANGUAGE_OPTIONS.find(o => o.value === current)?.labelKey
   const displayLabel = activeLabel ? t(activeLabel) : current
 
-  useEffect(() => {
-    if (!isOpen) return
-
-    const frameId = requestAnimationFrame(() => {
-      menuRef.current?.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')?.focus()
-    })
-
-    const onPointerDown = (event: MouseEvent) => {
-      const target = event.target as Node
-      if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return
-      setIsOpen(false)
-    }
-    document.addEventListener('mousedown', onPointerDown)
-    return () => {
-      cancelAnimationFrame(frameId)
-      document.removeEventListener('mousedown', onPointerDown)
-    }
-  }, [isOpen])
-
   return (
     <SettingRow label={t('appearance.language')} description={t('appearance.languageDesc')}>
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setIsOpen(v => !v)}
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-        onKeyDown={event => {
-          if (event.key === 'Escape' && isOpen) {
-            event.preventDefault()
-            event.stopPropagation()
-            setIsOpen(false)
-          }
-        }}
-        className="inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200/60 transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent-main-100"
-      >
-        <GlobeIcon size={13} className="text-text-400" />
-        <span className="font-medium">{displayLabel}</span>
-      </button>
-      <DropdownMenu triggerRef={triggerRef} isOpen={isOpen} position="top" align="right" width="180px" zIndex={400}>
-        <div
-          ref={menuRef}
-          role="listbox"
-          aria-label={t('appearance.language')}
-          className="p-1"
-          onKeyDown={event => {
-            if (event.key === 'Escape') {
-              event.preventDefault()
-              event.stopPropagation()
-              setIsOpen(false)
-              triggerRef.current?.focus()
-              return
-            }
-            if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
-            event.preventDefault()
-            const options = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])
-            const index = options.indexOf(document.activeElement as HTMLElement)
-            const direction = event.key === 'ArrowDown' ? 1 : -1
-            options[(index + direction + options.length) % options.length]?.focus()
-          }}
-        >
+      <Select value={current} onValueChange={onSelect}>
+        <SelectTrigger aria-label={t('appearance.language')} className="h-7 gap-1.5 text-[length:var(--fs-sm)]">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <GlobeIcon size={13} className="shrink-0 text-text-400" />
+            <span className="truncate font-medium">{displayLabel}</span>
+          </span>
+        </SelectTrigger>
+        <SelectContent position="popper" align="end">
           {LANGUAGE_OPTIONS.map(opt => (
-            <MenuItem
-              key={opt.value}
-              label={t(opt.labelKey)}
-              selected={opt.value === current}
-              selectionRole="option"
-              onClick={() => {
-                onSelect(opt.value)
-                setIsOpen(false)
-                requestAnimationFrame(() => triggerRef.current?.focus())
-              }}
-            />
+            <SelectItem key={opt.value} value={opt.value}>
+              {t(opt.labelKey)}
+            </SelectItem>
           ))}
-        </div>
-      </DropdownMenu>
+        </SelectContent>
+      </Select>
     </SettingRow>
   )
 }

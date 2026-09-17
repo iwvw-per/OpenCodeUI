@@ -24,6 +24,7 @@ import { uiErrorHandler } from '../utils'
 import { getInternalDragSnapshot, startInternalDrag, subscribeInternalDrag, subscribeInternalDrop } from '../lib/internalDragCore'
 import { useDragEdgeAutoScroll } from '../hooks/useDragEdgeAutoScroll'
 import { IconButton } from './ui/IconButton'
+import { ContextMenuItem } from './ui/ContextMenuItem'
 
 // ============================================
 // Types
@@ -393,19 +394,11 @@ export const PanelContainer = memo(function PanelContainer({
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             {manualTerminalTitles && contextTab?.type === 'terminal' && (
-              <button
-                onClick={() => startRename(contextTab)}
-                className="w-full px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
-              >
+              <ContextMenuItem onClick={() => startRename(contextTab)}>
                 {t('panelContainer.renameTerminal')}
-              </button>
+              </ContextMenuItem>
             )}
-            <button
-              onClick={handleMoveToOtherPanel}
-              className="w-full px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
-            >
-              {otherPanelLabel}
-            </button>
+            <ContextMenuItem onClick={handleMoveToOtherPanel}>{otherPanelLabel}</ContextMenuItem>
           </div>,
           document.body,
         )}
@@ -422,78 +415,60 @@ export const PanelContainer = memo(function PanelContainer({
               right: addMenuPos.align === 'right' ? window.innerWidth - addMenuPos.x : undefined,
             }}
           >
-            <button
+            <ContextMenuItem
+              icon={<TerminalIcon size={12} />}
               onClick={() => {
                 onNewTerminal?.()
                 setAddMenuPos(null)
               }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
             >
-              <span className="opacity-60 shrink-0">
-                <TerminalIcon size={12} />
-              </span>
               {t('terminal.terminal')}
-            </button>
-            <button
+            </ContextMenuItem>
+            <ContextMenuItem
+              icon={<FolderIcon size={12} />}
               onClick={() => {
                 layoutStore.addFilesTab(position)
                 setAddMenuPos(null)
               }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
             >
-              <span className="opacity-60 shrink-0">
-                <FolderIcon size={12} />
-              </span>
               {t('panelContainer.files')}
-            </button>
-            <button
+            </ContextMenuItem>
+            <ContextMenuItem
+              icon={<GitCommitIcon size={12} />}
               onClick={() => {
                 layoutStore.addChangesTab(position)
                 setAddMenuPos(null)
               }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
             >
-              <span className="opacity-60 shrink-0">
-                <GitCommitIcon size={12} />
-              </span>
               {t('panelContainer.changes')}
-            </button>
-            <button
+            </ContextMenuItem>
+            <ContextMenuItem
+              icon={<PlugIcon size={12} />}
               onClick={() => {
                 layoutStore.addMcpTab(position)
                 setAddMenuPos(null)
               }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
             >
-              <span className="opacity-60 shrink-0">
-                <PlugIcon size={12} />
-              </span>
               {t('panelContainer.mcpServers')}
-            </button>
-            <button
+            </ContextMenuItem>
+            <ContextMenuItem
+              icon={<TeachIcon size={12} />}
               onClick={() => {
                 layoutStore.addSkillTab(position)
                 setAddMenuPos(null)
               }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
             >
-              <span className="opacity-60 shrink-0">
-                <TeachIcon size={12} />
-              </span>
               {t('panelContainer.skills')}
-            </button>
-            <button
+            </ContextMenuItem>
+            <ContextMenuItem
+              icon={<GitWorktreeIcon size={12} />}
               onClick={() => {
                 layoutStore.addWorktreeTab(position)
                 setAddMenuPos(null)
               }}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
             >
-              <span className="opacity-60 shrink-0">
-                <GitWorktreeIcon size={12} />
-              </span>
               {t('panelContainer.worktrees')}
-            </button>
+            </ContextMenuItem>
           </div>,
           document.body,
         )}

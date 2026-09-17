@@ -4,6 +4,7 @@ import { SearchIcon, PencilIcon, TrashIcon, ComposeIcon, PinIcon, ArchiveIcon, S
 import { getSelectionRoundClass } from './selectionRound'
 import { formatRelativeTime } from '../../utils/dateUtils'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { IconButton } from '../../components/ui'
 import { useInputCapabilities } from '../../hooks/useInputCapabilities'
 import { useSessionActiveEntry } from '../../store/activeSessionStore'
 import { notificationStore, useHasUnreadCompletedNotification } from '../../store/notificationStore'
@@ -174,15 +175,15 @@ export function SessionList({
                 className="w-full bg-bg-200/40 hover:bg-bg-200/80 focus:bg-bg-000 border border-transparent focus:border-border-200 rounded-lg py-2 pl-9 pr-3 text-[length:var(--fs-sm)] text-text-100 placeholder:text-text-400/70 focus:outline-none focus:shadow-sm transition-all duration-200"
               />
             </div>
-            <button
-              type="button"
+            <IconButton
+              size="md"
+              className="bg-bg-200/40 hover:bg-bg-200/80"
               onClick={onNewChat}
               title={t('sessions.newChat')}
               aria-label={t('sessions.newChat')}
-              className="p-2 rounded-lg bg-bg-200/40 hover:bg-bg-200/80 text-text-400 hover:text-text-100 transition-all duration-200"
             >
               <ComposeIcon size={16} />
-            </button>
+            </IconButton>
           </div>
         </div>
       )}
@@ -878,19 +879,19 @@ export function SessionListItem({
               : 'opacity-0 group-hover:opacity-100 peer-focus-visible:opacity-100 focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto peer-focus-visible:pointer-events-auto focus-within:pointer-events-auto'
           }`}
         >
-          <button
-            type="button"
-            onClick={handlePin}
-            className={`p-1.5 rounded-md transition-colors focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset ${
+          <IconButton
+            size="sm"
+            className={
               isPinned
-                ? 'text-accent-main-100 hover:text-accent-main-200'
-                : 'text-text-400 hover:text-text-100 hover:bg-bg-300'
-            }`}
+                ? 'text-accent-main-100 hover:bg-transparent hover:text-accent-main-200'
+                : 'hover:bg-bg-300'
+            }
+            onClick={handlePin}
             title={isPinned ? t('sessions.unpin') : t('sessions.pin')}
             aria-label={isPinned ? t('sessions.unpin') : t('sessions.pin')}
           >
             <PinIcon className="w-3.5 h-3.5" />
-          </button>
+          </IconButton>
           <button
             type="button"
             onClick={handleStartEdit}

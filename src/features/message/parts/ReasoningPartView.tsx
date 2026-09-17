@@ -8,7 +8,8 @@ import { MarkdownRenderer } from '../../../components/MarkdownRenderer'
 import type { ReasoningPart } from '../../../types/message'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 import { MSG_SPACING } from '../messageSpacing'
-import { chevronClass, MessageExpandPanel, useMessageExpandRender } from '../messageExpand'
+import { MessageExpandPanel } from '../messageExpand'
+import { chevronClass, useMessageExpandRender } from '../messageExpandShared'
 
 // italic 默认不显示前导图标；如果后续要恢复，只改这里。
 const ITALIC_SHOW_LEADING_GLYPH = false

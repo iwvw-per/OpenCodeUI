@@ -23,35 +23,40 @@ describe('Settings UI primitives', () => {
     expect(onRowClick).toHaveBeenCalledTimes(1)
   })
 
-  it('moves focus with the selected segmented option', () => {
+  it('switches the selected segmented option and reports the change', () => {
     function Harness() {
       const [value, setValue] = useState<'one' | 'two'>('one')
       return <SegmentedControl value={value} options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]} onChange={setValue} />
     }
 
     render(<Harness />)
-    const first = screen.getByRole('tab', { name: 'One' })
-    first.focus()
-    fireEvent.keyDown(first, { key: 'ArrowRight' })
+    expect(screen.getByRole('tab', { name: 'One' })).toHaveAttribute('data-state', 'active')
 
-    expect(screen.getByRole('tab', { name: 'Two' })).toHaveFocus()
+    // Radix Tabs 在 mouseDown 上激活（见 ui/Tabs.tsx）。
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Two' }))
+    expect(screen.getByRole('tab', { name: 'Two' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('tab', { name: 'One' })).toHaveAttribute('data-state', 'inactive')
   })
 
-  it('keeps focus on the selected option when a change is rejected', () => {
-    render(
-      <SegmentedControl
-        value="one"
-        options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]}
-        onChange={() => false}
-      />,
-    )
+  it('keeps the active option when the change is rejected by the caller', () => {
+    const onChange = vi.fn(() => false)
+    function Harness() {
+      const [value] = useState<'one' | 'two'>('one')
+      return (
+        <SegmentedControl
+          value={value}
+          options={[{ value: 'one', label: 'One' }, { value: 'two', label: 'Two' }]}
+          onChange={onChange}
+        />
+      )
+    }
 
-    const first = screen.getByRole('tab', { name: 'One' })
-    first.focus()
-    fireEvent.keyDown(first, { key: 'ArrowRight' })
-    expect(first).toHaveFocus()
+    render(<Harness />)
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Two' }))
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Two' }))
-    expect(first).toHaveFocus()
+    // 受控组件：外部未更新 value 时，激活项必须保持不变。
+    expect(onChange).toHaveBeenCalled()
+    expect(screen.getByRole('tab', { name: 'One' })).toHaveAttribute('data-state', 'active')
+    expect(screen.getByRole('tab', { name: 'Two' })).toHaveAttribute('data-state', 'inactive')
   })
 })
