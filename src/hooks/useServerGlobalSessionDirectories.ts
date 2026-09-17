@@ -9,12 +9,19 @@
 
 import { useEffect, useState } from 'react'
 import { getSessions, type ApiSession } from '../api'
+import { subscribeToEvents } from '../api/events'
 import { normalizeToForwardSlash } from '../utils'
-import { ttlCacheGet, ttlCacheSet } from '../utils/ttlCache'
+import { ttlCacheGet, ttlCacheSet, ttlCacheInvalidate } from '../utils/ttlCache'
 
 /** 结果按 serverId 缓存：切换主机回来直接复用，避免全量重拉（这是最重的一个发现请求） */
 const CACHE_TTL_MS = 60_000
-const cacheKey = (serverId: string) => `global-session-groups:${serverId}`
+const CACHE_PREFIX = 'global-session-groups:'
+const cacheKey = (serverId: string) => `${CACHE_PREFIX}${serverId}`
+
+/** 会话增删/归档后主动失效缓存，避免 60s 内切回面板仍看到旧目录分组 */
+export function invalidateGlobalSessionGroupsCache(serverId?: string): void {
+  ttlCacheInvalidate(serverId ? cacheKey(serverId) : CACHE_PREFIX)
+}
 
 export interface GlobalSessionGroup {
   directory: string
@@ -50,6 +57,26 @@ export function useServerGlobalSessionDirectories(
 ): { groups: GlobalSessionGroup[]; isLoading: boolean } {
   const [groups, setGroups] = useState<GlobalSessionGroup[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [reloadToken, setReloadToken] = useState(0)
+
+  useEffect(() => {
+    if (!enabled) return
+    // 会话增删：目录分组随之变化，失效缓存并重拉
+    return subscribeToEvents({
+      onSessionCreated: () => {
+        invalidateGlobalSessionGroupsCache()
+        setReloadToken(token => token + 1)
+      },
+      onSessionDeleted: () => {
+        invalidateGlobalSessionGroupsCache()
+        setReloadToken(token => token + 1)
+      },
+      onSessionUpdated: () => {
+        invalidateGlobalSessionGroupsCache()
+        setReloadToken(token => token + 1)
+      },
+    })
+  }, [enabled])
 
   useEffect(() => {
     if (!enabled) return
@@ -66,7 +93,7 @@ export function useServerGlobalSessionDirectories(
       .then(list => {
         if (cancelled) return
         const built = buildGroups(list)
-        ttlCacheSet(cacheKey(serverId), built)
+        ttlCacheSet(cacheKey(serverId), built, CACHE_TTL_MS)
         setGroups(built)
       })
       .catch(() => {
@@ -78,7 +105,7 @@ export function useServerGlobalSessionDirectories(
     return () => {
       cancelled = true
     }
-  }, [serverId, enabled])
+  }, [serverId, enabled, reloadToken])
 
   return { groups, isLoading }
 }

@@ -241,6 +241,18 @@ export class UpdateStore {
       hiddenToastVersion: this.state.latestRelease.version,
     })
   }
+
+  /** 导入备份：更新内存状态并通知订阅者（只写 localStorage 会让 UI 与再次导出继续用旧值） */
+  applyImportedSettings(payload: PersistedUpdateState): void {
+    this.setState({
+      ...this.state,
+      latestRelease: payload.latestRelease,
+      lastCheckedAt: payload.lastCheckedAt,
+      dismissedVersion: payload.dismissedVersion,
+      checking: false,
+      error: null,
+    })
+  }
 }
 
 export const updateStore = new UpdateStore()
@@ -264,7 +276,7 @@ export function importUpdateSettingsBackup(raw: unknown): void {
     lastCheckedAt: typeof parsed?.lastCheckedAt === 'number' ? parsed.lastCheckedAt : null,
     dismissedVersion: typeof parsed?.dismissedVersion === 'string' ? parsed.dismissedVersion : null,
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  updateStore.applyImportedSettings(payload)
 }
 
 export function useUpdateStore(): UpdateState {

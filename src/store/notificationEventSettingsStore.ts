@@ -164,6 +164,12 @@ class NotificationEventSettingsStore {
     this.persist()
     this.notify()
   }
+
+  replaceSettings(settings: NotificationEventSettings) {
+    this.state = settings
+    this.persist()
+    this.notify()
+  }
 }
 
 export const notificationEventSettingsStore = new NotificationEventSettingsStore()
@@ -173,7 +179,8 @@ export function exportNotificationEventSettingsBackup(): NotificationEventSettin
 }
 
 export function importNotificationEventSettingsBackup(raw: unknown): void {
-  saveSettings(normalizeSettings(raw))
+  // 只写 localStorage 会让 UI 与后续导出继续用旧内存值（导入的配置反被覆盖）
+  notificationEventSettingsStore.replaceSettings(normalizeSettings(raw))
 }
 
 export function useNotificationEventSettings(): NotificationEventSettings {

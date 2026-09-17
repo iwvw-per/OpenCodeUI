@@ -8,8 +8,14 @@
 
 // ANSI escape sequence 正则
 // 匹配 CSI (Control Sequence Introducer) 序列：ESC[ ... 终止符
-// eslint-disable-next-line no-control-regex
-const ANSI_RE = /\x1b\[[0-9;]*m/g
+// 用字符串构造（而非正则字面量），避免 no-control-regex 误报
+const ANSI_PATTERN = '\\x1b\\[[0-9;]*m'
+
+// 无状态检测用：不带 g 标志，test() 不会推进 lastIndex
+const ANSI_TEST_RE = new RegExp(ANSI_PATTERN)
+
+// replace() 全程重扫，不依赖 lastIndex，可安全复用带 g 的实例
+const ANSI_RE = new RegExp(ANSI_PATTERN, 'g')
 
 /**
  * 去掉所有 ANSI escape codes
@@ -66,10 +72,12 @@ export function parseAnsi(text: string): AnsiSegment[] {
   const state: AnsiState = { bold: false, dim: false, italic: false }
 
   let lastIndex = 0
-  ANSI_RE.lastIndex = 0
+
+  // 独立实例：exec() 会修改 lastIndex，不复用模块级正则以免相互干扰
+  const iterator = new RegExp(ANSI_PATTERN, 'g')
 
   let match: RegExpExecArray | null
-  while ((match = ANSI_RE.exec(text)) !== null) {
+  while ((match = iterator.exec(text)) !== null) {
     // 控制符前面的文本
     if (match.index > lastIndex) {
       const chunk = text.slice(lastIndex, match.index)
@@ -83,7 +91,7 @@ export function parseAnsi(text: string): AnsiSegment[] {
         })
       }
     }
-    lastIndex = ANSI_RE.lastIndex
+    lastIndex = iterator.lastIndex
 
     // 解析 SGR 参数
     const params = match[0].slice(2, -1) // 去掉 ESC[ 和 m
@@ -136,5 +144,7 @@ export function parseAnsi(text: string): AnsiSegment[] {
  * 检测文本是否包含 ANSI escape codes
  */
 export function hasAnsi(text: string): boolean {
-  return ANSI_RE.test(text)
+  // 必须用无 g 标志的正则：带 g 的 test() 会推进 lastIndex，
+  // 导致同一字符串连续调用交替返回 true/false。
+  return ANSI_TEST_RE.test(text)
 }

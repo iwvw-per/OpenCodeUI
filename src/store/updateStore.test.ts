@@ -69,3 +69,44 @@ describe('UpdateStore', () => {
     expect(localStorage.getItem('opencode:update-check')).toContain('0.5.2')
   })
 })
+
+describe('importUpdateSettingsBackup', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('updates in-memory state and notifies subscribers', async () => {
+    vi.resetModules()
+    const { updateStore, importUpdateSettingsBackup, exportUpdateSettingsBackup } = await import('./updateStore')
+
+    let notifications = 0
+    const unsubscribe = updateStore.subscribe(() => {
+      notifications += 1
+    })
+
+    importUpdateSettingsBackup({
+      latestRelease: {
+        version: '9.9.9',
+        tagName: 'v9.9.9',
+        url: 'https://example.com/9.9.9',
+        publishedAt: null,
+        name: null,
+      },
+      lastCheckedAt: 1700000000000,
+      dismissedVersion: '9.9.9',
+    })
+
+    expect(updateStore.getSnapshot().latestRelease?.version).toBe('9.9.9')
+    expect(updateStore.getSnapshot().lastCheckedAt).toBe(1700000000000)
+    expect(updateStore.getSnapshot().dismissedVersion).toBe('9.9.9')
+    expect(notifications).toBeGreaterThan(0)
+    // 再次导出必须反映导入值，而不是旧内存状态
+    expect(exportUpdateSettingsBackup().latestRelease?.version).toBe('9.9.9')
+
+    unsubscribe()
+  })
+})

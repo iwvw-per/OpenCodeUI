@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LayoutStore } from './layoutStore'
 
 const STORAGE_KEY_PANEL_LAYOUT = 'opencode-panel-layout'
-
 describe('LayoutStore panel and terminal layout', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -158,5 +157,78 @@ describe('LayoutStore panel and terminal layout', () => {
     const restored = new LayoutStore().getState()
     expect(restored.terminalCopyOnSelect).toBe(true)
     expect(restored.terminalRightClickPaste).toBe(true)
+  })
+})
+
+describe('LayoutStore backup import', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('updates the singleton in-memory state and notifies subscribers on import', async () => {
+    const { layoutStore, importLayoutBackup, exportLayoutBackup } = await import('./layoutStore')
+
+    // 前置状态：与备份相反
+    layoutStore.setSidebarExpanded(true)
+    layoutStore.setSendOnEnter(true)
+    layoutStore.setRightPanelWidth(300)
+
+    let notifications = 0
+    const unsubscribe = layoutStore.subscribe(() => {
+      notifications += 1
+    })
+
+    importLayoutBackup({
+      sidebarExpanded: false,
+      sidebarFolderRecents: true,
+      sidebarFolderRecentsShowDiff: false,
+      sidebarShowChildSessions: true,
+      sidebarShowGlobal: true,
+      sidebarSessionSortField: 'created',
+      sidebarSessionSortDesc: false,
+      sendOnEnter: false,
+      wakeLock: true,
+      rightPanelWidth: 640,
+      bottomPanelHeight: 320,
+      sidebarWidth: 280,
+    })
+
+    // 内存状态（UI + 再次导出读的是它）必须同步更新
+    expect(layoutStore.getState().sidebarExpanded).toBe(false)
+    expect(layoutStore.getState().sidebarFolderRecents).toBe(true)
+    expect(layoutStore.getState().sidebarShowChildSessions).toBe(true)
+    expect(layoutStore.getState().sidebarShowGlobal).toBe(true)
+    expect(layoutStore.getState().sidebarSessionSortField).toBe('created')
+    expect(layoutStore.getState().sidebarSessionSortDesc).toBe(false)
+    expect(layoutStore.getState().sendOnEnter).toBe(false)
+    expect(layoutStore.getState().wakeLock).toBe(true)
+    expect(layoutStore.getState().rightPanelWidth).toBe(640)
+    expect(layoutStore.getState().bottomPanelHeight).toBe(320)
+    expect(notifications).toBeGreaterThan(0)
+
+    // 导入后立即导出必须反映导入值，而不是旧内存状态
+    const exported = exportLayoutBackup()
+    expect(exported.sidebarExpanded).toBe(false)
+    expect(exported.sendOnEnter).toBe(false)
+    expect(exported.rightPanelWidth).toBe(640)
+    expect(exported.sidebarWidth).toBe(280)
+
+    unsubscribe()
+  })
+
+  it('keeps existing terminal tabs when importing a panel layout', async () => {
+    const { layoutStore, importLayoutBackup } = await import('./layoutStore')
+
+    layoutStore.syncTerminalSessions('dir-a', [{ id: 'term-1', title: 'T1', status: 'connected' }])
+    layoutStore.setActiveTab('bottom', 'term-1')
+
+    importLayoutBackup({ sidebarExpanded: true })
+
+    expect(layoutStore.getState().panelTabs.some(tab => tab.id === 'term-1')).toBe(true)
+    expect(layoutStore.getState().activeTabId.bottom).toBe('term-1')
   })
 })

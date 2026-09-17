@@ -1239,6 +1239,12 @@ export class LayoutStore {
   getState() {
     return this.state
   }
+
+  /** 导入备份：整体替换内存状态并通知订阅者（只写 localStorage 会让 UI 与再次导出继续用旧值） */
+  replaceState(next: LayoutState) {
+    this.state = next
+    this.notify()
+  }
 }
 
 export const layoutStore = new LayoutStore()
@@ -1327,28 +1333,61 @@ export function importLayoutBackup(raw: unknown): void {
       ? Math.round(parsed.sidebarWidth)
       : null
 
-  localStorage.setItem(STORAGE_KEY_SIDEBAR, String(parsed?.sidebarExpanded === true))
-  localStorage.setItem(STORAGE_KEY_SIDEBAR_FOLDER_RECENTS, String(parsed?.sidebarFolderRecents === true))
+  // 恢复面板布局：终端 tab 跟随运行时，导入时只替换持久化的非终端 tab，保留当前已打开的终端
+  const currentState = layoutStore.getState()
+  const panelLayoutTabs = panelLayout.panelTabs.map(normalizePersistedPanelTab)
+  const currentTerminalTabs = currentState.panelTabs.filter(tab => tab.type === 'terminal')
+  const nextPanelTabs = [...panelLayoutTabs, ...currentTerminalTabs]
+  const validTabIds = new Set(nextPanelTabs.map(tab => tab.id))
+  const pickActiveTabId = (position: PanelPosition) => {
+    const id = panelLayout.activeTabId[position]
+    return id && validTabIds.has(id) ? id : null
+  }
+  const nextState: LayoutState = {
+    ...currentState,
+    panelTabs: nextPanelTabs,
+    activeTabId: {
+      bottom: pickActiveTabId('bottom'),
+      right: pickActiveTabId('right'),
+    },
+    rightPanelOpen: panelLayout.rightPanelOpen,
+    bottomPanelOpen: panelLayout.bottomPanelOpen,
+    sidebarExpanded: parsed?.sidebarExpanded === true,
+    sidebarFolderRecents: parsed?.sidebarFolderRecents === true,
+    sidebarFolderRecentsShowDiff: parsed?.sidebarFolderRecentsShowDiff !== false,
+    sidebarShowChildSessions: parsed?.sidebarShowChildSessions === true,
+    sidebarShowGlobal: parsed?.sidebarShowGlobal === true,
+    sidebarSessionSortField: isSessionSortField(parsed?.sidebarSessionSortField)
+      ? parsed.sidebarSessionSortField
+      : DEFAULT_SESSION_SORT.field,
+    sidebarSessionSortDesc:
+      typeof parsed?.sidebarSessionSortDesc === 'boolean' ? parsed.sidebarSessionSortDesc : DEFAULT_SESSION_SORT.desc,
+    sendOnEnter: parsed?.sendOnEnter !== false,
+    wakeLock: parsed?.wakeLock === true,
+    rightPanelWidth,
+    bottomPanelHeight,
+  }
+
+  // 复用 store 的 persist + notify：整体替换内存状态（notify 会写回面板/终端布局并清空 snapshot 缓存）
+  layoutStore.replaceState(nextState)
+
+  // 非面板类偏好由各自的 setter 持久化；这里导入后统一补写，保证刷新后仍生效
+  localStorage.setItem(STORAGE_KEY_SIDEBAR, String(nextState.sidebarExpanded))
+  localStorage.setItem(STORAGE_KEY_SIDEBAR_FOLDER_RECENTS, String(nextState.sidebarFolderRecents))
   localStorage.setItem(
     STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF,
-    String(parsed?.sidebarFolderRecentsShowDiff !== false),
+    String(nextState.sidebarFolderRecentsShowDiff),
   )
-  localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, String(parsed?.sidebarShowChildSessions === true))
-  localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_GLOBAL, String(parsed?.sidebarShowGlobal === true))
+  localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, String(nextState.sidebarShowChildSessions))
+  localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_GLOBAL, String(nextState.sidebarShowGlobal))
   localStorage.setItem(
     STORAGE_KEY_SIDEBAR_SESSION_SORT,
-    JSON.stringify({
-      field: isSessionSortField(parsed?.sidebarSessionSortField)
-        ? parsed.sidebarSessionSortField
-        : DEFAULT_SESSION_SORT.field,
-      desc: typeof parsed?.sidebarSessionSortDesc === 'boolean' ? parsed.sidebarSessionSortDesc : DEFAULT_SESSION_SORT.desc,
-    }),
+    JSON.stringify({ field: nextState.sidebarSessionSortField, desc: nextState.sidebarSessionSortDesc }),
   )
-  localStorage.setItem(STORAGE_KEY_SEND_ON_ENTER, String(parsed?.sendOnEnter !== false))
-  localStorage.setItem(STORAGE_KEY_WAKE_LOCK, String(parsed?.wakeLock === true))
+  localStorage.setItem(STORAGE_KEY_SEND_ON_ENTER, String(nextState.sendOnEnter))
+  localStorage.setItem(STORAGE_KEY_WAKE_LOCK, String(nextState.wakeLock))
   localStorage.setItem(STORAGE_KEY_RIGHT_PANEL_WIDTH, String(rightPanelWidth))
   localStorage.setItem(STORAGE_KEY_BOTTOM_PANEL_HEIGHT, String(bottomPanelHeight))
-  localStorage.setItem(STORAGE_KEY_PANEL_LAYOUT, JSON.stringify(panelLayout))
   localStorage.setItem(STORAGE_KEY_TERMINAL_LAYOUT, JSON.stringify(terminalLayout))
 
   if (sidebarWidth !== null) {

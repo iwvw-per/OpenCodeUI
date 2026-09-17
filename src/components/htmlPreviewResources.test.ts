@@ -20,6 +20,17 @@ describe('htmlPreviewResources', () => {
     expect(resolveHtmlResourcePath('pages/index.html', 'data:image/png;base64,abc')).toBeNull()
   })
 
+  it('resolves mixed-case Windows paths consistently and preserves real casing', () => {
+    expect(resolveHtmlResourcePath('c:/repo/pages/index.html', './app.js', 'C:/Repo')).toBe('pages/app.js')
+    expect(resolveHtmlResourcePath('C:/REPO/pages/Index.html', './App.js', 'c:/repo')).toBe('pages/App.js')
+    expect(resolveHtmlResourcePath('C:/outside/index.html', './app.js', 'C:/Repo')).toBeNull()
+  })
+
+  it('still blocks directory traversal from mixed-case absolute paths', () => {
+    expect(resolveHtmlResourcePath('C:/repo/pages/index.html', '../../.env', 'c:/repo')).toBeNull()
+    expect(resolveHtmlResourcePath('c:/repo/pages/index.html', '../../.env', 'C:/REPO')).toBeNull()
+  })
+
   it('inlines relative scripts, styles, CSS assets, and media', async () => {
     const files = new Map<string, object>([
       ['pages/app.js', { type: 'text', content: 'window.previewReady = true' }],
