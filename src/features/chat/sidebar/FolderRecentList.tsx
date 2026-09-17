@@ -29,6 +29,8 @@ import { pinnedSessionsStore, type PinnedSessionEntry } from '../../../store/pin
 import { SessionListItem } from '../../sessions'
 import { getSelectionRoundClass } from '../../sessions/selectionRound'
 import { SessionChildrenSlot } from './SessionChildrenSlot'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 
 const DIRECTORY_PAGE_SIZE = 5
 
@@ -739,7 +741,7 @@ function PinnedFolderSection({
 
   return (
     <div className="relative transition-all duration-150 group/folder">
-      <div className="relative flex w-full items-center rounded-md hover:bg-bg-200/40 transition-colors duration-150 select-none">
+      <div className={cn('relative flex w-full items-center rounded-md select-none', interactive.row)}>
         <button
           onClick={() => setIsExpanded(value => !value)}
           className="flex flex-1 min-w-0 items-center gap-2 pl-2 pr-2 py-1.5 text-left cursor-default select-none"
@@ -827,7 +829,11 @@ function UnavailablePinnedSessionItem({ entry }: { entry: PinnedSessionEntry }) 
       <button
         type="button"
         onClick={() => pinnedSessionsStore.unpin(entry.sessionId)}
-        className="absolute right-2 z-10 p-1 rounded text-accent-main-100 hover:text-accent-main-200 opacity-0 group-hover:opacity-100 transition-opacity"
+        className={cn(
+          'absolute right-2 z-10 p-1 rounded text-accent-main-100 hover:text-accent-main-200',
+          'opacity-0 group-hover:opacity-100 transition-opacity',
+          interactive.subtle,
+        )}
         title={t('sessions.unpin')}
         aria-label={t('sessions.unpin')}
       >
@@ -1088,16 +1094,12 @@ function FolderRecentSection({
         {/* 文件夹行 — 选中用圆角底，连续选中拼成一条；整行可直接拖拽重排（点击仍是展开/收起） */}
         <div
           onPointerDown={canDrag ? onDragStart : undefined}
-          className={`relative flex w-full items-center transition-colors duration-150 select-none ${getSelectionRoundClass(
-            isEditMode && isProjectChecked,
-            projectCheckedPrev,
-            folderCheckedNext,
-            'md',
-          )} ${
-            isEditMode && isProjectChecked
-              ? 'bg-accent-main-100/12 text-text-100'
-              : 'hover:bg-bg-200/40'
-          }`}
+          className={cn(
+            'relative flex w-full items-center transition-colors duration-150 select-none',
+            getSelectionRoundClass(isEditMode && isProjectChecked, projectCheckedPrev, folderCheckedNext, 'md'),
+            interactive.row,
+            isEditMode && isProjectChecked && 'bg-accent-main-100/12 text-text-100',
+          )}
           {...(isEditMode
             ? {
                 'data-selection-kind': 'project' as const,
@@ -1142,7 +1144,10 @@ function FolderRecentSection({
                 e.stopPropagation()
                 onNewSessionInDirectory(project.worktree)
               }}
-              className="shrink-0 flex items-center justify-center h-6 rounded-full overflow-hidden text-accent-main-100 hover:bg-accent-main-100/10 hover:text-accent-main-200 w-0 mr-0 opacity-0 transition-all group-hover/folder:w-6 group-hover/folder:mr-0.5 group-hover/folder:opacity-100"
+              className={cn(
+                'shrink-0 flex items-center justify-center h-6 rounded-full overflow-hidden text-accent-main-100 hover:text-accent-main-200 w-0 mr-0 opacity-0 transition-all group-hover/folder:w-6 group-hover/folder:mr-0.5 group-hover/folder:opacity-100',
+                interactive.accent,
+              )}
               title={t('sidebar.newTaskInDirectory', { defaultValue: 'New conversation here' })}
               aria-label={t('sidebar.newTaskInDirectory', { defaultValue: 'New conversation here' })}
             >
@@ -1159,11 +1164,14 @@ function FolderRecentSection({
                 handleRemoveClick()
               }}
               onMouseLeave={disarmRemove}
-              className={`shrink-0 flex items-center justify-center h-6 rounded-full overflow-hidden transition-all ${
+              className={cn(
+                'shrink-0 flex items-center justify-center h-6 rounded-full overflow-hidden',
                 removeArmed
                   ? 'w-6 mr-0.5 bg-danger-100/15 text-danger-100'
-                  : 'w-0 mr-0 text-text-400 opacity-0 group-hover/folder:w-6 group-hover/folder:mr-0.5 group-hover/folder:opacity-100 hover:text-danger-100 hover:bg-danger-100/10'
-              }`}
+                  : 'w-0 mr-0 text-text-400 opacity-0 group-hover/folder:w-6 group-hover/folder:mr-0.5 group-hover/folder:opacity-100 hover:text-danger-100',
+                !removeArmed && interactive.danger,
+                'transition-all',
+              )}
               title={removeArmed ? t('sidebar.removeProjectConfirmClick', { defaultValue: '再次点击确认移除' }) : t('sidebar.removeProject')}
               aria-label={removeArmed ? t('sidebar.removeProjectConfirmClick', { defaultValue: '再次点击确认移除' }) : t('sidebar.removeProject')}
             >
@@ -1179,7 +1187,10 @@ function FolderRecentSection({
                 e.stopPropagation()
                 onToggle()
               }}
-              className="shrink-0 flex items-center justify-center w-6 h-6 mr-1 rounded-md text-text-500 hover:text-text-200 hover:bg-bg-300/50 transition-colors"
+              className={cn(
+                'shrink-0 flex items-center justify-center w-6 h-6 mr-1 rounded-md text-text-500 hover:text-text-200',
+                interactive.subtle,
+              )}
               title={isExpanded ? t('common:collapse', { defaultValue: 'Collapse' }) : t('common:expand', { defaultValue: 'Expand' })}
               aria-expanded={isExpanded}
             >
@@ -1314,7 +1325,11 @@ function FolderRecentSection({
                       disabled={isLoadingMore}
                       aria-busy={isLoadingMore}
                       aria-label={isLoadingMore ? t('common:loadingMore') : t('sidebar.showMoreChats')}
-                      className="group w-full rounded-md px-2 py-1.5 text-[length:var(--fs-xs)] text-text-400/85 transition-colors hover:text-text-200 disabled:cursor-default disabled:opacity-70"
+                      className={cn(
+                        'group w-full rounded-md px-2 py-1.5 text-[length:var(--fs-xs)] text-text-400/85 hover:text-text-200',
+                        interactive.subtle,
+                        'disabled:cursor-default disabled:opacity-70',
+                      )}
                     >
                       <span className="flex items-center justify-center">
                         <span className="relative inline-flex shrink-0 items-center gap-1.5 font-medium">

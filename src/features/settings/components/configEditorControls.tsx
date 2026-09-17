@@ -5,6 +5,8 @@ import { Toggle } from './SettingsUI'
 import { DraftErrorContext, JsonDraftErrorContext } from './configEditorJsonDraft'
 import type { Choice, JsonRecord } from './configEditorTypes'
 import { asStringArray, hasOwn, isRecord, tx, useLang } from './configEditorUtils'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 
 let draftIDSeed = 0
 
@@ -509,7 +511,11 @@ export function StringListField({
       <button
         type="button"
         onClick={() => onChange([...list, ''])}
-        className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2 text-[length:var(--fs-sm)] font-medium text-accent-main-100 transition-colors hover:bg-accent-main-100/10"
+        className={cn(
+          'inline-flex h-8 items-center justify-center gap-1.5 rounded-md px-2 text-[length:var(--fs-sm)] font-medium text-accent-main-100',
+          interactive.accent,
+          interactive.focusRingCompact,
+        )}
       >
         <PlusIcon size={13} />
         {tx('Add', '添加', '')}

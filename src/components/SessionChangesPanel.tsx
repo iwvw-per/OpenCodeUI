@@ -10,8 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { RetryIcon, ChevronRightIcon, MaximizeIcon, ClockIcon, GitBranchIcon, GitDiffIcon, LayersIcon } from './Icons'
 import { getMaterialIconUrl } from '../utils/materialIcons'
 import { DiffViewer, useDiffViewerData, type ViewMode } from './DiffViewer'
-import { Button } from './ui/Button'
-import { Tabs, TabsList, TabsTrigger } from './ui/Tabs'
+import { Button, IconButton, Tabs, TabsList, TabsTrigger } from './ui'
 import { ViewModeSwitch } from './FullscreenViewer'
 import { getCurrentProject, initGitProject } from '../api/client'
 import { getLastTurnDiff, getSessionDiff } from '../api/session'
@@ -805,16 +804,15 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
             </Tabs>
 
             {/* Refresh */}
-            <button
-              type="button"
+            <IconButton
+              size="sm"
               onClick={handleRefresh}
               disabled={loading}
               aria-label={t('common:refresh')}
-              className="inline-flex h-6 w-6 items-center justify-center text-text-400 hover:text-text-100 hover:bg-bg-200/50 rounded-md transition-colors disabled:opacity-50"
               title={t('common:refresh')}
             >
               <RetryIcon size={12} className={loading ? 'animate-spin' : ''} />
-            </button>
+            </IconButton>
           </div>
           <div className="pointer-events-none absolute inset-x-3 bottom-0 h-px bg-border-200/30" />
         </div>
@@ -895,7 +893,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
             <button
               type="button"
               onClick={handleOpenInFiles}
-              className="w-full px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
+              className="w-full px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200 hover:text-text-100 rounded-md transition-colors"
             >
               {t('sessionChanges.openInFiles')}
             </button>
@@ -1038,16 +1036,17 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
         onReorder={onReorderPreview}
         tabWidthClassName="w-auto max-w-none min-w-max"
         rightActions={
-          <button
+          <IconButton
+            size="xs"
             onClick={() => {
               setFullscreenViewMode(viewMode)
               openFullscreen()
             }}
-            className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-300/50 rounded transition-colors"
             title={t('contentBlock.fullscreen')}
+            aria-label={t('contentBlock.fullscreen')}
           >
             <MaximizeIcon size={12} />
-          </button>
+          </IconButton>
         }
       />
 

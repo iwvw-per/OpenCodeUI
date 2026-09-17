@@ -31,6 +31,8 @@ import { buildConfigEditorSearchItems, type ConfigEditorSearchItem } from './con
 import { SectionRouter } from './configEditorSections'
 import type { Choice, JsonRecord, SectionID } from './configEditorTypes'
 import { clone, createMergePatch, getObject, isRecord, sameValue, tx } from './configEditorUtils'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 
 const CONFIG_TAB_ICONS: Record<SectionID, React.ReactNode> = {
   general: <CogIcon size={15} />,
@@ -624,7 +626,10 @@ export function ConfigSettings() {
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[length:var(--fs-sm)] font-medium text-accent-main-100 transition-colors hover:bg-accent-main-100/10"
+            className={cn(
+              'inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[length:var(--fs-sm)] font-medium text-accent-main-100',
+              interactive.accent,
+            )}
           >
             <SettingsIcon size={14} />
             {t('config.openEditor')}

@@ -16,14 +16,18 @@ import { useTheme } from '../hooks/useTheme'
 import { getDesktopPlatform, isTauri, usesCustomDesktopTitlebar } from '../utils/tauri'
 import { useUpdateStore, hasUpdateAvailable } from '../store/updateStore'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { cn } from '../utils/cn'
+import { interactive } from '../utils/interaction'
 
 /* 标题栏图标按钮通用样式 — Windows 和 macOS 视觉节奏不同，按钮尺寸分开控制 */
 const TB_BTN =
   'inline-flex h-full w-8 items-center justify-center text-text-300 transition-colors hover:bg-bg-200/70 hover:text-text-100'
 const TB_BTN_MAC =
   'inline-flex h-7 w-7 items-center justify-center rounded-md text-text-300 transition-colors hover:bg-bg-200/70 hover:text-text-100'
-const TB_BTN_MAC_UPDATE =
-  'inline-flex h-7 w-7 items-center justify-center rounded-md text-accent-main-100 transition-colors hover:bg-accent-main-100/10'
+const TB_BTN_MAC_UPDATE = cn(
+  'inline-flex h-7 w-7 items-center justify-center rounded-md text-accent-main-100',
+  interactive.accent,
+)
 
 const WindowsControls = memo(function WindowsControls() {
   const { t } = useTranslation('components')
@@ -227,7 +231,7 @@ export function DesktopTitlebar() {
             hasUpdate
               ? platform === 'macos'
                 ? TB_BTN_MAC_UPDATE
-                : 'inline-flex h-full w-8 items-center justify-center text-accent-main-100 transition-colors hover:bg-accent-main-100/10'
+                : cn('inline-flex h-full w-8 items-center justify-center text-accent-main-100', interactive.accent)
               : titlebarButtonClass
           }
           title={hasUpdate ? t('desktopTitlebar.settingsUpdate') : t('desktopTitlebar.openSettings')}

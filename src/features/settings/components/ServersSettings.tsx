@@ -17,6 +17,8 @@ import { useServerStore, useRouter } from '../../../hooks'
 import { messageStore } from '../../../store'
 import { useMultiServerStore, multiServerStore } from '../../../store/multiServerStore'
 import { settingsFieldClass, SettingsSection, SettingRow, Toggle } from './SettingsUI'
+import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
 import type { ServerConfig, ServerHealth } from '../../../store/serverStore'
 import { AiAgentAccountSettings } from './AiAgentAccountSettings'
 
@@ -152,11 +154,12 @@ function ServerItem({
                   : t('servers.subscribe')
             }
             aria-label={subscribed ? t('servers.unsubscribe') : t('servers.subscribe')}
-            className={`p-1.5 rounded-md transition-colors ${
-              subscribed
-                ? 'text-accent-main-100 hover:bg-accent-main-100/10'
-                : 'text-text-400 hover:text-text-200 hover:bg-bg-200/70'
-            } ${!multiServerEnabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+            className={cn(
+              `p-1.5 rounded-md transition-colors ${subscribed ? 'text-accent-main-100' : 'text-text-400 hover:text-text-200 hover:bg-bg-200/70'} ${
+                !multiServerEnabled ? 'opacity-40 cursor-not-allowed' : ''
+              }`,
+              subscribed && interactive.accent,
+            )}
           >
             {subscribed ? <PlugIcon size={13} /> : <CircleIcon size={11} className="opacity-50" />}
           </button>
@@ -175,7 +178,7 @@ function ServerItem({
             <>
               <IconButton
                 size="sm"
-                className="hover:text-accent-main-100 hover:bg-accent-main-100/10"
+                className={cn('hover:text-accent-main-100', interactive.accent)}
                 onClick={e => {
                   e.stopPropagation()
                   setEditing(true)
@@ -621,7 +624,10 @@ export function ServersSettings() {
             <button
               onClick={() => setAddingServer(true)}
               disabled={addingServer}
-              className="h-7 px-2.5 rounded-md text-[length:var(--fs-sm)] font-medium text-accent-main-100 hover:bg-accent-main-100/10 transition-colors disabled:opacity-40"
+              className={cn(
+                'h-7 px-2.5 rounded-md text-[length:var(--fs-sm)] font-medium text-accent-main-100 disabled:opacity-40',
+                interactive.accent,
+              )}
             >
               {t('common:add')}
             </button>

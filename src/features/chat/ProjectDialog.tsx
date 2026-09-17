@@ -5,6 +5,8 @@ import { listDirectory, getPath } from '../../api'
 import { fileErrorHandler } from '../../utils'
 import { scrollItemIntoView } from '../../utils/scrollUtils'
 import { Dialog } from '../../components/ui/Dialog'
+import { cn } from '../../utils/cn'
+import { interactive } from '../../utils/interaction'
 
 // ============================================
 // Types
@@ -414,7 +416,10 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '', ser
         </div>
         <button
           onClick={handleConfirmCurrent}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-bg-000/40 hover:bg-accent-main-100/10 border border-border-200/60 hover:border-accent-main-100/30 text-text-200 hover:text-accent-main-100 rounded-md transition-colors text-[length:var(--fs-sm)] font-medium shrink-0 whitespace-nowrap"
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-1.5 bg-bg-000/40 border border-border-200/60 hover:border-accent-main-100/30 text-text-200 hover:text-accent-main-100 rounded-md text-[length:var(--fs-sm)] font-medium shrink-0 whitespace-nowrap',
+            interactive.accent,
+          )}
         >
           <PlusIcon className="w-3 h-3" />
           {t('projectDialog.addCurrent')}

@@ -1,4 +1,6 @@
 import { CheckIcon } from '../Icons'
+import { cn } from '../../utils/cn'
+import { interactive } from '../../utils/interaction'
 
 interface MenuItemProps {
   label: string
@@ -32,12 +34,14 @@ export function MenuItem({
       disabled={disabled}
       onClick={onClick}
       {...selectionProps}
-      className={`
-        w-full px-2 py-2 rounded-lg flex items-start gap-2 text-left bg-transparent border-none
-        transition-all duration-150 select-none
-        ${disabled ? 'text-text-500 cursor-not-allowed' : 'cursor-pointer hover:bg-bg-200 active:scale-[0.98]'}
-        ${selected && !disabled ? 'text-text-100' : ''}
-      `}
+      className={cn(
+        'w-full px-2 py-2 rounded-lg flex items-start gap-2 text-left bg-transparent border-none select-none',
+        'transition-colors duration-150',
+        // 禁用态优先于交互态：用 disabled: 前缀而非三元，避免顺序依赖
+        interactive.disabled,
+        disabled ? 'text-text-500' : cn('cursor-pointer hover:bg-bg-200 active:bg-bg-300', interactive.focusRingCompact),
+        selected && !disabled && 'text-text-100',
+      )}
     >
       {icon && (
         <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 mt-0.5 text-text-400">{icon}</span>

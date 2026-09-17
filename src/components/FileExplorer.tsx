@@ -1036,13 +1036,14 @@ function FilePreview({
   const fullscreenHeaderRight = useMemo(
     () =>
       content ? (
-        <button
+        <IconButton
+          size="sm"
           onClick={handleDownload}
-          className="p-1.5 text-text-400 hover:text-text-100 hover:bg-bg-200/60 rounded-lg transition-colors"
           title={`${t('common:save')} ${fileName}`}
+          aria-label={`${t('common:save')} ${fileName}`}
         >
           <DownloadIcon size={14} />
-        </button>
+        </IconButton>
       ) : null,
     [content, fileName, handleDownload, t],
   )
@@ -1076,20 +1077,12 @@ function FilePreview({
         rightActions={
           content ? (
             <>
-              <button
-                onClick={openFullscreen}
-                className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-300/50 rounded transition-colors"
-                title={t('contentBlock.fullscreen')}
-              >
+              <IconButton size="xs" onClick={openFullscreen} title={t('contentBlock.fullscreen')} aria-label={t('contentBlock.fullscreen')}>
                 <MaximizeIcon size={12} />
-              </button>
-              <button
-                onClick={handleDownload}
-                className="p-1 text-text-400 hover:text-text-100 hover:bg-bg-300/50 rounded transition-colors"
-                title={`${t('common:save')} ${fileName}`}
-              >
+              </IconButton>
+              <IconButton size="xs" onClick={handleDownload} title={`${t('common:save')} ${fileName}`} aria-label={`${t('common:save')} ${fileName}`}>
                 <DownloadIcon size={12} />
-              </button>
+              </IconButton>
             </>
           ) : null
         }

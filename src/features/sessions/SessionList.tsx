@@ -14,6 +14,8 @@ import { startInternalDrag } from '../../lib/internalDragCore'
 import { makeSessionKey, splitSessionKey } from '../../utils/sessionKey'
 import { pinnedSessionsStore, type PinnedSessionEntry } from '../../store/pinnedSessionsStore'
 import { serverStore } from '../../store/serverStore'
+import { interactive } from '../../utils/interaction'
+import { cn } from '../../utils/cn'
 
 interface SessionListProps {
   sessions: ApiSession[]
@@ -650,20 +652,20 @@ export function SessionListItem({
     const isWorking = !!activeStatus?.pulse
 
     return (
-      <div className={`group relative flex items-center gap-1 px-2 py-1.5 cursor-default transition-colors duration-150 select-none ${getSelectionRoundClass(
-          isEditMode && isChecked,
-          checkedPrev,
-          checkedNext,
-          'md',
-        )} ${
+      <div
+        className={cn(
+          'group relative flex items-center gap-1 px-2 py-1.5 select-none',
+          getSelectionRoundClass(isEditMode && isChecked, checkedPrev, checkedNext, 'md'),
+          interactive.row,
           isEditMode
             ? isChecked
               ? 'bg-accent-main-100/12 text-text-100'
-              : 'text-text-300 hover:bg-bg-200/40 hover:text-text-200'
+              : 'text-text-300 hover:text-text-200'
             : isSelected
               ? 'bg-accent-main-100/12 text-text-100'
-              : 'text-text-300 hover:bg-bg-200/40 hover:text-text-200'
-        } ${showActions && !isEditMode ? 'bg-bg-200/40' : ''}`}
+              : 'text-text-300 hover:text-text-200',
+          showActions && !isEditMode && 'bg-bg-200',
+        )}
       >
         <span className="relative shrink-0 flex items-center justify-center size-5" title={statusIndicatorTitle}>
           {/* 状态指示：hover（或触摸长按显示操作）时让位给 pin */}
@@ -691,9 +693,11 @@ export function SessionListItem({
               type="button"
               data-compact
               onClick={handlePin}
-              className={`absolute inset-0 flex items-center justify-center rounded transition-opacity duration-150 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset ${
-                actionsVisible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
-              } ${isPinned ? 'text-accent-main-100' : 'text-text-500 hover:text-text-200'}`}
+              className={cn(
+                'absolute inset-0 flex items-center justify-center rounded transition-opacity duration-150 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset',
+                actionsVisible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
+                isPinned ? 'text-accent-main-100' : 'text-text-500 hover:text-text-200',
+              )}
               title={isPinned ? t('sessions.unpin') : t('sessions.pin')}
               aria-label={isPinned ? t('sessions.unpin') : t('sessions.pin')}
             >
@@ -753,11 +757,14 @@ export function SessionListItem({
             type="button"
             data-compact
             onClick={handleArchive}
-            className={`absolute right-1.5 top-1/2 -translate-y-1/2 z-10 p-0.5 rounded transition-opacity duration-150 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset ${
+            className={cn(
+              'absolute right-1.5 top-1/2 -translate-y-1/2 z-10 p-0.5 rounded transition-opacity duration-150 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset',
               actionsVisible
                 ? 'opacity-100 pointer-events-auto'
-                : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto'
-            } text-text-500 hover:text-text-200 hover:bg-bg-300`}
+                : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto',
+              'text-text-500 hover:text-text-200',
+              interactive.subtle,
+            )}
             title={t('chat:sidebar.archiveConversation', { defaultValue: 'Archive' })}
             aria-label={t('chat:sidebar.archiveConversation', { defaultValue: 'Archive' })}
           >
@@ -780,20 +787,21 @@ export function SessionListItem({
       onTouchStart={!isEditMode ? handleTouchStart : undefined}
       onTouchMove={!isEditMode ? handleTouchMove : undefined}
       onTouchEnd={!isEditMode ? handleTouchEnd : undefined}
-      className={`group relative flex items-start ${itemPaddingClass} cursor-default transition-all duration-200 border border-transparent select-none ${getSelectionRoundClass(
-        isEditMode && isChecked,
-        checkedPrev,
-        checkedNext,
-        'lg',
-      )} ${
+      className={cn(
+        'group relative flex items-start',
+        itemPaddingClass,
+        'cursor-default transition-all duration-200 border border-transparent select-none',
+        getSelectionRoundClass(isEditMode && isChecked, checkedPrev, checkedNext, 'lg'),
+        interactive.row,
         isEditMode
           ? isChecked
             ? 'bg-accent-main-100/12 text-text-100'
-            : 'hover:bg-bg-200/50'
+            : ''
           : isSelected
             ? 'bg-accent-main-100/12 text-text-100'
-            : 'hover:bg-bg-200/50'
-      } ${showActions && !isEditMode ? 'bg-bg-200/50' : ''}`}
+            : '',
+        showActions && !isEditMode && 'bg-bg-200',
+      )}
     >
       <button
         type="button"
@@ -884,7 +892,7 @@ export function SessionListItem({
             className={
               isPinned
                 ? 'text-accent-main-100 hover:bg-transparent hover:text-accent-main-200'
-                : 'hover:bg-bg-300'
+                : interactive.subtle
             }
             onClick={handlePin}
             title={isPinned ? t('sessions.unpin') : t('sessions.pin')}
@@ -892,24 +900,25 @@ export function SessionListItem({
           >
             <PinIcon className="w-3.5 h-3.5" />
           </IconButton>
-          <button
-            type="button"
+          <IconButton
+            size="sm"
+            variant="ghost"
             onClick={handleStartEdit}
-            className="p-1.5 rounded-md hover:bg-bg-300 active:bg-bg-300 text-text-400 hover:text-text-100 transition-colors focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset"
+            className="text-text-400 hover:text-text-100"
             title={t('sessions.rename')}
             aria-label={t('sessions.rename')}
           >
             <PencilIcon className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
+          </IconButton>
+          <IconButton
+            size="sm"
+            variant="danger"
             onClick={handleDelete}
-            className="p-1.5 rounded-md hover:bg-danger-bg active:bg-danger-bg text-text-400 hover:text-danger-100 active:text-danger-100 transition-colors focus-visible:ring-1 focus-visible:ring-danger-100/40 focus-visible:ring-inset"
             title={t('common:delete')}
             aria-label={t('common:delete')}
           >
             <TrashIcon className="w-3.5 h-3.5" />
-          </button>
+          </IconButton>
         </div>
       )}
     </div>
@@ -951,7 +960,11 @@ function UnavailablePinnedSessionItem({
           e.stopPropagation()
           pinnedSessionsStore.unpin(entry.sessionId)
         }}
-        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-accent-main-100 hover:text-accent-main-200 opacity-0 group-hover:opacity-100 transition-colors"
+        className={cn(
+          'absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-accent-main-100 hover:text-accent-main-200',
+          'opacity-0 group-hover:opacity-100 transition-colors',
+          interactive.subtle,
+        )}
         title={t('sessions.unpin')}
         aria-label={t('sessions.unpin')}
       >
