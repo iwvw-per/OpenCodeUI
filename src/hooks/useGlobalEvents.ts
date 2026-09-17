@@ -787,7 +787,6 @@ export function useGlobalEvents(directories?: string[]) {
       unsubscribeAutoApprove()
       unsubscribeServerChange()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeServerIds])
 
   useLayoutEffect(() => {

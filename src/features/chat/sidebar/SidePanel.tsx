@@ -7,6 +7,7 @@ import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
 import { getProjectGroupIdentity } from './projectGrouping'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
+import { Tabs, TabsList, TabsTrigger } from '../../../components/ui/Tabs'
 import { SidebarFooter } from './SidebarFooter'
 import {
   SidebarIcon,
@@ -1189,40 +1190,24 @@ export function SidePanel({
             ) : (
               <>
                 {/* 视图切换：主机/项目 — 紧凑分段控件（带边框背景，与侧栏区分） */}
-                <div className="inline-flex items-center gap-0.5 rounded-lg border border-border-200/60 bg-bg-200/40 p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSidebarTab('hosts')
-                      if (sidebarTab !== 'hosts') exitEditMode()
-                    }}
-                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 ${
-                      sidebarTab === 'hosts'
-                        ? 'bg-accent-main-100 text-white shadow-sm'
-                        : 'text-text-500 hover:text-text-300'
-                    }`}
-                    title={t('sidebar.hostsHint', { defaultValue: 'Switch between hosts' })}
-                  >
-                    <GlobeIcon size={13} />
-                    <span className="truncate">{t('sidebar.hosts', { defaultValue: 'Hosts' })}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSidebarTab('projects')
-                      if (sidebarTab !== 'projects') exitEditMode()
-                    }}
-                    className={`flex items-center gap-1 rounded-md px-2 py-1 text-[length:var(--fs-xxs)] font-semibold uppercase tracking-wider transition-colors duration-150 ${
-                      sidebarTab === 'projects'
-                        ? 'bg-accent-main-100 text-white shadow-sm'
-                        : 'text-text-500 hover:text-text-300'
-                    }`}
-                    title={t('sidebar.projectByFolder', { defaultValue: 'Group by project' })}
-                  >
-                    <FolderIcon size={13} />
-                    <span className="truncate">{t('sidebar.project', { defaultValue: 'Project' })}</span>
-                  </button>
-                </div>
+                <Tabs
+                  value={sidebarTab}
+                  onValueChange={value => {
+                    setSidebarTab(value as 'hosts' | 'projects')
+                    if (value !== sidebarTab) exitEditMode()
+                  }}
+                >
+                  <TabsList>
+                    <TabsTrigger value="hosts" title={t('sidebar.hostsHint', { defaultValue: 'Switch between hosts' })}>
+                      <GlobeIcon size={13} />
+                      <span className="truncate">{t('sidebar.hosts', { defaultValue: 'Hosts' })}</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="projects" title={t('sidebar.projectByFolder', { defaultValue: 'Group by project' })}>
+                      <FolderIcon size={13} />
+                      <span className="truncate">{t('sidebar.project', { defaultValue: 'Project' })}</span>
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
                 {/* 排序 + 管理：仅项目视图。两个按钮独立（排序改偏好，管理进批量选择） */}
                 {sidebarTab === 'projects' && (
                   <div className="ml-auto shrink-0 flex items-center gap-0.5">

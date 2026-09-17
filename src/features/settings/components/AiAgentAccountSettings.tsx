@@ -10,7 +10,36 @@ import {
   type AiAgentAccount,
   type AiAgentInstance,
 } from '../../../api/aiagent'
+import {
+  getSyncState,
+  startPreferencesSync,
+  stopPreferencesSync,
+  subscribeSyncState,
+  syncNow,
+  type SyncState,
+} from '../../../api/preferencesSyncEngine'
+import { isSyncEnabled, setSyncEnabled } from '../../../api/preferencesSync'
 import { useServerStore } from '../../../hooks'
+
+function formatSyncedAt(timestamp: number): string {
+  if (!timestamp) return '尚未同步'
+  return new Date(timestamp).toLocaleTimeString()
+}
+
+function describeSyncState(state: SyncState): string {
+  switch (state.status) {
+    case 'syncing':
+      return '同步中…'
+    case 'synced':
+      return `已同步 · ${formatSyncedAt(state.lastSyncedAt)}`
+    case 'error':
+      return `同步失败：${state.error || '未知错误'}`
+    case 'disabled':
+      return '未启用'
+    default:
+      return '待同步'
+  }
+}
 
 /** AI Agent 账号：连接 API Monitor 的 aiagent 模块，同步实例为可切换服务器。 */
 export function AiAgentAccountSettings() {
@@ -21,7 +50,24 @@ export function AiAgentAccountSettings() {
   const [instances, setInstances] = useState<AiAgentInstance[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [syncEnabled, setSyncEnabledState] = useState(() => isSyncEnabled())
+  const [syncState, setSyncState] = useState<SyncState>(() => getSyncState())
   const { activeServer, getHealth, checkHealth } = useServerStore()
+
+  useEffect(() => subscribeSyncState(setSyncState), [])
+
+  const handleToggleSync = useCallback(
+    async (enabled: boolean) => {
+      setSyncEnabled(enabled)
+      setSyncEnabledState(enabled)
+      if (enabled) {
+        await startPreferencesSync()
+      } else {
+        stopPreferencesSync()
+      }
+    },
+    [],
+  )
 
   const refreshInstances = useCallback(
     async (target?: AiAgentAccount | null) => {
@@ -51,6 +97,9 @@ export function AiAgentAccountSettings() {
       const next = await accountLogin(domain, username, password, '客户端')
       setPassword('')
       setAccount(next)
+      if (isSyncEnabled()) {
+        await startPreferencesSync()
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败')
     } finally {
@@ -62,6 +111,7 @@ export function AiAgentAccountSettings() {
     setBusy(true)
     setError('')
     try {
+      stopPreferencesSync()
       await accountLogout()
       setAccount(null)
       setInstances([])
@@ -184,6 +234,43 @@ export function AiAgentAccountSettings() {
             </ul>
           )}
           {error && <span className="text-xs text-red-400">{error}</span>}
+
+          <div className="flex flex-col gap-2 rounded-lg border border-border-100 bg-bg-100 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-xs text-text-100">设置同步</div>
+                <div className="text-[11px] text-text-500">{describeSyncState(syncState)}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  disabled={!syncEnabled || busy || syncState.status === 'syncing'}
+                  onClick={() => void syncNow()}
+                >
+                  立即同步
+                </Button>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={syncEnabled}
+                  aria-label="启用设置同步"
+                  onClick={() => void handleToggleSync(!syncEnabled)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    syncEnabled ? 'bg-accent-main-100' : 'bg-bg-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block size-4 rounded-full bg-bg-000 transition-transform ${
+                      syncEnabled ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+            <p className="text-[11px] text-text-500">
+              开启后，主题、布局、快捷键、项目与会话偏好等本地设置会自动同步到面板，在这台设备与其它设备之间保持一致。
+            </p>
+          </div>
         </div>
       )}
     </SettingsSection>

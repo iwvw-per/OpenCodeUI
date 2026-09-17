@@ -232,7 +232,7 @@ function toggleProjectId(prev: string[], projectId: string) {
   return prev.includes(projectId) ? prev.filter(id => id !== projectId) : [...prev, projectId]
 }
 
-export function createDirectoryProject(directory: string, sectionKind: FolderRecentProject['sectionKind'] = 'project') {
+function createDirectoryProject(directory: string, sectionKind: FolderRecentProject['sectionKind'] = 'project') {
   return {
     id: directory,
     worktree: directory,
@@ -241,7 +241,7 @@ export function createDirectoryProject(directory: string, sectionKind: FolderRec
   } satisfies FolderRecentProject
 }
 
-export function useCollapseExpandedIdsOnDrag(
+function useCollapseExpandedIdsOnDrag(
   expandedIds: string[],
   setExpandedIds: React.Dispatch<React.SetStateAction<string[]>>,
 ) {
@@ -274,7 +274,7 @@ interface UseReorderableListOptions {
   onDragFinished?: () => void
 }
 
-export function useReorderableList({ ids, canDrag, onCommit, onDragActivated, onDragFinished }: UseReorderableListOptions) {
+function useReorderableList({ ids, canDrag, onCommit, onDragActivated, onDragFinished }: UseReorderableListOptions) {
   const refs = useRef<Map<string, HTMLDivElement>>(new Map())
   const registerRef = useCallback((id: string, element: HTMLDivElement | null) => {
     if (element) refs.current.set(id, element)

@@ -235,21 +235,24 @@ describe('SessionChangesPanel', () => {
     fireEvent.keyDown(menu, { key: 'ArrowDown' })
     expect(gitChangesOption).toHaveFocus()
 
-    const treeButton = screen.getByRole('button', { name: 'Tree' })
-    const listButton = screen.getByRole('button', { name: 'List' })
-    const unifiedButton = screen.getByRole('button', { name: 'Unified' })
-    const splitButton = screen.getByRole('button', { name: 'Split' })
+    // 列表/视图切换现为 Radix Tabs（role="tab" + aria-selected），
+    // 取代原先手写按钮的 aria-pressed。
+    const treeTab = screen.getByRole('tab', { name: 'Tree' })
+    const listTab = screen.getByRole('tab', { name: 'List' })
+    const unifiedTab = screen.getByRole('tab', { name: 'Unified' })
+    const splitTab = screen.getByRole('tab', { name: 'Split' })
 
-    expect(treeButton).toHaveAttribute('aria-pressed', 'true')
-    expect(unifiedButton).toHaveAttribute('aria-pressed', 'true')
+    expect(treeTab).toHaveAttribute('aria-selected', 'true')
+    expect(unifiedTab).toHaveAttribute('aria-selected', 'true')
 
-    fireEvent.click(listButton)
-    fireEvent.click(splitButton)
+    // Radix Tabs 在 mouseDown 上激活。
+    fireEvent.mouseDown(listTab)
+    fireEvent.mouseDown(splitTab)
 
-    expect(listButton).toHaveAttribute('aria-pressed', 'true')
-    expect(treeButton).toHaveAttribute('aria-pressed', 'false')
-    expect(splitButton).toHaveAttribute('aria-pressed', 'true')
-    expect(unifiedButton).toHaveAttribute('aria-pressed', 'false')
+    expect(listTab).toHaveAttribute('aria-selected', 'true')
+    expect(treeTab).toHaveAttribute('aria-selected', 'false')
+    expect(splitTab).toHaveAttribute('aria-selected', 'true')
+    expect(unifiedTab).toHaveAttribute('aria-selected', 'false')
   })
 
   it('opens the change mode menu from ArrowUp with focus on the last option', async () => {

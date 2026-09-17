@@ -6,7 +6,8 @@ import { useSessionNavigation } from '../../../contexts/SessionNavigationContext
 import { useDisclosureScrollLock } from '../../../hooks'
 import { UsersIcon, ChevronDownIcon, LayersIcon, TerminalIcon, ReturnIcon } from '../../../components/Icons'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
-import { chevronClass, MessageExpandPanel, useMessageExpandRender } from '../messageExpand'
+import { MessageExpandPanel } from '../messageExpand'
+import { chevronClass, useMessageExpandRender } from '../messageExpandShared'
 
 interface SubtaskPartViewProps {
   part: SubtaskPart

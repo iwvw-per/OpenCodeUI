@@ -30,6 +30,7 @@ import {
   addMcpServer,
 } from '../api/mcp'
 import type { MCPResource, MCPStatus, McpServerConfig } from '../types/api/mcp'
+import { Button, IconButton, Input, Tabs, TabsList, TabsTrigger } from './ui'
 import { useDirectory } from '../hooks'
 import { logger } from '../utils/logger'
 import { apiErrorHandler } from '../utils'
@@ -210,36 +211,28 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing, onClos
           {!loading && <span className="inline-flex h-4 items-center text-[length:var(--fs-xs)] leading-none text-text-400">({servers.length})</span>}
         </div>
         <div className="flex items-center gap-1">
-          <button
-            type="button"
+          <IconButton
+            size="sm"
             onClick={() => setShowAddForm(true)}
             disabled={showAddForm}
             aria-label={t('mcpPanel.addServer')}
-            className="inline-flex h-6 w-6 items-center justify-center hover:bg-bg-200/50 rounded-md text-text-300 hover:text-text-100 transition-colors disabled:opacity-50"
             title={t('mcpPanel.addServer')}
           >
             <PlusIcon size={12} />
-          </button>
-          <button
-            type="button"
+          </IconButton>
+          <IconButton
+            size="sm"
             onClick={handleRefresh}
             disabled={loading}
             aria-label={t('common:refresh')}
-            className="inline-flex h-6 w-6 items-center justify-center hover:bg-bg-200/50 rounded-md text-text-300 hover:text-text-100 transition-colors disabled:opacity-50"
             title={t('common:refresh')}
           >
             <RetryIcon size={12} className={loading ? 'animate-spin' : ''} />
-          </button>
+          </IconButton>
           {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={t('common:close')}
-              className="inline-flex h-6 w-6 items-center justify-center hover:bg-bg-200/50 rounded-md text-text-300 hover:text-text-100 transition-colors"
-              title={t('common:close')}
-            >
+            <IconButton size="sm" onClick={onClose} aria-label={t('common:close')} title={t('common:close')}>
               <CloseIcon size={12} />
-            </button>
+            </IconButton>
           )}
         </div>
         <div className="pointer-events-none absolute inset-x-3 bottom-0 h-px bg-border-200/30" />
@@ -265,25 +258,17 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing, onClos
           <div className="flex flex-col items-center justify-center h-full text-text-400 text-[length:var(--fs-base)] gap-2">
             <AlertCircleIcon size={20} className="text-danger-100" />
             <span>{error}</span>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              className="px-3 py-1.5 text-[length:var(--fs-sm)] bg-bg-200/50 hover:bg-bg-200 text-text-200 rounded-md transition-colors"
-            >
+            <Button variant="secondary" size="sm" onClick={handleRefresh}>
               {t('common:retry')}
-            </button>
+            </Button>
           </div>
         ) : servers.length === 0 && !showAddForm ? (
           <div className="flex flex-col items-center justify-center h-full text-text-400 text-[length:var(--fs-base)] gap-2 px-4 text-center">
             <PlugIcon size={24} className="opacity-30" />
             <span>{t('mcpPanel.noServers')}</span>
-            <button
-              type="button"
-              onClick={() => setShowAddForm(true)}
-              className="px-3 py-1.5 text-[length:var(--fs-sm)] bg-bg-200/50 hover:bg-bg-200 text-text-200 rounded-md transition-colors"
-            >
+            <Button variant="secondary" size="sm" onClick={() => setShowAddForm(true)}>
               {t('mcpPanel.addServer')}
-            </button>
+            </Button>
           </div>
         ) : (
           <div className="p-1">
@@ -384,61 +369,41 @@ const AddServerForm = memo(function AddServerForm({ onSubmit, onCancel, isLoadin
     <form onSubmit={handleSubmit} className="m-3 rounded-lg border border-border-200/60 bg-bg-100/50 p-3">
       <div className="flex items-center justify-between mb-3">
         <span className="text-[length:var(--fs-base)] font-medium text-text-100">{t('mcpPanel.addMcpServer')}</span>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="p-1 hover:bg-bg-200/50 rounded-md text-text-400 hover:text-text-100 transition-colors"
-        >
+        <IconButton size="sm" onClick={onCancel} aria-label={t('common:close')} title={t('common:close')}>
           <CloseIcon size={14} />
-        </button>
+        </IconButton>
       </div>
 
       {/* Server Type Toggle */}
-      <div className="flex gap-2 mb-3">
-        <button
-          type="button"
-          onClick={() => setServerType('local')}
-          className={`flex-1 px-3 py-1.5 text-[length:var(--fs-sm)] rounded-md transition-colors ${
-            serverType === 'local'
-              ? 'bg-accent-main-100/20 text-accent-main-100 border border-accent-main-100/50'
-              : 'bg-bg-200/50 text-text-300 border border-transparent hover:bg-bg-200'
-          }`}
-        >
-          {t('mcpPanel.local')}
-        </button>
-        <button
-          type="button"
-          onClick={() => setServerType('remote')}
-          className={`flex-1 px-3 py-1.5 text-[length:var(--fs-sm)] rounded-md transition-colors ${
-            serverType === 'remote'
-              ? 'bg-accent-main-100/20 text-accent-main-100 border border-accent-main-100/50'
-              : 'bg-bg-200/50 text-text-300 border border-transparent hover:bg-bg-200'
-          }`}
-        >
-          {t('mcpPanel.remote')}
-        </button>
-      </div>
+      <Tabs value={serverType} onValueChange={value => setServerType(value as 'local' | 'remote')} className="mb-3">
+        <TabsList className="w-full">
+          <TabsTrigger value="local" size="md" className="flex-1 justify-center normal-case tracking-normal">
+            {t('mcpPanel.local')}
+          </TabsTrigger>
+          <TabsTrigger value="remote" size="md" className="flex-1 justify-center normal-case tracking-normal">
+            {t('mcpPanel.remote')}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* Name Input */}
       <div className="mb-2">
-        <input
+        <Input
           type="text"
           value={name}
           onChange={e => setName(e.target.value)}
           placeholder={t('mcpPanel.serverName')}
-          className="w-full px-2 py-1.5 text-[length:var(--fs-sm)] bg-bg-000 border border-border-200 rounded-md text-text-100 placeholder-text-500 focus:border-accent-main-100 focus-visible:ring-1 focus-visible:ring-accent-main-100/40 focus-visible:ring-inset"
         />
       </div>
 
       {/* Local: Command Input */}
       {serverType === 'local' && (
         <div className="mb-2">
-          <input
+          <Input
             type="text"
             value={command}
             onChange={e => setCommand(e.target.value)}
             placeholder={t('mcpPanel.commandPlaceholder')}
-            className="w-full px-2 py-1.5 text-[length:var(--fs-sm)] bg-bg-000 border border-border-200 rounded-md text-text-100 placeholder-text-500 focus:border-accent-main-100 focus-visible:ring-1 focus-visible:ring-accent-main-100/40 focus-visible:ring-inset"
           />
         </div>
       )}
@@ -446,12 +411,11 @@ const AddServerForm = memo(function AddServerForm({ onSubmit, onCancel, isLoadin
       {/* Remote: URL Input */}
       {serverType === 'remote' && (
         <div className="mb-2">
-          <input
+          <Input
             type="text"
             value={url}
             onChange={e => setUrl(e.target.value)}
             placeholder={t('mcpPanel.urlPlaceholder')}
-            className="w-full px-2 py-1.5 text-[length:var(--fs-sm)] bg-bg-000 border border-border-200 rounded-md text-text-100 placeholder-text-500 focus:border-accent-main-100 focus-visible:ring-1 focus-visible:ring-accent-main-100/40 focus-visible:ring-inset"
           />
         </div>
       )}
@@ -460,23 +424,16 @@ const AddServerForm = memo(function AddServerForm({ onSubmit, onCancel, isLoadin
       {error && <div className="mb-2 text-[length:var(--fs-sm)] text-danger-100">{error}</div>}
 
       {/* Submit */}
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full px-3 py-1.5 text-[length:var(--fs-sm)] bg-accent-main-100 hover:bg-accent-main-200 text-oncolor-100 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-      >
+      <Button type="submit" className="w-full" isLoading={isLoading}>
         {isLoading ? (
-          <>
-            <SpinnerIcon size={12} className="animate-spin" />
-            {t('common:adding')}
-          </>
+          <>{t('common:adding')}</>
         ) : (
           <>
             <PlusIcon size={12} />
             {t('mcpPanel.addServer')}
           </>
         )}
-      </button>
+      </Button>
     </form>
   )
 })

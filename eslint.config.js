@@ -42,4 +42,13 @@ export default defineConfig([
       'react-refresh/only-export-components': 'warn',
     },
   },
+  {
+    // components/ui 是基础组件库的公共出口，按惯例会同时导出组合式子组件
+    // （如 Popover / PopoverTrigger / PopoverContent）与 Radix 原语的 re-export。
+    // 这类模块本就不该被热更新边界拆散，关闭该规则避免持续噪音。
+    files: ['src/components/ui/**/*.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

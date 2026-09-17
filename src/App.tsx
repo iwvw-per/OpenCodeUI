@@ -73,7 +73,6 @@ function App() {
     if (!routeSessionId) return null
     if (routeSessionId.includes('::')) return routeSessionId
     return makeSessionKey(serverStore.getActiveServerId(), routeSessionId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeSessionId])
   const { currentDirectory, savedDirectories, sidebarExpanded, setSidebarExpanded } = useDirectory()
   const { rightPanelOpen, rightPanelWidth, wakeLock } = useLayoutStore()

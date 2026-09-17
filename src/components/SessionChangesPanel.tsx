@@ -10,6 +10,8 @@ import { useTranslation } from 'react-i18next'
 import { RetryIcon, ChevronRightIcon, MaximizeIcon, ClockIcon, GitBranchIcon, GitDiffIcon, LayersIcon } from './Icons'
 import { getMaterialIconUrl } from '../utils/materialIcons'
 import { DiffViewer, useDiffViewerData, type ViewMode } from './DiffViewer'
+import { Button } from './ui/Button'
+import { Tabs, TabsList, TabsTrigger } from './ui/Tabs'
 import { ViewModeSwitch } from './FullscreenViewer'
 import { getCurrentProject, initGitProject } from '../api/client'
 import { getLastTurnDiff, getSessionDiff } from '../api/session'
@@ -610,13 +612,9 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
             <div className="text-[length:var(--fs-base)] font-medium text-text-200">{t('sessionChanges.noGit')}</div>
             <div className="text-[length:var(--fs-sm)] text-text-400">{t('sessionChanges.noGitHint')}</div>
           </div>
-          <button
-            onClick={handleInitGit}
-            disabled={initializingGit}
-            className="inline-flex items-center justify-center rounded px-3 py-1.5 text-[length:var(--fs-sm)] font-medium bg-accent-main-100 text-white hover:bg-accent-main-90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-          >
+          <Button onClick={handleInitGit} disabled={initializingGit} size="sm">
             {initializingGit ? t('sessionChanges.initializingGit') : t('sessionChanges.initGit')}
-          </button>
+          </Button>
           {error && <div className="text-[length:var(--fs-sm)] text-danger-100">{error}</div>}
         </div>
       </div>
@@ -769,54 +767,50 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
             </DropdownMenu>
 
             {/* List Mode Toggle */}
-            <div className="flex shrink-0 items-center bg-bg-200/50 rounded-md overflow-hidden border border-border-200/50">
-              <button
-                type="button"
-                onClick={() => setListMode('flat')}
-                aria-pressed={listMode === 'flat'}
-                className={`px-2 py-0.5 text-[length:var(--fs-xxs)] transition-colors ${
-                  listMode === 'flat' ? 'bg-bg-000 text-text-100 shadow-sm' : 'text-text-400 hover:text-text-200'
-                }`}
-                title={t('sessionChanges.flatList')}
-              >
-                {t('sessionChanges.list')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setListMode('tree')}
-                aria-pressed={listMode === 'tree'}
-                className={`px-2 py-0.5 text-[length:var(--fs-xxs)] transition-colors ${
-                  listMode === 'tree' ? 'bg-bg-000 text-text-100 shadow-sm' : 'text-text-400 hover:text-text-200'
-                }`}
-                title={t('sessionChanges.treeView')}
-              >
-                {t('sessionChanges.tree')}
-              </button>
-            </div>
+            <Tabs value={listMode} onValueChange={value => setListMode(value as 'flat' | 'tree')}>
+              <TabsList variant="slider" activeIndex={listMode === 'flat' ? 0 : 1} itemCount={2} className="shrink-0">
+                <TabsTrigger
+                  variant="slider"
+                  size="sm"
+                  value="flat"
+                  title={t('sessionChanges.flatList')}
+                  className="px-2 py-0.5 text-[length:var(--fs-xxs)]"
+                >
+                  {t('sessionChanges.list')}
+                </TabsTrigger>
+                <TabsTrigger
+                  variant="slider"
+                  size="sm"
+                  value="tree"
+                  title={t('sessionChanges.treeView')}
+                  className="px-2 py-0.5 text-[length:var(--fs-xxs)]"
+                >
+                  {t('sessionChanges.tree')}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
 
             {/* View Mode Toggle */}
-            <div className="flex shrink-0 items-center bg-bg-200/50 rounded-md overflow-hidden border border-border-200/50">
-              <button
-                type="button"
-                onClick={() => setViewMode('unified')}
-                aria-pressed={viewMode === 'unified'}
-                className={`px-2 py-0.5 text-[length:var(--fs-xxs)] transition-colors ${
-                  viewMode === 'unified' ? 'bg-bg-000 text-text-100 shadow-sm' : 'text-text-400 hover:text-text-200'
-                }`}
-              >
-                {t('sessionChanges.unified')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('split')}
-                aria-pressed={viewMode === 'split'}
-                className={`px-2 py-0.5 text-[length:var(--fs-xxs)] transition-colors ${
-                  viewMode === 'split' ? 'bg-bg-000 text-text-100 shadow-sm' : 'text-text-400 hover:text-text-200'
-                }`}
-              >
-                {t('sessionChanges.split')}
-              </button>
-            </div>
+            <Tabs value={viewMode} onValueChange={value => setViewMode(value as 'unified' | 'split')}>
+              <TabsList variant="slider" activeIndex={viewMode === 'unified' ? 0 : 1} itemCount={2} className="shrink-0">
+                <TabsTrigger
+                  variant="slider"
+                  size="sm"
+                  value="unified"
+                  className="px-2 py-0.5 text-[length:var(--fs-xxs)]"
+                >
+                  {t('sessionChanges.unified')}
+                </TabsTrigger>
+                <TabsTrigger
+                  variant="slider"
+                  size="sm"
+                  value="split"
+                  className="px-2 py-0.5 text-[length:var(--fs-xxs)]"
+                >
+                  {t('sessionChanges.split')}
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
 
             {/* Refresh */}
             <button

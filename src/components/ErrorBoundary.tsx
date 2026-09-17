@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Button } from './ui/Button'
 import { globalErrorHandler } from '../utils/errorHandling'
 
 interface ErrorBoundaryProps {
@@ -35,13 +36,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           </div>
           <div className="flex flex-wrap gap-2">
             {this.props.onOpenSettings && (
-              <button
-                type="button"
-                onClick={this.props.onOpenSettings}
-                className="rounded-lg bg-accent-main-100 px-3 py-2 text-[length:var(--fs-sm)] font-medium text-white hover:bg-accent-main-200"
-              >
+              <Button type="button" onClick={this.props.onOpenSettings}>
                 Open server settings
-              </button>
+              </Button>
             )}
             <button
               type="button"

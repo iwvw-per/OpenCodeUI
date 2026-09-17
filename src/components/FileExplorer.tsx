@@ -21,6 +21,8 @@ import {
   CloseIcon,
 } from './Icons'
 import { CodePreview } from './CodePreview'
+import { IconButton } from './ui/IconButton'
+import { ContextMenuItem } from './ui/ContextMenuItem'
 import { HtmlFilePreviewFrame } from './HtmlFilePreviewFrame'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { MarkdownRenderer } from './MarkdownRenderer'
@@ -429,27 +431,26 @@ export const FileExplorer = memo(function FileExplorer({
               className="w-full bg-bg-200/40 hover:bg-bg-200/60 focus:bg-bg-000 border border-transparent focus:border-border-200 rounded-lg py-1 pl-[30px] pr-7 text-[length:var(--fs-xs)] text-text-100 placeholder:text-text-400/70 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset transition-all"
             />
             {searchQuery && (
-              <button
-                type="button"
+              <IconButton
+                size="xs"
                 onClick={() => handleSearchQueryChange('')}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center text-text-400 hover:text-text-100 rounded transition-colors"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2"
                 aria-label={t('fileExplorer.clearSearch')}
                 title={t('fileExplorer.clearSearch')}
               >
                 <CloseIcon size={12} />
-              </button>
+              </IconButton>
             )}
           </div>
-          <button
-            type="button"
+          <IconButton
+            size="sm"
             onClick={handleRefresh}
             disabled={isLoading}
             aria-label={t('common:refresh')}
-            className="inline-flex h-6 w-6 items-center justify-center text-text-400 hover:text-text-100 hover:bg-bg-200/50 rounded-md transition-colors disabled:opacity-50"
             title={t('common:refresh')}
           >
             <RetryIcon size={12} className={isLoading ? 'animate-spin' : ''} />
-          </button>
+          </IconButton>
           <div className="pointer-events-none absolute inset-x-3 bottom-0 h-px bg-border-200/30" />
         </div>
 
@@ -504,13 +505,9 @@ export const FileExplorer = memo(function FileExplorer({
             className="fixed z-[9999] bg-bg-100 border border-border-200 rounded-lg shadow-lg p-1 min-w-[160px]"
             style={{ left: fileContextMenu.x, top: fileContextMenu.y }}
           >
-            <button
-              type="button"
-              onClick={handleRevealInSystemExplorer}
-              className="w-full px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200/60 hover:text-text-100 rounded-md transition-colors"
-            >
+            <ContextMenuItem onClick={handleRevealInSystemExplorer}>
               {revealInSystemExplorerLabel}
-            </button>
+            </ContextMenuItem>
           </div>,
           document.body,
         )}

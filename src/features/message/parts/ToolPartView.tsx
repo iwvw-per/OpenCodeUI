@@ -26,7 +26,8 @@ import {
   hasTodos,
 } from '../tools'
 import { MSG_SPACING } from '../messageSpacing'
-import { MessageExpandPanel, useMessageExpandRender } from '../messageExpand'
+import { MessageExpandPanel } from '../messageExpand'
+import { useMessageExpandRender } from '../messageExpandShared'
 
 // ============================================
 // ToolPartView - 单个工具调用

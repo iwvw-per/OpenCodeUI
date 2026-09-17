@@ -4,7 +4,8 @@ import type { ToolRendererProps } from '../types'
 import { useDisclosureScrollLock } from '../../../../hooks'
 import { extractTodos } from './todoUtils'
 import { useUiDisclosureState } from '../../../../utils/uiDisclosureState'
-import { chevronClass, MessageExpandPanel, useMessageExpandRender } from '../../messageExpand'
+import { MessageExpandPanel } from '../../messageExpand'
+import { chevronClass, useMessageExpandRender } from '../../messageExpandShared'
 
 // ============================================
 // Types

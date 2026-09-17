@@ -5,7 +5,8 @@ import { AlertCircleIcon, ChevronDownIcon } from '../../../components/Icons'
 import { useDisclosureScrollLock } from '../../../hooks'
 import { CodeBlock } from '../../../components/CodeBlock'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
-import { chevronClass, MessageExpandPanel, useMessageExpandRender } from '../messageExpand'
+import { MessageExpandPanel } from '../messageExpand'
+import { chevronClass, useMessageExpandRender } from '../messageExpandShared'
 
 interface MessageErrorViewProps {
   error: MessageError

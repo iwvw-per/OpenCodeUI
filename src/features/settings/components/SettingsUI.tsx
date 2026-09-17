@@ -1,5 +1,7 @@
 import { createContext, useContext } from 'react'
 import type React from 'react'
+import { Switch } from '../../../components/ui/Switch'
+import { Tabs, TabsList, TabsTrigger } from '../../../components/ui/Tabs'
 
 const SettingLabelContext = createContext<string | undefined>(undefined)
 
@@ -37,40 +39,32 @@ export function Toggle({
 }) {
   const rowLabel = useContext(SettingLabelContext)
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={enabled}
-      aria-label={ariaLabel ?? rowLabel}
-      disabled={disabled}
+    // 复用 ui/Switch（Radix）保证行为一致；外层包一层拦截 click 冒泡，
+    // 避免点击开关同时触发 SettingRow 的整体 onClick。
+    <span
+      className="inline-flex touch-manipulation"
       onClick={e => {
         e.stopPropagation()
-        if (disabled) return
-        onChange()
       }}
-      className={`group/switch relative select-none rounded-full transition-colors touch-manipulation
-        ring-[0.5px] ring-border-200 hover:ring-[1px]
-        focus-visible:outline focus-visible:outline-[1px] focus-visible:outline-accent-main-100 focus-visible:outline-offset-2
-        ${disabled ? 'opacity-45 cursor-not-allowed' : 'cursor-pointer'}
-        ${enabled ? 'bg-accent-main-100 !ring-[0px] hover:!ring-[1px] hover:ring-accent-main-100/60' : 'bg-bg-300'}`}
-      style={{ width: 36, height: 20 }}
     >
-      <div
-        className={`absolute flex items-center justify-center top-[2px] left-[2px] rounded-full transition-transform
-          bg-white ring-[0.5px] ring-inset ring-border-200
-          ${enabled ? '!ring-[0px]' : ''}`}
-        style={{
-          height: 16,
-          width: 16,
-          transform: enabled ? 'translateX(16px)' : 'translateX(0px)',
+      <Switch
+        checked={enabled}
+        onCheckedChange={() => {
+          if (disabled) return
+          onChange()
         }}
+        aria-label={ariaLabel ?? rowLabel}
+        disabled={disabled}
       />
-    </button>
+    </span>
   )
 }
 
 /**
  * Segmented control — 多选一切换器，保留滑块动画。
+ *
+ * 实现委托给 ui/Tabs 的 slider 变体，避免与基础组件重复实现键盘处理与
+ * ARIA 语义。对外保持原有的 options/onChange 签名，调用方无需改动。
  */
 export interface SegmentedControlProps<T extends string> {
   value: T
@@ -82,48 +76,23 @@ export function SegmentedControl<T extends string>({ value, options, onChange }:
   const activeIndex = Math.max(0, options.findIndex(o => o.value === value))
 
   return (
-    <div
-      className="bg-bg-200/60 p-1 rounded-lg flex border border-border-200/40 relative isolate"
-      role="tablist"
-      onKeyDown={e => {
-        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-          e.preventDefault()
-          const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1
-          const next = (activeIndex + dir + options.length) % options.length
-          const accepted = onChange(options[next].value)
-          e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')[accepted === false ? activeIndex : next]?.focus()
-        }
+    <Tabs
+      variant="slider"
+      size="md"
+      value={value}
+      onValueChange={next => {
+        onChange(next as T)
       }}
     >
-      <div
-        className="absolute top-1 bottom-1 left-1 bg-bg-000 rounded-md shadow-sm transition-transform duration-300 ease-out -z-10"
-        style={{
-          width: `calc((100% - 8px) / ${options.length})`,
-          transform: `translateX(${activeIndex * 100}%)`,
-        }}
-      />
-      {options.map(opt => (
-        <button
-          key={opt.value}
-          type="button"
-          role="tab"
-          aria-selected={opt.value === value}
-          aria-label={opt.label}
-          tabIndex={opt.value === value ? 0 : -1}
-          onClick={e => {
-            const accepted = onChange(opt.value, e)
-            if (accepted === false) {
-              e.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[activeIndex]?.focus()
-            }
-          }}
-          className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[length:var(--fs-md)] font-medium transition-colors duration-200
-            ${opt.value === value ? 'text-text-100' : 'text-text-400 hover:text-text-200'}`}
-        >
-          {opt.icon}
-          <span className="truncate">{opt.label}</span>
-        </button>
-      ))}
-    </div>
+      <TabsList variant="slider" activeIndex={activeIndex} itemCount={options.length}>
+        {options.map(opt => (
+          <TabsTrigger key={opt.value} variant="slider" size="md" value={opt.value} aria-label={opt.label}>
+            {opt.icon}
+            <span className="truncate">{opt.label}</span>
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   )
 }
 

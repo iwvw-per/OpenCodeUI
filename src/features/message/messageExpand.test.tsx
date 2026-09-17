@@ -2,13 +2,8 @@ import { render, screen } from '@testing-library/react'
 import { createRef } from 'react'
 import { describe, expect, it } from 'vitest'
 import { EXPAND_MOTION } from '../../constants/expandMotion'
-import {
-  chevronClass,
-  expandFadeGridClass,
-  expandGridClass,
-  MessageExpandPanel,
-  MSG_EXPAND,
-} from './messageExpand'
+import { MessageExpandPanel } from './messageExpand'
+import { chevronClass, expandFadeGridClass, expandGridClass, MSG_EXPAND } from './messageExpandShared'
 
 describe('messageExpand', () => {
   it('keeps panel transition aligned with global expand motion', () => {
