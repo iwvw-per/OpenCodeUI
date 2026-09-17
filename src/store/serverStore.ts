@@ -26,6 +26,7 @@ async function getUnifiedFetch(): Promise<typeof globalThis.fetch> {
 export interface ServerAuth {
   username: string // 用户名 (默认 opencode)
   password: string // 密码
+  token?: string // 模块令牌（AI Agent 网关）：存在时优先使用 Bearer
 }
 
 /**
@@ -379,10 +380,26 @@ class ServerStore {
    */
   addServer(config: Omit<ServerConfig, 'id'>): ServerConfig {
     const id = `server-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    return this.addServerWithId(id, config)
+  }
+
+  /**
+   * 以指定 ID 添加（或覆盖）服务器。
+   * 供外部集成（如 AI Agent 账号）使用稳定的服务器 ID，便于跨会话同步与移除。
+   */
+  addServerWithId(id: string, config: Omit<ServerConfig, 'id'>): ServerConfig {
+    const normalizedUrl = config.url.replace(/\/+$/, '')
+    const existingIndex = this.servers.findIndex(server => server.id === id)
+    if (existingIndex !== -1) {
+      this.servers[existingIndex] = { ...this.servers[existingIndex], ...config, id, url: normalizedUrl }
+      this.saveToStorage()
+      this.notify()
+      return this.servers[existingIndex]
+    }
     const server: ServerConfig = {
       ...config,
       id,
-      url: config.url.replace(/\/+$/, ''), // 移除尾部斜杠
+      url: normalizedUrl, // 移除尾部斜杠
     }
     this.servers.push(server)
     this.saveToStorage()
@@ -515,8 +532,10 @@ class ServerStore {
 
     try {
       const headers: Record<string, string> = {}
-      if (server.auth?.password) {
-        headers['Authorization'] = makeBasicAuthHeader(server.auth)
+      // 与请求路径保持一致：配置了令牌走 Bearer，否则回退 Basic。
+      // 此前只看 password 会导致仅带令牌的服务器（如 AI Agent 实例）健康检查不发鉴权头。
+      if (server.auth?.token || server.auth?.password) {
+        headers['Authorization'] = makeAuthHeader(server.auth)
       }
 
       const f = await getUnifiedFetch()
@@ -644,7 +663,11 @@ function normalizeServerBackup(raw: unknown): ServerSettingsBackup {
             typeof item.auth === 'object' &&
             typeof item.auth.username === 'string' &&
             typeof item.auth.password === 'string'
-              ? { username: item.auth.username, password: item.auth.password }
+              ? {
+                  username: item.auth.username,
+                  password: item.auth.password,
+                  token: typeof item.auth.token === 'string' && item.auth.token ? item.auth.token : undefined,
+                }
               : undefined,
         }))
     : []
@@ -700,6 +723,16 @@ export function makeBasicAuthHeader(auth: ServerAuth): string {
   return 'Basic ' + btoa(`${auth.username}:${auth.password}`)
 }
 
+/**
+ * 生成 Authorization header 值：配置了模块令牌时走 Bearer，否则回退 Basic
+ */
+export function makeAuthHeader(auth: ServerAuth): string {
+  if (auth.token) {
+    return `Bearer ${auth.token}`
+  }
+  return makeBasicAuthHeader(auth)
+}
+
 function normalizeServerTimestamp(timestamp: unknown): number | null {
   if (typeof timestamp === 'number') {
     return Number.isFinite(timestamp) ? timestamp : null
@@ -712,3 +745,4 @@ function normalizeServerTimestamp(timestamp: unknown): number | null {
 
   return null
 }
+

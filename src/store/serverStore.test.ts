@@ -171,6 +171,22 @@ describe('serverStore health check', () => {
     expect(health.status).toBe('unauthorized')
   })
 
+  it('sends the bearer token when the server only has a token and no password', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ healthy: true, version: '1.18.30' }))
+    const { serverStore } = await import('./serverStore')
+    const server = serverStore.addServerWithId('aiagent:inst_1', {
+      name: '笔电',
+      url: 'http://panel.test/api/aiagent/gw/inst_1',
+      auth: { username: 'salen', password: '', token: 'token-abc' },
+    })
+
+    const health = await serverStore.checkHealth(server.id)
+
+    expect(health.status).toBe('online')
+    const [, init] = vi.mocked(fetch).mock.calls[0]
+    expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer token-abc')
+  })
+
   it('does not let stale health checks overwrite newer results', async () => {
     const staleResponse = createDeferred<Response>()
     vi.mocked(fetch)

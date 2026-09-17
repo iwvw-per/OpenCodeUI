@@ -3,7 +3,7 @@
 // 仅保留给 SSE / PTY WebSocket 使用的 URL 与 auth 辅助函数
 // ============================================
 
-import { serverStore, makeBasicAuthHeader } from '../store/serverStore'
+import { serverStore, makeAuthHeader } from '../store/serverStore'
 
 /**
  * 获取 API Base URL
@@ -21,8 +21,8 @@ export function getApiBaseUrl(serverId?: string): string {
  */
 export function getAuthHeader(serverId?: string): Record<string, string> {
   const auth = serverId ? serverStore.getServerAuth(serverId) : serverStore.getActiveAuth()
-  if (auth?.password) {
-    return { Authorization: makeBasicAuthHeader(auth) }
+  if (auth?.token || auth?.password) {
+    return { Authorization: makeAuthHeader(auth) }
   }
   return {}
 }
