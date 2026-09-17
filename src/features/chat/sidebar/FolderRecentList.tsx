@@ -1095,7 +1095,7 @@ function FolderRecentSection({
             'md',
           )} ${
             isEditMode && isProjectChecked
-              ? 'bg-bg-200/80'
+              ? 'bg-accent-main-100/12 text-text-100'
               : 'hover:bg-bg-200/40'
           }`}
           {...(isEditMode

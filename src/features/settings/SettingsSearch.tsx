@@ -170,7 +170,7 @@ export function SettingsSearch<T extends SearchMenuItem>({ items, placeholder, c
                 onMouseDown={event => event.preventDefault()}
                 onClick={() => select(item)}
                 className={`flex w-full min-w-0 items-center justify-between gap-3 rounded px-2.5 py-2 text-left transition-colors ${
-                  index === safeActiveIndex ? 'bg-bg-200/80' : 'hover:bg-bg-200/50'
+                  index === safeActiveIndex ? 'bg-accent-main-100/12 text-text-100' : 'hover:bg-bg-200/50'
                 }`}
               >
                 <span className="min-w-0 flex-1">
