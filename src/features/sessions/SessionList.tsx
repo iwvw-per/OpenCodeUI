@@ -658,10 +658,10 @@ export function SessionListItem({
         )} ${
           isEditMode
             ? isChecked
-              ? 'bg-bg-200/80 text-text-100'
+              ? 'bg-accent-main-100/12 text-text-100'
               : 'text-text-300 hover:bg-bg-200/40 hover:text-text-200'
             : isSelected
-              ? 'bg-bg-200/80 text-text-100'
+              ? 'bg-accent-main-100/12 text-text-100'
               : 'text-text-300 hover:bg-bg-200/40 hover:text-text-200'
         } ${showActions && !isEditMode ? 'bg-bg-200/40' : ''}`}
       >
@@ -788,10 +788,10 @@ export function SessionListItem({
       )} ${
         isEditMode
           ? isChecked
-            ? 'bg-bg-200/80'
+            ? 'bg-accent-main-100/12 text-text-100'
             : 'hover:bg-bg-200/50'
           : isSelected
-            ? 'bg-bg-000 shadow-sm ring-1 ring-border-200/50'
+            ? 'bg-accent-main-100/12 text-text-100'
             : 'hover:bg-bg-200/50'
       } ${showActions && !isEditMode ? 'bg-bg-200/50' : ''}`}
     >
