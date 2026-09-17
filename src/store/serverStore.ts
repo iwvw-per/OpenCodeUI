@@ -709,19 +709,58 @@ function normalizeServerBackup(raw: unknown): ServerSettingsBackup {
   }
 }
 
+/**
+ * 导出服务器设置备份。
+ *
+ * 刻意剥离 auth（密码 / 令牌）：备份文件是明文 JSON，用户可能把它存到网盘
+ * 或发给别人用于同步配置，带上凭证等于泄露。导入时见 importServerSettingsBackup
+ * ——它会把本机已有的凭证按 id 合并回去，因此同机恢复不受影响。
+ */
 export function exportServerSettingsBackup(): ServerSettingsBackup {
   return {
     servers: serverStore.getStoredServers().map(server => ({
       ...server,
-      auth: server.auth ? { ...server.auth } : undefined,
+      auth: undefined,
     })),
     activeServerId: serverStore.getActiveServerId(),
   }
 }
 
+/**
+ * 从存储中按 id 取出已有的认证信息。
+ *
+ * 刻意读 localStorage 而非内存：导入备份是直接写存储的底层操作，读取来源
+ * 应与写入目标一致，避免依赖「store 已加载」的隐式前提。
+ */
+function readStoredAuthById(): Map<string, ServerAuth> {
+  const result = new Map<string, ServerAuth>()
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return result
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return result
+    for (const item of parsed) {
+      if (!item || typeof item !== 'object') continue
+      const record = item as { id?: unknown; auth?: unknown }
+      if (typeof record.id !== 'string' || !record.auth || typeof record.auth !== 'object') continue
+      result.set(record.id, record.auth as ServerAuth)
+    }
+  } catch {
+    // 存储损坏时按「无历史凭证」处理，由调用方走正常回退
+  }
+  return result
+}
+
 export function importServerSettingsBackup(raw: unknown): void {
   const normalized = normalizeServerBackup(raw)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized.servers))
+  // 备份不含凭证（见 exportServerSettingsBackup），导入时按 id 合并本机已有凭证：
+  // 既避免丢失当前配置，也避免把他人备份里的凭证写到本机。
+  const existingAuthById = readStoredAuthById()
+  const mergedServers = normalized.servers.map(server => {
+    const localAuth = existingAuthById.get(server.id)
+    return localAuth ? { ...server, auth: localAuth } : server
+  })
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedServers))
   if (normalized.activeServerId) {
     localStorage.setItem(ACTIVE_SERVER_KEY, normalized.activeServerId)
     sessionStorage.setItem(ACTIVE_SERVER_KEY, normalized.activeServerId)

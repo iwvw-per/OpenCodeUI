@@ -408,7 +408,7 @@
     "versionCardDesc": "检查是否有新的 OpenCodeUI 发布版本，并直接跳到下载页面。",
     "backupCardTitle": "备份和恢复",
     "backupCardDesc": "把本地设置导出为 JSON 备份，或在另一台设备上重新导入恢复。",
-    "backupWarning": "备份文件会包含当前浏览器或应用资料中的本地服务器凭证、服务环境变量等敏感设置，请妥善保管。",
+    "backupWarning": "出于安全考虑，备份文件不包含服务器密码与令牌，在另一台设备导入后需要重新填写。备份仍包含服务环境变量等敏感设置，请妥善保管。",
     "currentVersion": "当前版本",
     "latestVersion": "最新发布",
     "unknownVersion": "未知",
