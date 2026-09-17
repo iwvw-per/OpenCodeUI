@@ -65,4 +65,18 @@ describe('ContextMenuItem', () => {
     fireEvent.click(button)
     expect(onClick).toHaveBeenCalled()
   })
+  it('gives ghost buttons a visible hover affordance', () => {
+    render(
+      <IconButton aria-label="刷新" onClick={() => {}}>
+        <span>icon</span>
+      </IconButton>,
+    )
+    const button = screen.getByRole('button', { name: '刷新' })
+    // 回归保护：此前 hover 仅用 bg-bg-200/60，叠在 bg-bg-100 上约 1.8% 亮度差，
+    // 浅色主题下几乎不可见。现在同时加深背景并加 ring 边框。
+    expect(button.className).toContain('hover:bg-bg-200')
+    expect(button.className).toContain('hover:ring-1')
+    // 用 ring 而非 border，避免占布局空间导致 hover 时元素位移
+    expect(button.className).not.toContain('hover:border')
+  })
 })
