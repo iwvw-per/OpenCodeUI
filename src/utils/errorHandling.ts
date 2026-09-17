@@ -2,6 +2,8 @@
 // 统一错误处理工具
 // ============================================
 
+import { logger } from './logger'
+
 export type ErrorCategory =
   | 'api' // API 调用错误
   | 'session' // Session 相关错误
@@ -32,14 +34,19 @@ export interface ErrorContext {
  * - 根据错误类型做不同处理
  */
 export function logError(error: unknown, context: ErrorContext): void {
-  const { category, operation, silent = false } = context
+  const { category, operation, silent = false, details } = context
 
-  // 开发环境下始终输出到控制台
+  const detailArgs = details === undefined ? [] : [details]
+
+  // 开发环境：直接输出 error 对象，便于在控制台展开堆栈
   if (import.meta.env.DEV) {
-    console.error(`[${category}] ${operation}:`, error)
+    console.error(`[${category}] ${operation}:`, error, ...detailArgs)
+  } else {
+    // 生产环境也必须留下记录：静默错误只表示「不打扰用户」，不代表可以丢弃诊断信息
+    logger.error(`[${category}] ${operation}:`, error, ...detailArgs)
   }
 
-  // 非静默错误，未来可以显示 toast
+  // silent 仅用于决定是否向用户展示提示（未来接入 toast），不影响上面的日志输出
   if (!silent) {
     // TODO: 集成 toast 通知系统
     // showToast({ type: 'error', message: `${operation} failed` })

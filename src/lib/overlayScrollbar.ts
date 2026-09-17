@@ -48,8 +48,7 @@ function getOverflow(el: HTMLElement): { x: string; y: string; direction: string
   return value
 }
 
-const overflowCache = new WeakMap<HTMLElement, { x: string; y: string; direction: string; flexDirection: string }>()
-
+let overflowCache = new WeakMap<HTMLElement, { x: string; y: string; direction: string; flexDirection: string }>()
 function isScrollableY(el: HTMLElement): boolean {
   if (el === document.documentElement || el === document.body) return false
   if (el.tagName === 'INPUT') return false
@@ -244,7 +243,7 @@ interface Entry {
   /** 需要复查方向（尺寸/样式变化后）。稳定 entry 不再每批 mutation 都 getComputedStyle */
   dirty: boolean
 }
-const entries = new Map<HTMLElement, Entry>()
+let entries = new Map<HTMLElement, Entry>()
 
 /** 标记某容器需要复查方向 */
 function markDirty(el: HTMLElement) {
@@ -496,6 +495,8 @@ let inited = false
 export function initOverlayScrollbars() {
   if (inited) return
   inited = true
+  // 清掉流式/DOM 变更期间可能被（主动）移除的节点残留的 overflow 缓存
+  overflowCache = new WeakMap()
 
   scan()
 
@@ -531,14 +532,22 @@ export function initOverlayScrollbars() {
   const onResize = () => debounceScan()
   window.addEventListener('resize', onResize, { passive: true })
 
+  const disposableEntries = entries
+  const disposableOverflowCache = overflowCache
+
   teardown = () => {
     observer.disconnect()
     window.removeEventListener('resize', onResize)
     if (timer) clearTimeout(timer)
     timer = null
     pendingMutations = []
-    // 清掉所有 entry 的 thumb 与监听，允许重新 init（测试 / HMR）
-    for (const vp of Array.from(entries.keys())) detach(vp)
+    // 清掉所有 entry 的 thumb / scroll 与 pointer 监听 / ResizeObserver / rAF，
+    // 允许重新 init（测试 / HMR）
+    for (const vp of Array.from(disposableEntries.keys())) detach(vp)
+    disposableEntries.clear()
+    // 仅在未被后续 init 替换时复位共享集合，避免误清新一代状态
+    if (entries === disposableEntries) entries = new Map()
+    if (overflowCache === disposableOverflowCache) overflowCache = new WeakMap()
     inited = false
     teardown = null
   }
@@ -549,7 +558,12 @@ export function initOverlayScrollbars() {
 
 let teardown: (() => void) | null = null
 
-/** 停止全局滚动条注入并清理所有 thumb（测试 / HMR 用；正常运行时无需调用） */
+/**
+ * 停止全局滚动条注入并清理所有资源：
+ * MutationObserver / window resize 监听 / 定时器 / 每个容器的
+ * scroll+pointer 监听 / ResizeObserver / 挂起的 rAF / thumb DOM。
+ * 调用后可再次 init（测试 / HMR）。
+ */
 export function disposeOverlayScrollbars() {
   teardown?.()
 }
