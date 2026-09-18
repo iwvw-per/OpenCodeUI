@@ -75,3 +75,90 @@ describe('notificationStore 未读 completed 标记', () => {
     expect(typeof useUnreadCompletedSessionIds).toBe('function')
   })
 })
+
+describe('notificationStore 会话删除时清理通知', () => {
+  beforeEach(() => {
+    notificationStore.clearAll()
+  })
+
+  it('按复合 key 精确删除', () => {
+    notificationStore.push('completed', 'Done', 'completed', SESSION, '/repo')
+    notificationStore.removeSessionNotifications(SESSION)
+    expect(unreadIds().has(SESSION)).toBe(false)
+  })
+
+  it('传裸 id 也能删掉复合 key 的通知', () => {
+    // 删除入口拿到的通常是裸 id，而通知里存的是 serverId::sessionId
+    notificationStore.push('completed', 'Done', 'completed', SESSION, '/repo')
+    notificationStore.removeSessionNotifications('ses_1')
+    expect(notificationStore.getSnapshot().notifications.length).toBe(0)
+  })
+
+  it('不影响其它 session 的通知', () => {
+    notificationStore.push('completed', 'Done', 'completed', SESSION, '/repo')
+    notificationStore.push('completed', 'Done', 'completed', 'srv::ses_2', '/repo')
+    notificationStore.removeSessionNotifications('ses_1')
+    const remaining = notificationStore.getSnapshot().notifications
+    expect(remaining.length).toBe(1)
+    expect(remaining[0].sessionId).toBe('srv::ses_2')
+  })
+
+  it('空 id 不做任何事', () => {
+    notificationStore.push('completed', 'Done', 'completed', SESSION, '/repo')
+    notificationStore.removeSessionNotifications('')
+    expect(notificationStore.getSnapshot().notifications.length).toBe(1)
+  })
+
+  it('后缀匹配不会误伤前缀相同的 session', () => {
+    // 'ses_1' 不应匹配到 'ses_10'
+    notificationStore.push('completed', 'Done', 'completed', 'srv::ses_10', '/repo')
+    notificationStore.removeSessionNotifications('ses_1')
+    expect(notificationStore.getSnapshot().notifications.length).toBe(1)
+  })
+})
+
+describe('notificationStore 跨前缀匹配（同一会话多条 SSE）', () => {
+  beforeEach(() => {
+    notificationStore.clearAll()
+  })
+
+  // 场景来源：两台已连接服务器指向同一后端时，同一个 session 会被两条 SSE
+  // 各推一份通知，前缀不同（local:: 与 aiagent:inst_...::）。清理必须只按
+  // 裸 sessionId 匹配，否则当前焦点前缀之外的那份永远清不掉。
+  const REMOTE = 'aiagent:inst_x::ses_shared'
+  const LOCAL = 'local::ses_shared'
+
+  it('标记已读时按裸 id 匹配另一前缀的通知', () => {
+    notificationStore.push('completed', 'Done', 'completed', REMOTE, '/repo')
+    notificationStore.push('completed', 'Done', 'completed', LOCAL, '/repo')
+
+    notificationStore.markSessionNotificationsRead(REMOTE, 'completed')
+
+    // 两份都应被标为已读
+    const unread = notificationStore.getSnapshot().notifications.filter(n => !n.read)
+    expect(unread.length).toBe(0)
+  })
+
+  it('删除会话时两个前缀的通知都被清掉', () => {
+    notificationStore.push('completed', 'Done', 'completed', REMOTE, '/repo')
+    notificationStore.push('question', 'Q', 'question', LOCAL, '/repo')
+    notificationStore.push('completed', 'Other', 'completed', 'local::ses_other', '/repo')
+
+    notificationStore.removeSessionNotifications('ses_shared')
+
+    const remaining = notificationStore.getSnapshot().notifications
+    expect(remaining.length).toBe(1)
+    expect(remaining[0].sessionId).toBe('local::ses_other')
+  })
+
+  it('不同 session 不会被误伤', () => {
+    notificationStore.push('completed', 'Done', 'completed', 'local::ses_a', '/repo')
+    notificationStore.push('completed', 'Done', 'completed', 'local::ses_b', '/repo')
+
+    notificationStore.removeSessionNotifications('ses_a')
+
+    const remaining = notificationStore.getSnapshot().notifications
+    expect(remaining.length).toBe(1)
+    expect(remaining[0].sessionId).toBe('local::ses_b')
+  })
+})

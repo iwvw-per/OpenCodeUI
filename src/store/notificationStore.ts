@@ -9,6 +9,7 @@
 // 由 useGlobalEvents 统一推送，不再由 activeSessionStore 管通知
 
 import { useSyncExternalStore } from 'react'
+import { sessionKeyToSessionId } from '../utils/sessionKey'
 
 // ============================================
 // Types
@@ -198,10 +199,20 @@ class NotificationStore {
     this.notify()
   }
 
+  /**
+   * 把某个会话的通知标为已读。
+   *
+   * 匹配用「裸 sessionId」而非完整复合 key：同一个会话可能被多条 SSE
+   * 推送成不同前缀的通知（`local::ses_x` 与 `aiagent:inst_...::ses_x`）——
+   * 当两台已连接服务器实际指向同一后端时就会发生。只按当前焦点的那个前缀清，
+   * 另一个前缀的未读点会永久残留。
+   */
   markSessionNotificationsRead(sessionId: string, type?: NotificationType) {
+    const bareId = sessionKeyToSessionId(sessionId)
+    if (!bareId) return
     let changed = false
     const notifications = this.state.notifications.map(n => {
-      if (n.sessionId !== sessionId) return n
+      if (sessionKeyToSessionId(n.sessionId) !== bareId) return n
       if (type && n.type !== type) return n
       if (n.read) return n
       changed = true
@@ -215,6 +226,37 @@ class NotificationStore {
 
   dismiss(id: string) {
     const notifications = this.state.notifications.filter(n => n.id !== id)
+    this.state = { ...this.state, notifications }
+    this.persist()
+    this.notify()
+  }
+
+  /**
+   * 会话被删除/归档时清掉它的通知。
+   *
+   * 为什么必须清：通知按 directory 汇总到项目行（见 FolderRecentList 的
+   * buildFolderStatus），而会话被删掉后列表里已无对应行。不清的话项目行会一直
+   * 亮着未读点，展开却找不到是哪个会话 —— 孤儿通知。
+   *
+   * sessionId 两种形式都接受：裸 id 与复合 key（serverId::sessionId）。
+   * 通知里存的是复合 key（useGlobalEvents 的 scopedId），但删除入口拿到的
+   * 往往是裸 id，所以按「完全相等」或「以 ::裸id 结尾」两种方式匹配。
+   */
+  /**
+   * 会话被删除/归档时清掉它的通知。
+   *
+   * 为什么必须清：通知按 directory 汇总到项目行（见 FolderRecentList 的
+   * buildFolderStatus），而会话被删掉后列表里已无对应行。不清的话项目行会一直
+   * 亮着未读点，展开却找不到是哪个会话 —— 孤儿通知。
+   *
+   * 匹配用「裸 sessionId」：删除入口拿到的是裸 id，而通知里存的是复合 key
+   * （serverId::sessionId），且同一会话可能因多条 SSE 而有多个前缀。
+   */
+  removeSessionNotifications(sessionId: string) {
+    const bareId = sessionKeyToSessionId(sessionId)
+    if (!bareId) return
+    const notifications = this.state.notifications.filter(n => sessionKeyToSessionId(n.sessionId) !== bareId)
+    if (notifications.length === this.state.notifications.length) return
     this.state = { ...this.state, notifications }
     this.persist()
     this.notify()
