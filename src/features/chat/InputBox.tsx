@@ -26,6 +26,7 @@ import {
   getMimeFromPath,
   isFileSupported,
   readFileAsDataUrl,
+  compressImageFile,
 } from './input/inputUtils'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
 import { themeStore } from '../../store/themeStore'
@@ -918,25 +919,50 @@ function InputBoxComponent({
       if (files.length === 0 || !supportsAnyFile || isSubmitting) return
 
       const nextAttachments: Attachment[] = []
+      const rejected: { name: string; type: 'size' | 'type' }[] = []
 
       for (const rawFile of files) {
         const file = ensureFileMime(rawFile)
 
         // 按 MIME 类型检查模型能力
-        if (!isFileSupported(file.type, fileCaps)) continue
+        if (!isFileSupported(file.type, fileCaps)) {
+          rejected.push({ name: file.name, type: 'type' })
+          continue
+        }
+
+        // 大小上限：此前只有 Tauri 外拖路径校验，选择器/粘贴/浏览器拖拽可塞入任意大文件
+        if (file.size > MAX_DROPPED_FILE_SIZE) {
+          rejected.push({ name: file.name, type: 'size' })
+          continue
+        }
 
         try {
-          const dataUrl = await readFileAsDataUrl(file)
+          // 图片走压缩链（缩放 + WebP），其它文件直接读为 data URL
+          const { dataUrl, mime } = file.type.startsWith('image/')
+            ? await compressImageFile(file)
+            : { dataUrl: await readFileAsDataUrl(file), mime: file.type }
 
           nextAttachments.push({
             id: crypto.randomUUID(),
             type: 'file',
             displayName: file.name,
             url: dataUrl,
-            mime: file.type,
+            mime,
           })
         } catch (err) {
           console.warn('[InputBox] Failed to process file:', err)
+        }
+      }
+
+      if (rejected.length > 0) {
+        const tooLarge = rejected.filter(item => item.type === 'size')
+        if (tooLarge.length > 0) {
+          notificationStore.push(
+            'error',
+            t('inputBox.fileTooLarge'),
+            t('inputBox.fileTooLargeBody', { name: tooLarge[0].name, size: MAX_DROPPED_FILE_SIZE_LABEL }),
+            sessionId ?? '',
+          )
         }
       }
 
@@ -944,7 +970,7 @@ function InputBoxComponent({
         setAttachments(prev => [...prev, ...nextAttachments])
       }
     },
-    [supportsAnyFile, fileCaps, isSubmitting],
+    [supportsAnyFile, fileCaps, isSubmitting, sessionId, t],
   )
 
   // 删除附件

@@ -202,7 +202,9 @@
     "sortByUpdated": "Last updated",
     "sortByCreated": "Created",
     "sortDesc": "Newest first",
-    "sortAsc": "Oldest first"
+    "sortAsc": "Oldest first",
+    "archivedChats": "Archived chats",
+    "archiveConversation": "Archive"
   },
   "activeSession": {
     "awaitingPermission": "Awaiting Permission",
@@ -238,5 +240,15 @@
     "autoApproveAll": "Auto-approve: all sessions",
     "autoApproveSession": "Auto-approve: this session",
     "autoApproveOffHint": "Auto-approve: off"
+  },
+  "archived": {
+    "title": "Archived chats",
+    "empty": "No archived chats",
+    "loadFailed": "Failed to load archived chats",
+    "restore": "Restore",
+    "delete": "Delete"
+  },
+  "errors": {
+    "reloadConversation": "Reload conversation"
   }
 }
