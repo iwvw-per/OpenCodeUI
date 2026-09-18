@@ -172,7 +172,12 @@ export function ProcessCollapseBlock({
         onToggle={toggleExpanded}
         headerRef={headerRef}
       />
-      <MessageExpandPanel open={expanded} animate={animateGrid} clip>
+      <MessageExpandPanel
+        open={expanded}
+        animate={animateGrid}
+        clip
+        innerClassName="min-h-0 min-w-0 overflow-hidden -mx-1.5 px-1.5"
+      >
         {shouldRenderBody && <div className={MSG_SPACING.processBody}>{children}</div>}
       </MessageExpandPanel>
     </div>
