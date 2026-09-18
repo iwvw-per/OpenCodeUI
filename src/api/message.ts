@@ -20,6 +20,33 @@ import type {
   TextPartInput,
 } from './types'
 
+/** 判定是否为「传输层把响应体截断」导致的解析失败：
+ * 大响应在 Tauri-plugin-http 上有 340KB 级截断的抖动，会抛未闭合字符串的 JSON 解析错误。
+ * 这类错误是瞬态的，重试同一请求即可恢复。 */
+function isTruncatedJsonError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error)
+  return msg.includes('Unterminated string in JSON') || msg.includes('Unexpected end of JSON input')
+}
+
+/**
+ * 大体积响应可能被传输层截断，做有限次重试。
+ * 仅对「截断型」失败生效，其它错误立即抛出。
+ */
+async function getWithTruncationRetry<T>(fn: () => Promise<T>, retries = 3, delay = 400): Promise<T> {
+  let lastError: unknown
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await fn()
+    } catch (error) {
+      lastError = error
+      if (!isTruncatedJsonError(error)) throw error
+      if (import.meta.env.DEV) console.warn(`[Message] Truncated response, retry ${attempt + 1}/${retries}`)
+      if (attempt < retries - 1) await new Promise(resolve => setTimeout(resolve, delay * (attempt + 1)))
+    }
+  }
+  throw lastError
+}
+
 type PromptParams = Parameters<ReturnType<typeof getSDKClient>['session']['prompt']>[0]
 type UserContentSource = {
   parts: Array<
@@ -58,14 +85,15 @@ export async function getSessionMessages(
   serverId?: string,
 ): Promise<ApiMessageWithParts[]> {
   const target = resolveSessionTarget(sessionId, serverId)
-  const sdk = getSDKClient(target.serverId)
-  return unwrap<ApiMessageWithParts[]>(
-    await sdk.session.messages({
+  return getWithTruncationRetry(async () => {
+    const sdk = getSDKClient(target.serverId)
+    const result = await sdk.session.messages({
       sessionID: target.sessionId,
       directory: formatPathForApi(directory, target.serverId),
       limit,
-    }),
-  )
+    })
+    return unwrap<ApiMessageWithParts[]>(result)
+  })
 }
 
 // ============================================
