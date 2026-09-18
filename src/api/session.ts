@@ -10,9 +10,13 @@ import { formatPathForApi } from '../utils/directoryUtils'
 import { getSessionMessages } from './message'
 import { normalizeFileDiffs } from '../types/api/file'
 import { INITIAL_MESSAGE_LIMIT } from '../constants/pagination'
+import { serverStore } from '../store/serverStore'
+import { readSessionListCache, writeSessionListCache, invalidateSessionListCache } from './sessionListCache'
 import type { ApiSession, SessionListParams, FileDiff, ApiMessageWithParts, ApiUserMessage } from './types'
 import type { SessionStatusMap } from '../types/api/session'
 import type { TodoItem } from '../types/api/event'
+
+export { invalidateSessionListCache }
 
 function normalizeSessionList(value: unknown): ApiSession[] {
   if (Array.isArray(value)) return value as ApiSession[]
@@ -88,22 +92,60 @@ export async function getLastTurnDiff(sessionId: string, directory?: string, ser
 
 /**
  * 获取 session 列表
- * 归档的会话（time.archived）不进入任何列表（侧栏/搜索/会话切换），避免归档后回显。
+ * 默认不返回归档会话（time.archived），避免归档后回显到侧栏/搜索/会话切换。
+ * 传 includeArchived 时透传服务端 archived 参数（服务端语义为"也包含归档"），
+ * 并在归档视图下按 time.archived 收窄，供「已归档」列表使用。
  */
-export async function getSessions(params: SessionListParams = {}, serverId?: string): Promise<ApiSession[]> {
+export async function getSessions(
+  params: SessionListParams & { includeArchived?: boolean; archivedOnly?: boolean; skipCache?: boolean } = {},
+  serverId?: string,
+): Promise<ApiSession[]> {
   const sdk = getSDKClient(serverId)
-  const { directory, roots, start, search, limit } = params
-  return normalizeSessionList(
-    unwrap(
-      await sdk.session.list({
-        directory: formatPathForApi(directory, serverId),
-        roots,
-        start,
-        search,
-        limit,
-      }),
-    ),
-  ).filter(session => !session.time?.archived)
+  const { directory, roots, start, search, limit, includeArchived, archivedOnly, skipCache } = params
+  const sdkQuery = {
+    directory: formatPathForApi(directory, serverId),
+    roots,
+    start,
+    search,
+    limit,
+    archived: includeArchived ?? archivedOnly,
+  }
+  const cacheQuery = { ...sdkQuery, includeArchived, archivedOnly, skipCache }
+
+  const cacheServerId = serverId ?? serverStore.getActiveServerId()
+  const cached = readSessionListCache(cacheServerId, cacheQuery)
+  // 返回浅拷贝：调用方（如 getArchivedSessions 的 sort）可能就地修改数组，
+  // 直接返回缓存引用会把缓存内容改坏
+  if (cached) return cached.slice()
+
+  const sessions = normalizeSessionList(unwrap(await sdk.experimental.session.list(sdkQuery)))
+  const result = archivedOnly
+    ? sessions.filter(session => Boolean(session.time?.archived))
+    : includeArchived
+      ? sessions
+      : sessions.filter(session => !session.time?.archived)
+
+  writeSessionListCache(cacheServerId, cacheQuery, result)
+  return result.slice()
+}
+
+/**
+ * 获取已归档的 session 列表（按归档时间倒序）
+ */
+export async function getArchivedSessions(params: SessionListParams = {}, serverId?: string): Promise<ApiSession[]> {
+  const sessions = await getSessions({ ...params, archivedOnly: true }, serverId)
+  return [...sessions].sort((a, b) => (b.time?.archived ?? 0) - (a.time?.archived ?? 0))
+}
+
+/**
+ * 恢复已归档的 session（把 time.archived 清为 0）
+ */
+export async function restoreSession(
+  sessionId: string,
+  directory?: string,
+  serverId?: string,
+): Promise<ApiSession> {
+  return updateSession(sessionId, { time: { archived: 0 } }, directory, serverId)
 }
 
 /**
@@ -128,13 +170,16 @@ export async function createSession(
 ): Promise<ApiSession> {
   const sdk = getSDKClient(serverId)
   const { directory, title, parentID } = params
-  return unwrap(
+  const session = unwrap(
     await sdk.session.create({
       directory: formatPathForApi(directory, serverId),
       title,
       parentID,
     }),
   )
+  // 无显式 serverId 时按活动服务器失效，避免误伤其它服务器的列表缓存
+  invalidateSessionListCache(serverId ?? serverStore.getActiveServerId())
+  return session
 }
 
 /**
@@ -148,13 +193,15 @@ export async function updateSession(
 ): Promise<ApiSession> {
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
-  return unwrap(
+  const session = unwrap(
     await sdk.session.update({
       sessionID: target.sessionId,
       directory: formatPathForApi(directory, target.serverId),
       ...params,
     }),
   )
+  invalidateSessionListCache(target.serverId)
+  return session
 }
 
 /**
@@ -164,6 +211,7 @@ export async function deleteSession(sessionId: string, directory?: string, serve
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
   unwrap(await sdk.session.delete({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }))
+  invalidateSessionListCache(target.serverId)
   return true
 }
 

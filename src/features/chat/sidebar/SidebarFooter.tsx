@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
 import { ShareDialog } from '../ShareDialog'
 import { ContextDetailsDialog } from './ContextDetailsDialog'
+import { ArchivedSessionsDialog } from './ArchivedSessionsDialog'
 import {
   CogIcon,
   SunIcon,
@@ -11,6 +12,7 @@ import {
   MaximizeIcon,
   MinimizeIcon,
   ShareIcon,
+  ArchiveIcon,
 } from '../../../components/Icons'
 import { CircularProgress } from '../../../components/CircularProgress'
 import { SegmentedControl } from '../../settings/components/SettingsUI'
@@ -20,7 +22,7 @@ import { useHasMessages } from '../../../store'
 // 状态指示器 - 上下文占用圆环
 function StatusIndicator({
   percent,
-  size = 24,
+  size = 20,
 }: {
   percent: number
   size?: number
@@ -72,6 +74,7 @@ export function SidebarFooter({
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 260, fromBottom: false })
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [contextDialogOpen, setContextDialogOpen] = useState(false)
+  const [archivedDialogOpen, setArchivedDialogOpen] = useState(false)
   const [isVisible, setIsVisible] = useState(false)
   const prevShowLabelsRef = useRef(showLabels)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -290,6 +293,17 @@ export function SidebarFooter({
             <button
               onClick={() => {
                 closeMenu()
+                setArchivedDialogOpen(true)
+              }}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200 transition-colors text-left"
+            >
+              <ArchiveIcon size={14} />
+              <span>{t('sidebar.archivedChats')}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                closeMenu()
                 onOpenSettings?.()
               }}
               className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200 transition-colors text-left"
@@ -323,13 +337,13 @@ export function SidebarFooter({
           `}
           style={{
             width: showLabels ? '100%' : 32,
-            paddingLeft: showLabels ? 6 : 4, // 收起时为了对齐中心线(16px)，24px圆环需要4px padding (4+12=16)
+            paddingLeft: showLabels ? 6 : 6, // 收起时为了对齐中心线(16px)，20px圆环需要6px padding (6+10=16)
             paddingRight: showLabels ? 8 : 4,
           }}
           title={`Context: ${formatTokens(hasMessages ? stats.contextUsed : 0)} tokens • ${Math.round(stats.contextPercent)}% • ${formatCost(stats.totalCost)}`}
         >
           {/* 状态指示器 */}
-          <StatusIndicator percent={stats.contextPercent} size={24} />
+          <StatusIndicator percent={stats.contextPercent} size={20} />
 
           {/* 展开时显示详细信息 */}
           <span
@@ -356,6 +370,7 @@ export function SidebarFooter({
 
       {floatingMenu}
       <ShareDialog isOpen={shareDialogOpen} onClose={() => setShareDialogOpen(false)} />
+      <ArchivedSessionsDialog isOpen={archivedDialogOpen} onClose={() => setArchivedDialogOpen(false)} />
       <ContextDetailsDialog
         isOpen={contextDialogOpen}
         onClose={() => setContextDialogOpen(false)}

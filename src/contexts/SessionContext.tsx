@@ -34,7 +34,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const queuedReconnectRefreshRef = useRef(false)
   const retryTimerRef = useRef<number | null>(null)
   const fetchSessionsRef = useRef<
-    (params?: SessionListParams & { append?: boolean; retryAttempt?: number }) => Promise<void>
+    (params?: SessionListParams & { append?: boolean; retryAttempt?: number; skipCache?: boolean }) => Promise<void>
   >(() => Promise.resolve())
   const currentLimitRef = useRef(30) // 当前 limit，loadMore 时递增
 
@@ -65,7 +65,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // 注意：directory 传给 getSessions 时使用正斜杠格式
   // http 层的 fetchWithBothSlashesAndMerge 会处理两种斜杠格式的兼容
   const fetchSessions = useCallback(
-    async (params: SessionListParams & { append?: boolean; retryAttempt?: number } = {}) => {
+    async (params: SessionListParams & { append?: boolean; retryAttempt?: number; skipCache?: boolean } = {}) => {
       const { append = false, retryAttempt = 0, ...queryParams } = params
       const requestId = ++requestIdRef.current
       isFetchingRef.current = true
@@ -253,13 +253,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return serverStore.onServerChange(() => {
       currentLimitRef.current = 30
+      // 仍然清空：避免短暂显示另一台服务器的会话。
+      // 列表缓存在 API 层命中时是同 tick 返回，网络往返已被省掉。
       setSessions([])
       void fetchSessionsRef.current()
     })
   }, [])
 
   // Actions
-  const refresh = useCallback(() => fetchSessions(), [fetchSessions])
+  const refresh = useCallback(() => fetchSessions({ skipCache: true }), [fetchSessions])
 
   const loadMore = useCallback(async () => {
     // 使用 ref 检查，防止并发请求
