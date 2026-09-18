@@ -29,6 +29,8 @@ import {
 } from './parts'
 import { extractToolData } from './tools'
 import { MSG_SPACING } from './messageSpacing'
+import { cn } from '../../utils/cn'
+import { interactive } from '../../utils/interaction'
 import { MessageExpandPanel } from './messageExpand'
 import { useMessageExpandRender } from './messageExpandShared'
 import {
@@ -103,7 +105,10 @@ const ProcessCollapseHeader = memo(function ProcessCollapseHeader({
       ref={headerRef}
       type="button"
       onClick={onToggle}
-      className={`flex w-full items-center gap-1.5 rounded-md ${MSG_SPACING.header} text-left text-[length:var(--fs-sm)] leading-5 text-text-400 hover:bg-bg-200 hover:text-text-200 transition-colors`}
+      className={cn(
+        `flex w-full items-center gap-1.5 rounded-md ${MSG_SPACING.header} text-left text-[length:var(--fs-sm)] leading-5 text-text-400 hover:text-text-200`,
+        interactive.contentRow,
+      )}
     >
       <span className={isActive ? 'reasoning-shimmer-text' : 'text-text-400'}>{label}</span>
       <span className="inline-flex items-center justify-center text-text-500">
@@ -1003,7 +1008,10 @@ const ToolGroup = memo(function ToolGroup({
             type="button"
             ref={stepsHeaderRef}
             onClick={() => withStepsScrollLock(() => setExpanded(!expanded))}
-            className={`flex w-full items-baseline rounded-md ${MSG_SPACING.header} text-left hover:bg-bg-200 transition-colors`}
+            className={cn(
+              `flex w-full items-baseline rounded-md ${MSG_SPACING.header} text-left`,
+              interactive.contentRow,
+            )}
           >
             <span className="text-[length:var(--fs-sm)] leading-5">
               {stepsSummary?.map((seg, i) => (
@@ -1035,7 +1043,10 @@ const ToolGroup = memo(function ToolGroup({
             type="button"
             ref={stepsHeaderRef}
             onClick={() => withStepsScrollLock(() => setExpanded(!expanded))}
-            className={`flex items-center gap-1.5 ${MSG_SPACING.header} text-text-400 text-[length:var(--fs-base)] hover:text-text-200 hover:bg-bg-200 rounded-md transition-colors`}
+            className={cn(
+              `flex items-center gap-1.5 ${MSG_SPACING.header} text-text-400 text-[length:var(--fs-base)] hover:text-text-200 rounded-md`,
+              interactive.contentRow,
+            )}
           >
             <span className="inline-flex w-[14px] items-center justify-center shrink-0">
               {effectiveExpanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
@@ -1061,7 +1072,7 @@ const ToolGroup = memo(function ToolGroup({
           panelClassName={stepsPanelClassName}
           contentRef={stepsExpandContentRef}
           clip
-          innerClassName="flex flex-col min-h-0 min-w-0 overflow-hidden"
+          innerClassName="flex flex-col min-h-0 min-w-0 overflow-hidden -mx-1.5 px-1.5"
         >
           {toolParts}
         </MessageExpandPanel>

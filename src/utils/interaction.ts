@@ -64,6 +64,22 @@ export const interactive = {
   ),
 
   /**
+   * 内容行（消息流里的过程壳 header 等）：与 row 同样式，但左侧留出
+   * 与正文相同的 padding，避免底色贴住文字。
+   *
+   * 消息列的 header 原本靠外层容器负 margin + px-3 对齐正文；容器负 margin
+   * 被移除后 padding 也没了，底色会紧贴文字左缘。把 padding 放到 header 上，
+   * 底色与正文左缘对齐的同时留出内边距。
+   */
+  contentRow: [
+    'px-1.5 -mx-1.5',
+    'cursor-pointer select-none',
+    'transition-colors duration-150',
+    'hover:bg-bg-200',
+    'active:bg-bg-300',
+  ].join(' '),
+
+  /**
    * 危险操作（删除、断开、清空）：悬停转为危险色浅底。
    * 注意文字色变化由调用方决定，通常配 `hover:text-danger-100`。
    */
