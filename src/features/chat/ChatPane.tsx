@@ -357,6 +357,7 @@ export const ChatPane = memo(function ChatPane({
     loadMoreHistory,
     handleRedoAll,
     clearRevert,
+    reloadSession,
 
     registerMessage,
     registerInputBox,
@@ -942,6 +943,7 @@ export const ChatPane = memo(function ChatPane({
                 loadError={loadError}
                 connectionError={connectionError}
                 onOpenSettings={onOpenSettings}
+                onReloadSession={reloadSession}
                 hasMoreHistory={hasMoreHistory}
                 onLoadMore={loadMoreHistory}
                 onUndo={handleUndoWithAnimation}

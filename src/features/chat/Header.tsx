@@ -195,7 +195,7 @@ export function Header({
 
   return (
     <div
-      className={`mobile-safe-topbar-14 flex justify-between items-center z-20 bg-bg-000 transition-colors duration-200 relative ${isCompact ? 'px-2' : 'px-4'}`}
+      className={`mobile-safe-topbar-14 flex justify-between items-center z-20 bg-bg-100 transition-colors duration-200 relative ${isCompact ? 'px-2' : 'px-4'}`}
     >
       <div className="flex items-center gap-2 min-w-0 shrink-1 z-20">
         {interaction.sidebarBehavior === 'overlay' && onOpenSidebar && (
@@ -319,7 +319,7 @@ export function Header({
         )}
       </Dialog>
 
-      <div data-chat-header-shadow className="absolute top-full left-0 right-0 h-8 bg-gradient-to-b from-bg-100 to-transparent pointer-events-none z-10" />
+      <div data-chat-header-shadow className="absolute top-full left-0 right-0 h-8 bg-gradient-to-b from-bg-100 via-bg-000/60 to-transparent pointer-events-none z-10" />
     </div>
   )
 }

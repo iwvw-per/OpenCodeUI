@@ -167,7 +167,7 @@ export function PaneHeader({
     <div
       ref={headerRef}
       className={`relative mobile-safe-topbar-10 flex items-center justify-between px-2 select-none transition-colors duration-200 shrink-0 z-20 ${
-        isDragOver ? 'bg-accent-main-100/10' : 'bg-bg-000'
+        isDragOver ? 'bg-accent-main-100/10' : 'bg-bg-100'
       }`}
       onClick={onFocus}
       onPointerDown={handlePointerDragStart}
@@ -314,7 +314,7 @@ export function PaneHeader({
         )}
       </div>
 
-      <div data-chat-header-shadow className="absolute top-full left-0 right-0 h-8 bg-gradient-to-b from-bg-100 to-transparent pointer-events-none z-10" />
+      <div data-chat-header-shadow className="absolute top-full left-0 right-0 h-8 bg-gradient-to-b from-bg-100 via-bg-000/60 to-transparent pointer-events-none z-10" />
     </div>
   )
 }
