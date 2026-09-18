@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore
 import { useTranslation } from 'react-i18next'
 import { FolderRecentList, type FolderRecentProject } from './FolderRecentList'
 import { HostList } from './HostList'
+import { HostQuickSwitcher } from './HostQuickSwitcher'
 import { SessionSortMenu } from './SessionSortMenu'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
@@ -31,7 +32,7 @@ import { useProjectLastUsedAt } from '../../../hooks/useProjectLastUsedAt'
 import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore, childSessionStore } from '../../../store'
 import { useBusySessions } from '../../../store/activeSessionStore'
-import { useNotifications } from '../../../store/notificationStore'
+import { notificationStore, useNotifications } from '../../../store/notificationStore'
 import { pinnedSessionsStore } from '../../../store/pinnedSessionsStore'
 import { serverStore } from '../../../store/serverStore'
 import {
@@ -889,6 +890,8 @@ export function SidePanel({
   const handleDeleteFolderSession = useCallback(
     async (session: ApiSession) => {
       await apiDeleteSession(session.id, session.directory)
+      // 清掉该会话的通知：否则项目行会因孤儿通知一直亮未读点
+      notificationStore.removeSessionNotifications(session.id)
       pinnedSessionsStore.unpin(session.id)
 
       if (!currentDirectory || isSameDirectory(currentDirectory, session.directory)) {
@@ -921,6 +924,7 @@ export function SidePanel({
           } else {
             await apiDeleteSession(id, currentDirectory)
           }
+          notificationStore.removeSessionNotifications(id)
           pinnedSessionsStore.unpin(id)
         } catch (e) {
           uiErrorHandler('batch delete session', e)
@@ -1321,6 +1325,9 @@ export function SidePanel({
 
       {/* Spacer for collapsed */}
       {!showLabels && <div className="flex-1" />}
+
+      {/* ===== 主机快速切换条（对话区底部，仅展开显示） ===== */}
+      {showLabels && <HostQuickSwitcher />}
 
       {/* ===== Footer ===== */}
       <SidebarFooter

@@ -17,6 +17,7 @@ import { playNotificationSoundDeduped } from '../utils/notificationSoundBridge'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { makeSessionKey, sessionKeyToServerId } from '../utils/sessionKey'
 import { subscribeToServerEvents, getSessionStatus, getPendingPermissions, getPendingQuestions } from '../api'
+import { invalidateSessionListCache } from '../api/sessionListCache'
 import type { EventCallbacks } from '../types/api/event'
 import { replyPermission } from '../api/permission'
 import { autoApproveStore } from '../store/autoApproveStore'
@@ -40,7 +41,7 @@ export interface SessionEventCallbacks {
   onScrollRequest?: () => void
   onSessionIdle?: (sessionID: string) => void
   onSessionError?: (sessionID: string) => void
-  onReconnected?: (reason: 'network' | 'server-switch') => void
+  onReconnected?: (reason: 'network' | 'server-switch', serverId: string) => void
 }
 
 interface SessionConsumer {
@@ -564,6 +565,9 @@ export function useGlobalEvents(directories?: string[]) {
 
         onSessionCreated: session => {
           const scopedId = scope(session.id)
+          // 根会话出现会改变列表成员；子会话（parentID）频繁创建且只影响子会话列表，
+          // 不做失效以免缓存被子 agent 抖动反复冲掉。
+          if (!session.parentID) invalidateSessionListCache(serverId)
           // 注册子 session 关系
           if (session.parentID) {
             childSessionStore.registerChildSession(session, serverId)
@@ -629,6 +633,9 @@ export function useGlobalEvents(directories?: string[]) {
 
         onSessionUpdated: session => {
           const scopedId = scope(session.id)
+          // 注意：此处不对归档做缓存失效。恢复后的会话 time.archived 恒为 0，
+          // 用「字段存在」判断会让每次标题更新都冲掉列表缓存（流式期间高频）。
+          // 本端归档/恢复已在 updateSession 中失效；跨客户端的归档由 30s TTL 兜底。
           // 更新 session meta 供 active tab 使用
           activeSessionStore.setSessionMeta(scopedId, session.title, session.directory)
           if (session.parentID) {
@@ -643,6 +650,8 @@ export function useGlobalEvents(directories?: string[]) {
 
         onSessionDeleted: sessionId => {
           const scopedId = scope(sessionId)
+          // 删除改变列表成员，失效缓存避免切回时复活已删除项
+          invalidateSessionListCache(serverId)
           const removedSessionIds = childSessionStore.getSessionAndDescendants(scopedId)
           clearSessionRuntimeState(scopedId)
           for (const id of removedSessionIds) paneLayoutStore.clearSession(id)
@@ -814,9 +823,12 @@ export function useGlobalEvents(directories?: string[]) {
           refreshServerHealth(serverId)
           // 重连后重新拉取全量状态 + pending requests
           fetchAndInitialize(serverId)
-          // 通知所有 pub/sub 消费者
+          // 只通知「关心的 session 属于该重连服务器」的消费者。
+          // 重连是按 serverId 独立的：某台服务器网络抖动不应让其它服务器的
+          // 会话缓存失效、被迫重拉。消费者 sessionId 是复合 key，用它反解 serverId 比对。
           for (const consumer of sessionConsumers.values()) {
-            consumer.callbacks.onReconnected?.(reason)
+            if (consumer.sessionId && sessionKeyToServerId(consumer.sessionId) !== serverId) continue
+            consumer.callbacks.onReconnected?.(reason, serverId)
           }
         },
       }

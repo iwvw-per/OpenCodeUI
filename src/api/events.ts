@@ -948,6 +948,20 @@ export function reconnectServerSSE(serverId: string) {
 }
 
 /**
+ * 确保指定服务器已建立 SSE 连接（幂等）。
+ *
+ * 与 reconnectServerSSE 的区别：不主动断开已有连接。
+ * connectServer 内部判断「已 connected 且心跳未超时」时直接返回，
+ * 因此已连着的服务器不会被打断，状态点不会闪 disconnected/connecting。
+ *
+ * 用于切换活动服务器：多服务器模式下每台服务器本来就各有一条常驻连接，
+ * 切换只是改「看哪一台」，无需重连。
+ */
+export function ensureServerSSE(serverId: string) {
+  connectServer(serverId)
+}
+
+/**
  * 强制重连活动服务器 SSE（兼容旧 API）
  */
 export function reconnectSSE() {
