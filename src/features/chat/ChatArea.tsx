@@ -89,6 +89,8 @@ interface ChatAreaProps {
   loadError?: MessageError
   connectionError?: MessageError
   onOpenSettings?: () => void
+  /** 会话加载失败时的“重新加载”回调（移动端无侧栏，必须有此入口） */
+  onReloadSession?: () => void
   hasMoreHistory?: boolean
   onLoadMore?: () => void | Promise<void>
   onUndo?: (userMessageId: string) => void
@@ -333,6 +335,7 @@ export const ChatArea = memo(
         loadError,
         connectionError,
         onOpenSettings,
+        onReloadSession,
         hasMoreHistory = false,
         onLoadMore,
         onUndo,
@@ -542,7 +545,9 @@ export const ChatArea = memo(
         },
         anchorTo: 'end',
         followOnAppend: false,
-        overscan: 50,
+        // 实际生效的是下方 rangeExtractor 里的 renderOverscan（6→15）；
+        // 这里与之一致，避免出现「配置写着 50、实际按 15 渲染」的误导。
+        overscan: 15,
         directDomUpdates: true,
         directDomUpdatesMode: 'transform',
         rangeExtractor: range => {
@@ -1028,15 +1033,26 @@ export const ChatArea = memo(
                 <div className="flex justify-start">
                   <div className="w-full min-w-0 space-y-2">
                     <MessageErrorView error={loadError ?? connectionError!} />
-                    {connectionError && onOpenSettings && (
-                      <button
-                        type="button"
-                        onClick={onOpenSettings}
-                        className="rounded-md border border-border-200 bg-bg-100 px-3 py-1.5 text-[length:var(--fs-sm)] text-text-200 transition-colors hover:bg-bg-200"
-                      >
-                        Open server settings
-                      </button>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {onReloadSession && (loadError || connectionError) && (
+                        <button
+                          type="button"
+                          onClick={onReloadSession}
+                          className="rounded-md border border-border-200 bg-bg-100 px-3 py-1.5 text-[length:var(--fs-sm)] text-text-200 transition-colors hover:bg-bg-200"
+                        >
+                          {t('errors.reloadConversation')}
+                        </button>
+                      )}
+                      {connectionError && onOpenSettings && (
+                        <button
+                          type="button"
+                          onClick={onOpenSettings}
+                          className="rounded-md border border-border-200 bg-bg-100 px-3 py-1.5 text-[length:var(--fs-sm)] text-text-200 transition-colors hover:bg-bg-200"
+                        >
+                          Open server settings
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
