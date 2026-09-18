@@ -11,7 +11,7 @@ import { themeStore } from './store/themeStore'
 import { serverStore } from './store/serverStore'
 import { autoApproveStore } from './store/autoApproveStore'
 import { serviceStore } from './store/serviceStore'
-import { reconnectSSE } from './api/events'
+import { reconnectSSE, ensureServerSSE } from './api/events'
 import { startPreferencesSync } from './api/preferencesSyncEngine'
 import { getSDKClientAsync, invalidateSDKClient } from './api/sdk'
 import { resetPathModeCache } from './utils/directoryUtils'
@@ -58,7 +58,7 @@ if (document.readyState === 'loading') {
 }
 
 // 注册 active server 入口变化 → 重建目标服务器的 SDK + 刷新 per-server 配置 + 重连 SSE
-serverStore.onServerChange(serverId => {
+serverStore.onServerChange((serverId, reason) => {
   // SDK client 按 serverId 缓存：仅重建目标服务器的 client
   invalidateSDKClient(serverId)
   if (isTauri()) {
@@ -74,8 +74,16 @@ serverStore.onServerChange(serverId => {
   // 重新加载 auto-approve 开关状态（从新服务器的 storage key 读取）
   autoApproveStore.reloadFromStorage()
 
-  // 重连 active server 的 SSE（会自动连到新的 server endpoint）
-  reconnectSSE()
+  // 重连/建连策略按 reason 分流：
+  // - server-switch：只是改「活动服务器」。多服务器模式下每台服务器本来就各有一条常驻
+  //   SSE，目标服务器的连接一直是活的，强制重连会让它走 disconnected→connecting→connected，
+  //   状态点肉眼可见地闪黄，还会白白广播一次 onReconnected。这里只做幂等 ensure。
+  // - local-runtime-url：本地运行时地址真的变了，必须重连才能连到新 endpoint。
+  if (reason === 'local-runtime-url') {
+    reconnectSSE()
+  } else {
+    ensureServerSSE(serverId)
+  }
 })
 
 const isNativeTauri = isTauri()

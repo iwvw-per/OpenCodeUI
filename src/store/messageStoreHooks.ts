@@ -236,12 +236,28 @@ const selectShareSessionMeta = (state: MessageStoreSnapshot) => ({
 })
 const sameMessageArray = (a: Message[], b: Message[]) => a === b
 
-// 缓存：sessionId -> SessionStateSnapshot
-const sessionSnapshots = new Map<string, SessionStateSnapshot>()
+// 缓存：sessionId -> SessionStateSnapshot（附带生成时的该 session 版本）
+//
+// 用 per-session 版本判定新鲜度：后台会话流式只会让它自己的版本前进，
+// 当前会话的快照不会被连累重建（旧实现对全局 subscribe 做 clear 会清掉所有）。
+interface CachedSessionSnapshot {
+  version: number
+  snapshot: SessionStateSnapshot
+}
+const sessionSnapshots = new Map<string, CachedSessionSnapshot>()
 
-messageStore.subscribe(() => {
-  sessionSnapshots.clear()
-})
+/** 快照缓存上限：无订阅者的条目不会自动删除，靠 LRU 兜底防止无界增长 */
+const MAX_SESSION_SNAPSHOTS = 20
+
+function cacheSessionSnapshot(sessionId: string, entry: CachedSessionSnapshot): void {
+  sessionSnapshots.delete(sessionId)
+  sessionSnapshots.set(sessionId, entry)
+  while (sessionSnapshots.size > MAX_SESSION_SNAPSHOTS) {
+    const oldest = sessionSnapshots.keys().next().value
+    if (oldest === undefined) break
+    sessionSnapshots.delete(oldest)
+  }
+}
 
 /**
  * React hook to subscribe to a SPECIFIC session state
@@ -250,10 +266,10 @@ export function useSessionState(sessionId: string | null): SessionStateSnapshot 
   const getSessionSnapshot = (): SessionStateSnapshot | null => {
     if (!sessionId) return null
 
-    // 如果缓存中有，直接返回
-    if (sessionSnapshots.has(sessionId)) {
-      return sessionSnapshots.get(sessionId) ?? null
-    }
+    const version = messageStore.getSessionChangeVersion(sessionId)
+    const cached = sessionSnapshots.get(sessionId)
+    // 版本一致说明该 session 未变化，直接复用（其它 session 变化不影响这里）
+    if (cached && cached.version === version) return cached.snapshot
 
     const state = messageStore.getSessionState(sessionId)
     if (!state) return null
@@ -275,7 +291,7 @@ export function useSessionState(sessionId: string | null): SessionStateSnapshot 
       title: state.title ?? null,
     }
 
-    sessionSnapshots.set(sessionId, snapshot)
+    cacheSessionSnapshot(sessionId, { version, snapshot })
     return snapshot
   }
 

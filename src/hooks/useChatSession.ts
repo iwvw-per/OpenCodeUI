@@ -470,21 +470,33 @@ export function useChatSession({
         }
         // 应用内 toast 已在 useGlobalEvents 中统一处理
       },
-      onReconnected: (_reason: 'network' | 'server-switch') => {
-        messageStore.markAllSessionsStale()
+      onReconnected: (reason: 'network' | 'server-switch', reconnectedServerId: string) => {
+        // 重连按 serverId 独立：只处理该服务器的缓存，其它服务器不受影响。
+        // 此前是无差别 markAllSessionsStale，导致任一台服务器抖动/切换都会让
+        // 全部会话缓存作废，切回任何会话都要重新拉取。
+        //
+        // server-switch 是主动强制的断开重连（连接从未真正中断），期间不会丢事件，
+        // 因此不必失效缓存；只有 network 重连（真实断线）才可能遗漏事件。
+        const isNetworkReconnect = reason === 'network'
 
-        // SSE 重连后重新加载当前会话，补齐断连期间可能丢失的消息
-        if (routeSessionId) {
-          // 使用 force 模式，确保覆盖本地可能不完整的数据
-          loadSession(routeSessionId, { force: true })
-          // 重连后刷新待处理的权限请求和问题，避免用户错过后台产生的请求
-          refreshPendingRequests(sessionFamily, effectiveDirectory)
+        if (isNetworkReconnect) {
+          messageStore.markServerSessionsStale(reconnectedServerId)
+
+          if (routeSessionId && sessionKeyToServerId(routeSessionId) === reconnectedServerId) {
+            // 断线期间可能丢事件，强制覆盖补齐
+            loadSession(routeSessionId, { force: true })
+            refreshPendingRequests(sessionFamily, effectiveDirectory)
+          }
         }
-        refetchModels().catch(() => {})
-        // 重新获取 agents 列表（切换后端时 currentDirectory 可能没变，useEffect 不会触发）
-        getSelectableAgents(currentDirectory, paneServerId)
-          .then(setAgents)
-          .catch(() => {})
+
+        // 模型/agents 是服务器级资源：只有当前 pane 就绑在这台服务器时才刷新，
+        // 避免切换服务器时对所有 pane 重复拉取。
+        if (paneServerId === reconnectedServerId) {
+          refetchModels().catch(() => {})
+          getSelectableAgents(currentDirectory, paneServerId)
+            .then(setAgents)
+            .catch(() => {})
+        }
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refs and stable functions
@@ -522,7 +534,7 @@ export function useChatSession({
       onScrollRequest: () => sseCallbacksRef.current.onScrollRequest(),
       onSessionIdle: sid => sseCallbacksRef.current.onSessionIdle(sid),
       onSessionError: sid => sseCallbacksRef.current.onSessionError(sid),
-      onReconnected: reason => sseCallbacksRef.current.onReconnected(reason),
+      onReconnected: (reason, serverId) => sseCallbacksRef.current.onReconnected(reason, serverId),
     })
 
     return unregister
@@ -1201,6 +1213,10 @@ export function useChatSession({
     loadMoreHistory,
     handleRedoAll,
     clearRevert: clearRestoredContent,
+    /** 强制重载当前会话（用于加载失败后的“重新加载”按钮） */
+    reloadSession: () => {
+      if (routeSessionId) void loadSession(routeSessionId, { force: true })
+    },
 
     // Animation
     registerMessage,

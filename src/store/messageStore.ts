@@ -19,7 +19,22 @@ export type { RevertState, RevertHistoryItem, SessionState, SendRollbackSnapshot
 
 type Subscriber = () => void
 
-const MAX_CACHED_SESSIONS = 10
+/**
+ * 每个服务器的消息缓存配额。与 ChatArea 的 SESSION_CACHE_LIMIT(16) 对齐，
+ * 避免「消息已被丢弃、但虚拟化测量缓存还在」的错配。
+ *
+ * 按 serverId 分片计数：多服务器模式下，一台服务器的活跃会话不应把另一台的
+ * 缓存挤掉（否则在服务器间来回切换会不断重拉）。
+ */
+const MAX_CACHED_SESSIONS_PER_SERVER = 16
+/** 全局硬上限，防止服务器数量很多时内存无界增长（超出时优先淘汰非活动服务器） */
+const MAX_CACHED_SESSIONS_TOTAL = 48
+
+/** 从复合 key 提取 serverId（`${serverId}::${sessionId}`）；无分隔符时归为活动服务器 */
+function serverIdOfSessionKey(sessionId: string): string {
+  const idx = sessionId.indexOf('::')
+  return idx === -1 ? '' : sessionId.slice(0, idx)
+}
 
 /**
  * 同步合并文本：live 更长且与服务端兼容（服务端是前缀）时不回退；
@@ -108,6 +123,11 @@ class MessageStore {
 
   private getSessionVersion(sessionId: string) {
     return Math.max(this.sessionVersions.get(sessionId) ?? 0, this.allSessionsVersion)
+  }
+
+  /** 公开的版本读取：供 React 快照缓存判断某 session 是否已变化 */
+  getSessionChangeVersion(sessionId: string): number {
+    return this.getSessionVersion(sessionId)
   }
 
   private markPendingSessionNotifications(sessionIds?: Iterable<string> | 'all') {
@@ -295,7 +315,7 @@ class MessageStore {
 
     let state = this.sessions.get(sessionId)
     if (!state) {
-      this.evictOldSessions()
+      this.evictOldSessions(serverIdOfSessionKey(sessionId))
       state = {
         messages: [],
         revertState: null,
@@ -313,26 +333,50 @@ class MessageStore {
     return state
   }
 
-  private evictOldSessions() {
-    if (this.sessions.size < MAX_CACHED_SESSIONS) return
-
-    let oldestId: string | null = null
-    let oldestTime = Infinity
-
-    for (const [id, time] of this.sessionAccessTime) {
-      if (this.protectedSessions.has(id)) continue
-      const state = this.sessions.get(id)
-      if (state?.isStreaming) continue
-      if (time < oldestTime) {
-        oldestTime = time
-        oldestId = id
+  private evictOldSessions(protectServerId?: string) {
+    const countFor = (serverId: string) => {
+      let count = 0
+      for (const id of this.sessions.keys()) {
+        if (serverIdOfSessionKey(id) === serverId) count += 1
       }
+      return count
     }
 
-    if (oldestId) {
+    const evictable = (id: string): boolean => {
+      if (this.protectedSessions.has(id)) return false
+      if (this.sessions.get(id)?.isStreaming) return false
+      return true
+    }
+
+    /** 在给定 serverId 范围内淘汰最久未访问的会话；不传则跨所有服务器 */
+    const evictOldest = (serverId?: string): boolean => {
+      let oldestId: string | null = null
+      let oldestTime = Infinity
+      for (const [id, time] of this.sessionAccessTime) {
+        if (serverId !== undefined && serverIdOfSessionKey(id) !== serverId) continue
+        if (!evictable(id)) continue
+        if (time < oldestTime) {
+          oldestTime = time
+          oldestId = id
+        }
+      }
+      if (!oldestId) return false
       logger.log('[MessageStore] Evicting old session:', oldestId)
       this.sessions.delete(oldestId)
       this.sessionAccessTime.delete(oldestId)
+      return true
+    }
+
+    // 1) 目标服务器超配额：只在该服务器内淘汰，不波及其它服务器
+    if (protectServerId) {
+      while (countFor(protectServerId) >= MAX_CACHED_SESSIONS_PER_SERVER) {
+        if (!evictOldest(protectServerId)) break
+      }
+    }
+
+    // 2) 全局硬上限：跨服务器淘汰最久未访问者
+    while (this.sessions.size >= MAX_CACHED_SESSIONS_TOTAL) {
+      if (!evictOldest()) break
     }
   }
 
@@ -399,6 +443,22 @@ class MessageStore {
   markAllSessionsStale() {
     let updated = false
     for (const state of this.sessions.values()) {
+      if (state.loadState !== 'loaded' || state.isStale) continue
+      state.isStale = true
+      updated = true
+    }
+    if (updated) this.notify('all')
+  }
+
+  /**
+   * 只失效指定服务器的会话。重连是按 serverId 独立的，不该波及其它服务器的缓存。
+   * sessionId key 形如 `${serverId}::${sessionId}`。
+   */
+  markServerSessionsStale(serverId: string) {
+    const prefix = `${serverId}::`
+    let updated = false
+    for (const [sessionId, state] of this.sessions) {
+      if (!sessionId.startsWith(prefix)) continue
       if (state.loadState !== 'loaded' || state.isStale) continue
       state.isStale = true
       updated = true
