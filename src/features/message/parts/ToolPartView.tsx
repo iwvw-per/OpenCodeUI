@@ -8,6 +8,7 @@ import { useNow } from '../../../hooks/useNow'
 import { serverStore } from '../../../store/serverStore'
 import { useTheme } from '../../../hooks/useTheme'
 import { formatToolName, formatDuration } from '../../../utils/formatUtils'
+import { interactive } from '../../../utils/interaction'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 import {
   useInlineToolRequests,
@@ -249,7 +250,7 @@ export const ToolPartView = memo(function ToolPartView({
         <button
           type="button"
           ref={headerRef}
-          className={`flex w-full items-center gap-3 rounded-md px-0 ${MSG_SPACING.header} text-left hover:bg-bg-200 transition-colors group/header`}
+          className={`flex w-full items-center gap-3 rounded-md ${MSG_SPACING.header} text-left group/header ${interactive.contentRow}`}
           onClick={toggleExpanded}
         >
           <div className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
