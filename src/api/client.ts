@@ -5,6 +5,8 @@
 
 import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi } from '../utils/directoryUtils'
+import { serverStore } from '../store/serverStore'
+import { ttlCacheGet, ttlCacheSet } from '../utils/ttlCache'
 import type { ModelInfo, ApiProject, ApiPath } from './types'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -159,7 +161,18 @@ export async function updateProject(
 // Path API Functions
 // ============================================
 
+/** /path 在服务器运行期基本不变，用短 TTL 合并同一服务器的重复调用 */
+const PATH_CACHE_TTL_MS = 60_000
+const PATH_CACHE_PREFIX = 'server-path:'
+
 export async function getPath(serverId?: string): Promise<ApiPath> {
+  const cacheServerId = serverId ?? serverStore.getActiveServerId()
+  const cacheKey = `${PATH_CACHE_PREFIX}${cacheServerId}`
+  const cached = ttlCacheGet<ApiPath>(cacheKey, PATH_CACHE_TTL_MS)
+  if (cached) return cached
+
   const sdk = getSDKClient(serverId)
-  return requireRecord(unwrap(await sdk.path.get()), 'Invalid OpenCode path response') as unknown as ApiPath
+  const info = requireRecord(unwrap(await sdk.path.get()), 'Invalid OpenCode path response') as unknown as ApiPath
+  ttlCacheSet(cacheKey, info, PATH_CACHE_TTL_MS)
+  return info
 }
