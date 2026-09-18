@@ -24,7 +24,7 @@ import { formatRelativeDay } from '../../../utils/dateUtils'
 import { useLayoutStore } from '../../../store'
 import { useBusySessions } from '../../../store/activeSessionStore'
 import { splitSessionKey } from '../../../utils/sessionKey'
-import { useNotifications } from '../../../store/notificationStore'
+import { notificationStore, useNotifications } from '../../../store/notificationStore'
 import { pinnedSessionsStore, type PinnedSessionEntry } from '../../../store/pinnedSessionsStore'
 import { SessionListItem } from '../../sessions'
 import { getSelectionRoundClass } from '../../sessions/selectionRound'
@@ -1026,6 +1026,8 @@ function FolderRecentSection({
       if (!session) return
       try {
         await updateSession(session.id, { time: { archived: Date.now() } }, session.directory, serverId)
+        // 归档后会话不再出现在列表，通知也要清掉，否则项目行残留未读点
+        notificationStore.removeSessionNotifications(sessionId)
         removeLocalSession(sessionId)
       } catch {
         // 归档失败静默（由列表刷新兜底）
@@ -1257,8 +1259,10 @@ function FolderRecentSection({
         </div>
 
         {/* Session 列表 — mt-1 与项目行拉开：项目行自身 py-1.5(6px) + 这里 4px，
-            合计约 10px，比会话之间的 4px 明显，层级更清楚 */}
-        <ExpandableSection show={isExpanded} className="mt-1">
+            合计约 10px，比会话之间的 4px 明显，层级更清楚。
+            mb-2 让最后一条会话到下一个项目之间留 8px（外层项目间距只有 4px，
+            与会话间距相同就分不出项目边界）。折叠时被 !m-0 清零 */}
+        <ExpandableSection show={isExpanded} className="mt-1 mb-2">
           {shouldRenderBody && (
             <div onTouchStart={e => e.stopPropagation()}>
               {!hasActivated || (!hasWorkspaceTree && isLoading) ? (
