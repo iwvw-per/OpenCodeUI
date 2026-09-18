@@ -202,7 +202,9 @@
     "sortByUpdated": "更新时间",
     "sortByCreated": "创建时间",
     "sortDesc": "倒序（新 → 旧）",
-    "sortAsc": "正序（旧 → 新）"
+    "sortAsc": "正序（旧 → 新）",
+    "archivedChats": "已归档对话",
+    "archiveConversation": "归档"
   },
   "activeSession": {
     "awaitingPermission": "等待权限",
@@ -238,5 +240,15 @@
     "autoApproveAll": "自动放行：全部会话",
     "autoApproveSession": "自动放行：本次会话",
     "autoApproveOffHint": "自动放行：关闭"
+  },
+  "archived": {
+    "title": "已归档对话",
+    "empty": "暂无已归档对话",
+    "loadFailed": "已归档对话加载失败",
+    "restore": "恢复",
+    "delete": "删除"
+  },
+  "errors": {
+    "reloadConversation": "重新加载会话"
   }
 }
