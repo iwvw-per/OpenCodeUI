@@ -76,7 +76,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
   const queuedReconnectRefreshRef = useRef(false)
   const retryTimerRef = useRef<number | null>(null)
   const fetchSessionsRef = useRef<
-    (params?: SessionListParams & { append?: boolean; retryAttempt?: number }) => Promise<void>
+    (params?: SessionListParams & { append?: boolean; retryAttempt?: number; skipCache?: boolean }) => Promise<void>
   >(() => Promise.resolve())
 
   useEffect(() => {
@@ -110,7 +110,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
   // append 仅用于控制 loading 状态：true 时用 isLoadingMore，false 时用 isLoading
   // 数据始终全量替换（递增 limit 策略）
   const fetchSessions = useCallback(
-    async (params: SessionListParams & { append?: boolean; retryAttempt?: number } = {}) => {
+    async (params: SessionListParams & { append?: boolean; retryAttempt?: number; skipCache?: boolean } = {}) => {
       if (!enabled) return
 
       const { append = false, retryAttempt = 0, ...queryParams } = params
@@ -317,10 +317,10 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     })
   }, [sessions, search, hasMore, isLoadingMore, fetchSessions, enabled, pageSize])
 
-  // 刷新
+  // 刷新：显式下拉/重新拉取时绕过列表缓存，保证拿到最新数据
   const refresh = useCallback(async () => {
     if (!enabled) return
-    await fetchSessions({ search: search || undefined })
+    await fetchSessions({ search: search || undefined, skipCache: true })
   }, [search, fetchSessions, enabled])
 
   // 创建新会话
