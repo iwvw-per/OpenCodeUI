@@ -43,3 +43,6 @@ public/material-icons/
 
 # Agent tooling scratch (ZCode plan/context artifacts)
 .zcode/
+
+# Browser automation scratch (playwright-cli snapshots/console logs)
+.playwright-cli/
