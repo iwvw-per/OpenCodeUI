@@ -28,27 +28,34 @@ describe('preferences sync', () => {
   }
 
   it('collects syncable keys and skips the login session itself', async () => {
-    localStorage.setItem('srv:inst_1:opencode-hidden-directories', '["/work/secret"]')
+    localStorage.setItem('font-scale', '0.1')
     localStorage.setItem('theme-preset', '"eucalyptus"')
     localStorage.setItem('opencode-aiagent-account', '{"token":"should-not-sync"}')
     localStorage.setItem('opencode-preferences-sync-meta', '{}')
     localStorage.setItem('unrelated-key', 'nope')
+    // srv: 前缀按「当前活动服务器」分桶，而活动服务器是本地概念，跨端同步只会互相覆盖
+    localStorage.setItem('srv:inst_1:opencode-hidden-directories', '["/work/secret"]')
 
     const { collectLocalPreferences, isSyncableKey } = await import('./preferencesSync')
     const entries = collectLocalPreferences()
 
-    expect(entries['srv:inst_1:opencode-hidden-directories']).toBe('["/work/secret"]')
+    // 裸键名的设置项现在也参与同步（此前白名单只认 opencode*/theme-* 前缀，
+    // 导致「项目列表能同步、主题色等外观设置不同步」）
+    expect(entries['font-scale']).toBe('0.1')
     expect(entries['theme-preset']).toBe('"eucalyptus"')
     expect(entries['opencode-aiagent-account']).toBeUndefined()
     expect(entries['opencode-preferences-sync-meta']).toBeUndefined()
-    expect(entries['unrelated-key']).toBeUndefined()
-    expect(isSyncableKey('opencode-servers')).toBe(true)
+    expect(entries['srv:inst_1:opencode-hidden-directories']).toBeUndefined()
+    // 服务器列表含各机地址与凭证，跨端同步会让其中一台不可用
+    expect(isSyncableKey('opencode-servers')).toBe(false)
     expect(isSyncableKey('opencode-aiagent-account')).toBe(false)
+    expect(isSyncableKey('font-scale')).toBe(true)
+    expect(isSyncableKey('diff-style')).toBe(true)
   })
 
   it('pushes a JSON-parsed payload and skips unchanged content', async () => {
     await seedAccount()
-    localStorage.setItem('srv:inst_1:opencode-project-order', '["a","b"]')
+    localStorage.setItem('diff-style', '"markers"')
     localStorage.setItem('theme-preset', '"sakura"')
 
     let sentBody: Record<string, unknown> | null = null
@@ -73,7 +80,7 @@ describe('preferences sync', () => {
     expect(written).toBe(1)
 
     const values = (sentBody as unknown as { values: Record<string, unknown> }).values
-    expect(values['srv:inst_1:opencode-project-order']).toEqual(['a', 'b'])
+    expect(values['diff-style']).toEqual('markers')
     expect(values['theme-preset']).toBe('sakura')
     expect(values['opencode-aiagent-account']).toBeUndefined()
 
@@ -95,7 +102,7 @@ describe('preferences sync', () => {
           JSON.stringify({
             success: true,
             data: [
-              { key: 'srv:inst_1:opencode-hidden-directories', value: ['/work/secret'], updatedAt: '2026-01-01T00:00:00Z' },
+              { key: 'font-scale', value: '0.1', updatedAt: '2026-01-01T00:00:00Z' },
               { key: 'theme-preset', value: 'ocean', updatedAt: '2026-01-01T00:00:00Z' },
               { key: 'opencode-aiagent-account', value: { token: 'must-be-ignored' }, updatedAt: '2026-01-01T00:00:00Z' },
             ],
@@ -114,7 +121,7 @@ describe('preferences sync', () => {
     const written = await pullPreferences(account)
     expect(written).toBe(2)
 
-    expect(localStorage.getItem('srv:inst_1:opencode-hidden-directories')).toBe('["/work/secret"]')
+    expect(localStorage.getItem('font-scale')).toBe('0.1')
     // 字符串值按原始字符串写入（推送时已按需解析），不额外加引号。
     expect(localStorage.getItem('theme-preset')).toBe('ocean')
     // 服务端下发的登录会话键必须被忽略，本地已登录的凭证不能被覆盖。

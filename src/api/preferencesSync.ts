@@ -5,11 +5,13 @@
 // 列表）推送到面板的 /api/aiagent/preferences，并在启动/登录时拉取合并，
 // 让桌面端与 Web 端共享同一份用户偏好。
 //
-// 同步边界：
-//   - 参与同步：所有 srv:{serverId}:* 键、主题/布局/快捷键/通知/声音等全局
-//     设置键、opencode-servers（含服务器列表）。
-//   - 排除：opencode-aiagent-account（这是登录会话本身，同步它没有意义）、
-//     以及若干纯运行时缓存键（见 EXCLUDED_KEYS）。
+// 同步边界（黑名单制）：
+//   默认同步所有键，只排除运行时状态与同步自身的元数据（见 EXCLUDED_*）。
+//
+//   此前是白名单制（只同步 opencode* / theme-* / i18nextLng），但大量设置
+//   用了裸键名（font-scale、diff-style、tool-card-style、chat-wide-mode、
+//   immersive-mode 等），不在前缀里 —— 结果是「项目列表能同步、主题色和
+//   外观设置不同步」。改为默认同步后，新增设置不会再漏。
 // ============================================
 
 import { accountRequest, readAccount, type AiAgentAccount } from './aiagent'
@@ -23,25 +25,52 @@ const EXCLUDED_KEYS = new Set([
   // 同步自身的状态与元数据，避免自我递归。
   SYNC_ENABLED_KEY,
   SYNC_META_KEY,
+  // 服务器列表：含各机器自己的地址与凭证，跨设备同步会把 A 机的
+  // localhost 地址带到 B 机，反而不可用。
+  'opencode-servers',
+  // 当前选中/最近使用的运行时状态：跟随本机环境，跨端同步会让两边互相覆盖。
+  'selected-model-key',
+  'selected-project-id',
+  'last-directory',
+  // 用量统计是本机累计值，合并会重复计数。
+  'model-usage-stats',
 ])
 
 const EXCLUDED_PREFIXES = [
   // 多服务器订阅含 focusedServerId 等运行时状态，跨端无意义。
   'opencode-multi-server',
+  // per-server 存储按「当前活动服务器」分桶，而活动服务器是本地概念
+  // （两台机器都用各自的 localhost 作为 sid）。同步它会把 A 机 local 桶的内容
+  // 覆盖到 B 机的 local 桶，语义上不是「共享一份设置」而是互相踩。
+  //
+  // 注意这里用裸前缀做 startsWith 匹配：键形如 `srv:{serverId}:{key}`，
+  // 前两段已由冒号分隔，再加冒号会变成 `srv::` 而匹配不到。
+  'srv:',
+]
+
+const EXCLUDED_SUFFIXES = [
+  // 目录类：记录「上次打开的路径」，是本机上下文，换设备无意义。
+  'last-directory',
 ]
 
 /**
  * 是否参与同步的 localStorage 键。
- * srv:{serverId}:* 一律参与；全局键按排除名单过滤。
+ *
+ * 默认同步；命中排除项则跳过。排除的是「运行时状态」与「本机专属值」，
+ * 而非「设置」—— 所有用户可见的设置项都应参与同步。
  */
 export function isSyncableKey(key: string): boolean {
   if (!key) return false
   if (EXCLUDED_KEYS.has(key)) return false
+  // 前缀判定同时接受「裸前缀」与「前缀 + 冒号」两种写法，
+  // 避免调用方在写前缀时纠结要不要带分隔符。
   for (const prefix of EXCLUDED_PREFIXES) {
-    if (key === prefix || key.startsWith(`${prefix}:`)) return false
+    if (key.startsWith(prefix)) return false
   }
-  if (key.startsWith('srv:')) return true
-  return key.startsWith('opencode') || key.startsWith('theme-') || key === 'i18nextLng'
+  for (const suffix of EXCLUDED_SUFFIXES) {
+    if (key === suffix || key.endsWith(`:${suffix}`)) return false
+  }
+  return true
 }
 
 /**
