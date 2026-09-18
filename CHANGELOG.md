@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.6.77] - 2026-09-18
+
+- fix(message): 修复工具调用行 hover 左侧内边距与圆角被裁剪 (07b358b2)
+- feat(sessions): 会话列表缓存 + 已归档会话查看与恢复 (6b1b4537)
+- fix(notifications): 会话删除/归档时清理孤儿通知，跨前缀按裸 id 匹配 (3b2f7fc9)
+- feat(multi-server): 消息缓存按服务器分片，重连按 serverId 独立，新增主机快速切换 (20899be4)
+- perf(api): path 短 TTL 缓存 + 大响应截断自动重试 (54e87f15)
+- fix(sync): 偏好同步改黑名单制，避免漏同步裸键设置 (19aecc5e)
+- feat(input): 图片入图前压缩（缩放 + WebP）+ 超限文件拒绝提示 (5a6eba79)
+- fix(chat): 会话加载失败提供重新加载入口，overscan 收敛，header 背景统一 (fbebbf6f)
+- chore: 忽略 playwright-cli 浏览器自动化临时产物 (2b135835)
+
 ## [v0.6.76] - 2026-09-17
 
 - test: 修正 modelVisibilityStore 的 localStorage 枚举方式 (746fc6f2)
