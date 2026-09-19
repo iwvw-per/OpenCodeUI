@@ -33,6 +33,8 @@ export interface SessionState {
   loadError?: MessageError
   /** 是否还有更多历史消息 */
   hasMoreHistory: boolean
+  /** 继续向前翻页的游标（服务端 X-Next-Cursor）；缺省表示已到最早一条 */
+  historyCursor?: string
   /** session 目录 */
   directory: string
   /** session 标题 */

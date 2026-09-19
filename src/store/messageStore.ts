@@ -282,6 +282,11 @@ class MessageStore {
     return this.sessions.get(sessionId)?.hasMoreHistory ?? false
   }
 
+  getHistoryCursor(sessionId: string | null): string | undefined {
+    if (!sessionId) return undefined
+    return this.sessions.get(sessionId)?.historyCursor
+  }
+
   getSessionDirectory(sessionId: string | null): string {
     if (!sessionId) return ''
     return this.sessions.get(sessionId)?.directory ?? ''
@@ -322,6 +327,7 @@ class MessageStore {
         isStreaming: false,
         loadState: 'idle',
         hasMoreHistory: false,
+        historyCursor: undefined,
         directory: '',
         title: undefined,
         loadError: undefined,
@@ -394,6 +400,7 @@ class MessageStore {
     sessionId: string,
     options: {
       hasMoreHistory?: boolean
+      historyCursor?: string
       directory?: string
       title?: string
       loadState?: SessionState['loadState']
@@ -405,6 +412,8 @@ class MessageStore {
     if (!state) return
 
     if (options.hasMoreHistory !== undefined) state.hasMoreHistory = options.hasMoreHistory
+    // 用 in 判断：historyCursor 显式传 undefined 表示「已到最早一条」，必须清空旧游标
+    if ('historyCursor' in options) state.historyCursor = options.historyCursor
     if (options.directory !== undefined) state.directory = options.directory
     if (options.title !== undefined) state.title = options.title
     if (options.loadState !== undefined) state.loadState = options.loadState
@@ -491,6 +500,7 @@ class MessageStore {
       directory?: string
       title?: string
       hasMoreHistory?: boolean
+      historyCursor?: string
       revertState?: ApiSession['revert'] | null
       shareUrl?: string
     },
@@ -513,6 +523,7 @@ class MessageStore {
     state.loadState = 'loaded'
     state.loadError = undefined
     state.hasMoreHistory = options?.hasMoreHistory ?? false
+    state.historyCursor = options?.historyCursor
     state.directory = options?.directory ?? ''
     if (options?.title !== undefined) state.title = options.title
     state.shareUrl = options?.shareUrl
@@ -557,7 +568,7 @@ class MessageStore {
     this.notify([sessionId])
   }
 
-  prependMessages(sessionId: string, apiMessages: ApiMessageWithParts[], hasMore: boolean) {
+  prependMessages(sessionId: string, apiMessages: ApiMessageWithParts[], hasMore: boolean, historyCursor?: string) {
     const state = this.sessions.get(sessionId)
     if (!state) return
 
@@ -571,6 +582,7 @@ class MessageStore {
       state.messages = [...unique, ...state.messages]
     }
     state.hasMoreHistory = hasMore
+    state.historyCursor = historyCursor
 
     this.notify([sessionId])
   }
