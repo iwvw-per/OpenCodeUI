@@ -75,15 +75,27 @@ function isAgentUserContentPart(part: UserContentSource['parts'][number]): part 
 // Message Query
 // ============================================
 
+export interface SessionMessagePage {
+  /** 本页消息，按时间升序 */
+  messages: ApiMessageWithParts[]
+  /** 继续向前翻页的游标（服务端 X-Next-Cursor）；缺省表示没有更早的消息 */
+  nextCursor?: string
+}
+
 /**
- * 获取 session 的消息列表
+ * 按游标分页获取 session 消息。
+ *
+ * 服务端 `limit` 语义是「最新 N 条」，不带 before 时每次只能拿到末尾一段。
+ * 传 before（上一页最老一条的游标）时只返回该游标之前的 limit 条，
+ * 因此上滑加载的传输量是 O(N) 而不是「limit 累加后重拉」的 O(N²)。
  */
-export async function getSessionMessages(
+export async function getSessionMessagePage(
   sessionId: string,
   limit?: number,
+  before?: string,
   directory?: string,
   serverId?: string,
-): Promise<ApiMessageWithParts[]> {
+): Promise<SessionMessagePage> {
   const target = resolveSessionTarget(sessionId, serverId)
   return getWithTruncationRetry(async () => {
     const sdk = getSDKClient(target.serverId)
@@ -91,9 +103,25 @@ export async function getSessionMessages(
       sessionID: target.sessionId,
       directory: formatPathForApi(directory, target.serverId),
       limit,
+      before,
     })
-    return unwrap<ApiMessageWithParts[]>(result)
+    const messages = unwrap<ApiMessageWithParts[]>(result)
+    const nextCursor = result.response?.headers?.get('X-Next-Cursor') ?? undefined
+    return { messages, nextCursor: nextCursor || undefined }
   })
+}
+
+/**
+ * 获取 session 的消息列表（只取一页，忽略游标）
+ */
+export async function getSessionMessages(
+  sessionId: string,
+  limit?: number,
+  directory?: string,
+  serverId?: string,
+): Promise<ApiMessageWithParts[]> {
+  const page = await getSessionMessagePage(sessionId, limit, undefined, directory, serverId)
+  return page.messages
 }
 
 // ============================================

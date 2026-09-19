@@ -150,6 +150,20 @@ describe('messageStore', () => {
     expect(state?.messages[1].info.id).toBe('message-2')
   })
 
+  it('stores the history cursor alongside hasMoreHistory', () => {
+    messageStore.setMessages('session-1', [createMessageWithParts('message-2', 'two')], {
+      hasMoreHistory: true,
+      historyCursor: 'cursor-1',
+    })
+
+    expect(messageStore.getHistoryCursor('session-1')).toBe('cursor-1')
+
+    messageStore.prependMessages('session-1', [createMessageWithParts('message-1', 'one')], false, undefined)
+
+    expect(messageStore.getHistoryCursor('session-1')).toBeUndefined()
+    expect(messageStore.getHasMoreHistory('session-1')).toBe(false)
+  })
+
   it('creates a session when starting streaming', () => {
     messageStore.setStreaming('session-1', true)
 
