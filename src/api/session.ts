@@ -74,7 +74,8 @@ function isUserMessage(message: ApiMessageWithParts): message is ApiMessageWithP
 export async function getLastTurnDiff(sessionId: string, directory?: string, serverId?: string): Promise<FileDiff[]> {
   const [session, messages] = await Promise.all([
     getSession(sessionId, directory, serverId),
-    getSessionMessages(sessionId, INITIAL_MESSAGE_LIMIT, directory, serverId),
+    // project:false —— 本轮 diff 依赖 summary.diffs，不能用消息流的裁剪投影
+    getSessionMessages(sessionId, INITIAL_MESSAGE_LIMIT, directory, serverId, { project: false }),
   ])
 
   const userMessages = messages.filter(isUserMessage)

@@ -83,11 +83,61 @@ export interface SessionMessagePage {
 }
 
 /**
+ * 把一页消息裁剪成「渲染足够、体积最小」的投影。
+ *
+ * 只裁掉消息流渲染从不读取、却最占体积的字段：
+ * - `info.summary.diffs`：整轮 patch 全文，单条可达 860KB。
+ *   只有「本轮变更」视图用（getLastTurnDiff），它单独以 project:false 拉取完整数据。
+ * - `tool.state.attachments`：工具结果里的内联附件（多为 data:image base64），
+ *   单条可达 1MB，且没有任何渲染路径读取 state.attachments。
+ *
+ * 消息流真正会渲染的字段（tool.state.output/error、text、reasoning、file.url 等）
+ * 一律原样保留，因此裁剪后 UI 无需回源即可完整显示。
+ */
+function projectMessageForStream(message: ApiMessageWithParts): ApiMessageWithParts {
+  let info = message.info
+  let parts = message.parts
+  let changed = false
+
+  const summary = (info as { summary?: { diffs?: unknown } }).summary
+  if (summary?.diffs) {
+    // 保留 title/body（大纲与标题仍需要），只去掉 diffs
+    const { diffs: _diffs, ...restSummary } = summary
+    info = { ...info, summary: restSummary } as ApiMessageWithParts['info']
+    changed = true
+  }
+
+  const hasToolAttachments = parts.some(part => {
+    const attachments = (part as { state?: { attachments?: unknown[] } }).state?.attachments
+    return part.type === 'tool' && Array.isArray(attachments) && attachments.length > 0
+  })
+  if (hasToolAttachments) {
+    parts = parts.map(part => {
+      if (part.type !== 'tool') return part
+      const state = (part as { state?: { attachments?: unknown[] } }).state
+      if (!state?.attachments?.length) return part
+      const { attachments: _attachments, ...restState } = state
+      return { ...part, state: restState } as typeof part
+    })
+    changed = true
+  }
+
+  return changed ? { ...message, info, parts } : message
+}
+
+function projectPageMessages(messages: ApiMessageWithParts[]): ApiMessageWithParts[] {
+  return messages.map(projectMessageForStream)
+}
+
+/**
  * 按游标分页获取 session 消息。
  *
  * 服务端 `limit` 语义是「最新 N 条」，不带 before 时每次只能拿到末尾一段。
  * 传 before（上一页最老一条的游标）时只返回该游标之前的 limit 条，
  * 因此上滑加载的传输量是 O(N) 而不是「limit 累加后重拉」的 O(N²)。
+ *
+ * `project` 默认开启，裁掉消息流不渲染的重负载字段（见 projectMessageForStream）。
+ * 需要完整数据（如变更视图的 turn diff）时传 project:false。
  */
 export async function getSessionMessagePage(
   sessionId: string,
@@ -95,8 +145,10 @@ export async function getSessionMessagePage(
   before?: string,
   directory?: string,
   serverId?: string,
+  options?: { project?: boolean },
 ): Promise<SessionMessagePage> {
   const target = resolveSessionTarget(sessionId, serverId)
+  const project = options?.project ?? true
   return getWithTruncationRetry(async () => {
     const sdk = getSDKClient(target.serverId)
     const result = await sdk.session.messages({
@@ -107,7 +159,10 @@ export async function getSessionMessagePage(
     })
     const messages = unwrap<ApiMessageWithParts[]>(result)
     const nextCursor = result.response?.headers?.get('X-Next-Cursor') ?? undefined
-    return { messages, nextCursor: nextCursor || undefined }
+    return {
+      messages: project ? projectPageMessages(messages) : messages,
+      nextCursor: nextCursor || undefined,
+    }
   })
 }
 
@@ -119,8 +174,9 @@ export async function getSessionMessages(
   limit?: number,
   directory?: string,
   serverId?: string,
+  options?: { project?: boolean },
 ): Promise<ApiMessageWithParts[]> {
-  const page = await getSessionMessagePage(sessionId, limit, undefined, directory, serverId)
+  const page = await getSessionMessagePage(sessionId, limit, undefined, directory, serverId, options)
   return page.messages
 }
 
