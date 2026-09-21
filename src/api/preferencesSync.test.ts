@@ -357,7 +357,9 @@ describe('preferences sync', () => {
     expect(saved[0].name).toBe('A server')
   })
 
-  it('keeps hidden directories on whole-key last-write-wins instead of union', async () => {
+  it('keeps legacy hidden-directories on whole-key last-write-wins', async () => {
+    // 该键已废弃（项目列表不再自动发现，用户看到的项目由 saved-directories 决定），
+    // 但历史数据仍在准入前缀下，同步语义保持整键 LWW 不变，避免旧数据行为突变。
     const account = await seedAccount()
     localStorage.setItem('srv:aiagent:inst_1:opencode-hidden-directories', JSON.stringify(['/local-only']))
     localStorage.setItem(

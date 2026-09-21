@@ -3,9 +3,9 @@
 //
 // 职责：
 //   1. 登录后首次做一次双向同步；
-//   2. 轮询（本地变化或固定间隔）触发双向同步，把别的端的改动拉下来、
-//      把本地改动推上去；
-//   3. 提供手动触发与状态查询给设置页。
+//   2. 服务端推送（SSE）到达时立刻同步，把「别的端的改动」接近实时地拉下来；
+//   3. 轮询（本地变化或固定间隔）作为兜底与本地改动的上传通道；
+//   4. 提供手动触发与状态查询给设置页。
 //
 // 采用「轮询 + 内容指纹」而非 patch localStorage.setItem：后者需要改写全局
 // 对象，且无法覆盖直接操作 localStorage 的调用点（项目里存在多处），轮询能
@@ -16,12 +16,17 @@
 // 后重新采样指纹：拉取写入的值会被计入基线，下一轮不会因它再触发同步。
 // 本地指纹未变时也会按轮询间隔做一次双向同步，保证服务端改动能被动拉下来。
 // 同步器本身为未被本地改动的键沿用逐键时间戳，不会用当前时间顶掉服务端。
+//
+// SSE 只是加速通道：它不改变同步语义，断开时自动重连并退化为纯轮询，正确性
+// 不依赖它。
 // ============================================
 
 import { readAccount } from './aiagent'
+import { subscribePreferenceEvents, type PreferenceEventsSubscription } from './preferencesEvents'
 import {
   collectLocalPreferences,
   isSyncEnabled,
+  isSyncableKey,
   syncPreferences,
 } from './preferencesSync'
 
@@ -38,6 +43,7 @@ const PUSH_DEBOUNCE_MS = 2_000
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let eventsSubscription: PreferenceEventsSubscription | null = null
 let lastFingerprint = ''
 let lastSyncAt = 0
 let inFlight = false
@@ -120,8 +126,31 @@ function poll(): void {
 }
 
 /**
- * 启动同步：首次做一次双向同步（拉取服务端、推送本地），随后轮询触发双向
- * 同步。未启用同步或未登录时为空操作。
+ * 收到服务端变更通知时触发一次同步。
+ *
+ * 只对命中同步白名单的键作出反应：服务端会把该用户所有偏好变更都推过来
+ * （含本机专属键），那些键本地既不读写也无同步价值，跟着跑一次同步纯属浪费。
+ * 若此刻同步在途，走 debounce 排队而不是直接并发，避免两条链路争抢 stamps。
+ */
+function handlePreferenceChange(keys: string[]): void {
+  if (!isSyncEnabled() || !readAccount()) return
+  if (!keys.some(isSyncableKey)) return
+  scheduleSync()
+}
+
+function startEventSubscription(): void {
+  if (eventsSubscription) return
+  eventsSubscription = subscribePreferenceEvents({ onEvent: event => handlePreferenceChange(event.keys) })
+}
+
+function stopEventSubscription(): void {
+  eventsSubscription?.close()
+  eventsSubscription = null
+}
+
+/**
+ * 启动同步：首次做一次双向同步（拉取服务端、推送本地），随后建立 SSE 订阅
+ * 并按轮询间隔兜底同步。未启用同步或未登录时为空操作。
  */
 export async function startPreferencesSync(): Promise<void> {
   if (pollTimer) return
@@ -131,6 +160,7 @@ export async function startPreferencesSync(): Promise<void> {
   // 绕过 inFlight 造成两条链路并发写 stamps。
   await runSync(true)
 
+  startEventSubscription()
   pollTimer = setInterval(poll, POLL_INTERVAL_MS)
 }
 
@@ -143,6 +173,7 @@ export function stopPreferencesSync(): void {
     clearTimeout(debounceTimer)
     debounceTimer = null
   }
+  stopEventSubscription()
   setState({ status: 'idle' })
 }
 
