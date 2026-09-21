@@ -528,12 +528,18 @@ class ServerStore {
     this.clockCalibrationMap.delete(id)
 
     // 如果删除的是当前选中的，切换到默认
-    if (this.activeServerId === id) {
+    const wasActive = this.activeServerId === id
+    if (wasActive) {
       this.activeServerId = this.servers[0]?.id ?? null
     }
 
     this.saveToStorage()
     this.notify()
+    // 活动服务器被删属于一次服务器切换：必须通知监听者，否则目录上下文
+    // （savedDirectories / recentProjects）不会重载，界面仍显示已删实例的数据。
+    if (wasActive) {
+      this.notifyServerChange(this.getActiveServerId(), 'server-switch')
+    }
     return true
   }
 

@@ -400,28 +400,38 @@ function crossInstanceKeys(suffix: string): string[] {
 }
 
 /**
- * 把当前活动实例桶里的跨实例键广播到其它实例桶（按 path 并集，不是覆盖）。
+ * 把当前活动实例桶里的跨实例键广播到其它实例桶（并集 − 墓碑）。
  *
  * 与 applyCrossInstanceAggregation 方向相反：那个是「从别处汇入当前」，
  * 这个是「从当前分发到别处」。推送前调用，保证本实例的改动对其它实例可见。
- * 用并集而非覆盖，是为了在别处桶有当前桶没有的条目时不丢数据。
+ *
+ * 用并集而非覆盖，是为了在别处桶有当前桶没有的条目时不丢数据；同时必须减去
+ * 墓碑，否则「在任一实例移除项目」会被别的实例桶立刻复活（见 unionEntriesIntoKey）。
  */
-function broadcastCrossInstanceKeys(): void {
+function broadcastCrossInstanceKeys(tombstones: TombstoneState): void {
   const activeServerId = serverStore.getActiveServerId()
   for (const suffix of CROSS_INSTANCE_SUFFIXES) {
     const activeKey = `srv:${activeServerId}:${suffix}`
     if (localStorage.getItem(activeKey) === null) continue
     const keys = crossInstanceKeys(suffix)
     if (keys.length <= 1) continue
-    unionEntriesIntoKey(activeKey, keys.filter(key => key !== activeKey))
+    unionEntriesIntoKey(activeKey, keys.filter(key => key !== activeKey), tombstones)
   }
 }
 
 /**
- * 把 sources 各键里的数组条目按 path 并集写入 targetKey。
+ * 把 sources 各键里的数组条目按 path 并集写入 targetKey，并排除墓碑条目。
  * 返回 true 表示 targetKey 实际发生了变化。
+ *
+ * 为什么必须减墓碑：跨实例聚合/广播都发生在墓碑判定之前，如果只做并集，
+ * 「在工作实例移除项目 P」会被「笔电桶里仍有 P」立刻并回来 —— 本地 UI 先移除、
+ * 下一轮 pull（≤15 秒或 SSE）又复活，移除操作静默失效。墓碑是唯一能表达
+ * 「这个 path 被用户删掉了」的记录，因此并集必须把它作为差集输入。
  */
-function unionEntriesIntoKey(targetKey: string, sources: string[]): boolean {
+function unionEntriesIntoKey(targetKey: string, sources: string[], tombstones?: TombstoneState): boolean {
+  const state = tombstones ?? readTombstones()
+  const dead = new Set(Object.keys(state[targetKey] ?? {}))
+
   const merged = new Map<string, Record<string, unknown>>()
   const collect = (raw: string | null) => {
     const list = parseJson(raw ?? '')
@@ -430,7 +440,7 @@ function unionEntriesIntoKey(targetKey: string, sources: string[]): boolean {
       const record = asRecord(entry)
       if (!record) continue
       const path = typeof record.path === 'string' ? record.path : ''
-      if (!path) continue
+      if (!path || dead.has(path)) continue
       const existing = merged.get(path)
       const addedAt = typeof record.addedAt === 'number' ? record.addedAt : 0
       const existingAt = typeof existing?.addedAt === 'number' ? (existing.addedAt as number) : -1
@@ -441,7 +451,16 @@ function unionEntriesIntoKey(targetKey: string, sources: string[]): boolean {
   collect(localStorage.getItem(targetKey))
   for (const key of sources) collect(localStorage.getItem(key))
 
-  const raw = JSON.stringify([...merged.values()])
+  // 按 addedAt 再按 path 排序：并集结果顺序若依赖 localStorage 键序，同一份内容
+  // 在不同设备上会序列化成不同字符串，导致指纹抖动、每轮重复上传。
+  const ordered = [...merged.values()].sort((a, b) => {
+    const at = typeof a.addedAt === 'number' ? a.addedAt : 0
+    const bt = typeof b.addedAt === 'number' ? b.addedAt : 0
+    if (at !== bt) return at - bt
+    return String(a.path).localeCompare(String(b.path))
+  })
+
+  const raw = JSON.stringify(ordered)
   try {
     if (localStorage.getItem(targetKey) === raw) return false
     localStorage.setItem(targetKey, raw)
@@ -722,7 +741,7 @@ export async function pullPreferences(account?: AiAgentAccount | null): Promise<
     if (serverIso) stamps[key] = serverIso
   }
 
-  written += applyCrossInstanceAggregation()
+  written += applyCrossInstanceAggregation(tombstones)
 
   writeTombstones(tombstones)
   writeStampState({ stamps, known: { ...known, [SNAPSHOT_KEY]: JSON.stringify(collectLocalPreferences()) } })
@@ -739,14 +758,14 @@ export async function pullPreferences(account?: AiAgentAccount | null): Promise<
  * 按 path 去重并保留较新的 addedAt；当前实例桶已有条目的顺序优先保留。
  * 返回新增的键数量。
  */
-function applyCrossInstanceAggregation(): number {
+function applyCrossInstanceAggregation(tombstones: TombstoneState): number {
   let written = 0
   for (const suffix of CROSS_INSTANCE_SUFFIXES) {
     const keys = crossInstanceKeys(suffix)
     if (keys.length <= 1) continue
     const activeKey = `srv:${serverStore.getActiveServerId()}:${suffix}`
     if (!keys.includes(activeKey)) continue
-    if (unionEntriesIntoKey(activeKey, keys.filter(key => key !== activeKey))) written += 1
+    if (unionEntriesIntoKey(activeKey, keys.filter(key => key !== activeKey), tombstones)) written += 1
   }
   return written
 }
@@ -769,13 +788,14 @@ export async function pushPreferences(account?: AiAgentAccount | null, force = f
     return 0
   }
 
-  // 跨实例键先补写进当前实例的桶，再进入常规推送流程，这样「在别的实例下
-  // 加过的项目」也会随本轮上传，服务端不需要额外改动。
-  broadcastCrossInstanceKeys()
+  // 顺序很关键：先按快照差集记录墓碑（识别出「本轮被移除的条目」），再做跨实例
+  // 广播。反过来的话，刚从当前桶移除的 path 会被别的实例桶立刻并回来，墓碑也就
+  // 记不上，移除操作静默失效。
+  const stampState = readStampState()
+  const tombstones = recordTombstones(entries, readTombstones())
+  broadcastCrossInstanceKeys(tombstones)
 
   const entriesWithBroadcast = collectLocalPreferences()
-  const stampState = readStampState()
-  const tombstones = recordTombstones(entriesWithBroadcast, readTombstones())
   const mergedEntries = { ...entriesWithBroadcast }
   for (const key of mergeRuleKeysFromSnapshot()) {
     const raw = entriesWithBroadcast[key]

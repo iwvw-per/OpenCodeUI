@@ -47,6 +47,7 @@ let eventsSubscription: PreferenceEventsSubscription | null = null
 let lastFingerprint = ''
 let lastSyncAt = 0
 let inFlight = false
+let pendingSync = false
 let state: SyncState = { status: 'idle', lastSyncedAt: 0 }
 const listeners = new Set<(state: SyncState) => void>()
 
@@ -84,7 +85,12 @@ function fingerprintEntries(): string {
  * 以 inFlight 保证同一时刻只有一条链路在读写 stamps / tombstones。
  */
 async function runSync(force: boolean): Promise<void> {
-  if (inFlight) return
+  if (inFlight) {
+    // 在途时被请求的同步不能直接丢弃：远端变更通知（SSE）若正好撞上在途同步，
+    // 丢弃就只能等下一次轮询。这里记一个待办，在 finally 里补跑一次。
+    pendingSync = true
+    return
+  }
   if (!isSyncEnabled() || !readAccount()) return
   inFlight = true
   setState({ status: 'syncing', error: undefined })
@@ -100,6 +106,10 @@ async function runSync(force: boolean): Promise<void> {
     setState({ status: 'error', error: error instanceof Error ? error.message : String(error) })
   } finally {
     inFlight = false
+    if (pendingSync) {
+      pendingSync = false
+      scheduleSync()
+    }
   }
 }
 
@@ -173,6 +183,7 @@ export function stopPreferencesSync(): void {
     clearTimeout(debounceTimer)
     debounceTimer = null
   }
+  pendingSync = false
   stopEventSubscription()
   setState({ status: 'idle' })
 }

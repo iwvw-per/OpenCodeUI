@@ -38,6 +38,8 @@ export interface PreferenceEventsSubscription {
 // 重连退避：SSE 断开后逐步拉长重试间隔，避免服务端故障时高频重连。
 const RECONNECT_BASE_MS = 1_000
 const RECONNECT_MAX_MS = 30_000
+// 连接存活超过该时长才视为「稳定」，才把重连退避归零（见 connect 的收尾逻辑）。
+const STABLE_CONNECTION_MS = 30_000
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -106,6 +108,7 @@ export function subscribePreferenceEvents(
 
   const connect = async (): Promise<void> => {
     if (closed) return
+    const startedAt = Date.now()
     try {
       const requestFetch = await getUnifiedFetch()
       const response = await requestFetch(`${current.domain}/api/aiagent/preferences/events`, {
@@ -117,9 +120,14 @@ export function subscribePreferenceEvents(
         signal: controller.signal,
       })
       if (!response.ok || !response.body) {
+        // 4xx 多为令牌失效或路由不存在，重连不会自愈：直接放弃，交由轮询兜底，
+        // 避免以固定间隔无限重试。
+        if (response.status >= 400 && response.status < 500) {
+          closed = true
+          return
+        }
         throw new Error(`preferences events failed (${response.status})`)
       }
-      attempt = 0
       options.onStateChange?.(true)
 
       const reader = response.body.getReader()
@@ -130,12 +138,13 @@ export function subscribePreferenceEvents(
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
-        // SSE 以空行分隔事件块；CRLF 与 LF 都接受。
-        let boundary = buffer.search(/\r?\n\r?\n/)
-        while (boundary !== -1) {
-          const block = buffer.slice(0, boundary)
-          const separatorLength = buffer[boundary] === '\r' ? 4 : 2
-          buffer = buffer.slice(boundary + separatorLength)
+        // SSE 以空行分隔事件块。用正则匹配实际长度推进，而不是按首字符硬编码
+        // 2/4：混合换行（\r\n\n、\n\r\n）各为 3 字符，硬编码会错切并丢字符。
+        for (;;) {
+          const match = /\r?\n\r?\n/.exec(buffer)
+          if (!match) break
+          const block = buffer.slice(0, match.index)
+          buffer = buffer.slice(match.index + match[0].length)
           const parsed = parseEventBlock(block)
           if (parsed && parsed.event === 'preferences') {
             try {
@@ -145,7 +154,6 @@ export function subscribePreferenceEvents(
               // 单条事件解析失败不影响后续事件
             }
           }
-          boundary = buffer.search(/\r?\n\r?\n/)
         }
       }
     } catch {
@@ -153,6 +161,12 @@ export function subscribePreferenceEvents(
     }
     if (closed) return
     options.onStateChange?.(false)
+    // 只有连接真正存活过一段时间才算「成功」，才把退避归零。若服务端或代理
+    // 接受连接后立刻关闭（鉴权通过但无事件），立即归零会退化成固定 1 秒无限
+    // 重连，注释承诺的「逐步拉长」失效。
+    if (Date.now() - startedAt >= STABLE_CONNECTION_MS) {
+      attempt = 0
+    }
     scheduleReconnect()
   }
 
