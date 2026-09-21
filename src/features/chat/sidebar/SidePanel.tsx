@@ -9,7 +9,6 @@ import { useServerStore } from '../../../hooks/useServerStore'
 import { getProjectGroupIdentity } from './projectGrouping'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { IconButton } from '../../../components/ui/IconButton'
-import { Spinner } from '../../../components/ui/Spinner'
 import { Tabs, TabsList, TabsTrigger } from '../../../components/ui/Tabs'
 import { SidebarFooter } from './SidebarFooter'
 import {
@@ -92,18 +91,6 @@ function getSelectionRange(visibleIds: string[], anchorId: string, targetId: str
   return visibleIds.slice(from, to + 1)
 }
 
-const PROJECT_ORDER_KEY = 'opencode-project-order'
-
-function readProjectOrder(serverId: string): string[] {
-  try {
-    const raw = localStorage.getItem(`srv:${serverId}:${PROJECT_ORDER_KEY}`)
-    const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
-  } catch {
-    return []
-  }
-}
-
 function findProjectGroupForDirectory(projects: ProjectItem[], directory: string) {
   return projects.find(project => {
     if (isSameDirectory(project.id, directory) || isSameDirectory(project.worktree, directory)) {
@@ -165,7 +152,7 @@ export function SidePanel({
   // 不做服务器侧自动发现：项目列表完全由同步的 saved-directories 决定，
   // 这样多端看到的是同一份，用户不必在每台设备上重复隐藏噪音目录。
   const activeServerId = activeServer?.id ?? 'local'
-  const { catalog: gitWorkspaceCatalog, isLoading: isGitWorkspaceCatalogLoading } = useGitWorkspaceCatalog(
+  const { catalog: gitWorkspaceCatalog } = useGitWorkspaceCatalog(
     catalogDirectories,
     catalogServerId,
   )
@@ -195,12 +182,6 @@ export function SidePanel({
   const [batchDeleteSessionConfirm, setBatchDeleteSessionConfirm] = useState(false)
   const [batchRemoveProjectConfirm, setBatchRemoveProjectConfirm] = useState(false)
   const [isBatchDeleting, setIsBatchDeleting] = useState(false)
-
-  // 项目显示顺序（每主机独立；拖拽重排后持久化，覆盖已保存项目）
-  const [projectOrder, setProjectOrder] = useState<string[]>(() => readProjectOrder(activeServerId))
-  useEffect(() => {
-    setProjectOrder(readProjectOrder(activeServerId))
-  }, [activeServerId])
 
   const getVisibleSelectionIds = useCallback((kind: 'session' | 'project') => {
     const root = recentsSelectionRootRef.current
@@ -530,7 +511,7 @@ export function SidePanel({
   ])
 
   const buildProjectGroups = useCallback(
-    (directories: typeof savedDirectories, isDerived = false): ProjectItem[] => {
+    (directories: typeof savedDirectories): ProjectItem[] => {
       const savedNameByPath = new Map(
         directories.map(directory => [normalizeToForwardSlash(directory.path), directory.name]),
       )
@@ -555,8 +536,7 @@ export function SidePanel({
           id: projectId,
           worktree: projectId,
           name: savedNameByPath.get(projectId) ?? getDirectoryName(projectId),
-          canReorder: !isDerived,
-          isDerived: isDerived || undefined,
+          canReorder: true,
           memberDirectories: [directory.path],
           reorderPath: directory.path,
           workspaceDirectories,
@@ -651,32 +631,10 @@ export function SidePanel({
       list.push({ ...currentProject, canReorder: false })
     }
 
-    // 应用每主机拖拽保存的显示顺序：在顺序列表中的项按顺序排前，其余追加在后
-    if (projectOrder.length > 0) {
-      const byWorktree = new Map(list.map(project => [normalizeToForwardSlash(project.worktree || ''), project]))
-      const ordered: ProjectItem[] = []
-      const seen = new Set<string>()
-      for (const path of projectOrder) {
-        const normalized = normalizeToForwardSlash(path)
-        const project = byWorktree.get(normalized)
-        if (project && !seen.has(normalized)) {
-          ordered.push(project)
-          seen.add(normalized)
-        }
-      }
-      for (const project of list) {
-        const normalized = normalizeToForwardSlash(project.worktree || '')
-        if (!seen.has(normalized)) {
-          ordered.push(project)
-          seen.add(normalized)
-        }
-      }
-      list = ordered
-    }
-
-    // 不展示「全局」文件夹：全局把所有会话堆在一起条目多且卡，用户只按项目打开会话
+    // 不展示「全局」文件夹：全局把所有会话堆在一起条目多且卡，用户只按项目打开会话。
+    // 显示顺序由 savedDirectories 自身的顺序决定（拖拽重排即写回该列表）。
     return list
-  }, [serverCurrentProject, folderProjectGroups, projectOrder, currentDirectory, currentProject])
+  }, [serverCurrentProject, folderProjectGroups, currentDirectory, currentProject])
 
   // 新添加/新保存的项目自动展开
   const prevFolderProjectIdsRef = useRef<string[] | null>(null)
@@ -704,17 +662,6 @@ export function SidePanel({
     return map
   }, [folderProjects])
 
-  const currentProjectWorkspaceDirectories = useMemo(
-    () => currentProject.workspaceDirectories ?? [],
-    [currentProject.workspaceDirectories],
-  )
-  const shouldWaitForWorkspaceResolution =
-    !search &&
-    !!currentDirectory &&
-    isGitWorkspaceCatalogLoading &&
-    currentProjectWorkspaceDirectories.length <= 1 &&
-    !!normalizedCurrentDirectory &&
-    !gitWorkspaceCatalog.has(normalizedCurrentDirectory)
   const allDisplayedProjects = useMemo(() => {
     return [...folderProjects]
   }, [folderProjects])
@@ -881,8 +828,13 @@ export function SidePanel({
 
   // 单个项目移除：二次点击防误触（按钮层），这里直接执行。
   // 语义唯一：从「已保存项目」列表移除，不动磁盘文件、不动会话；随时可重新添加。
+  //
+  // 派生项目（当前打开的目录 / 从会话推导的目录，未显式保存）直接跳过：
+  // 它不在已保存列表里，removeDirectory 是空操作，却会因为清掉 URL 目录而
+  // 表现为「点移除把当前项目关了」，属于误导性反馈。
   const handleRemoveProjectClick = useCallback(
     (project: FolderRecentProject) => {
+      if (project.isDerived) return
       getProjectDirectoriesToRemove(project.id).forEach(directory => removeDirectory(directory))
     },
     [getProjectDirectoriesToRemove, removeDirectory],
@@ -1202,34 +1154,18 @@ export function SidePanel({
               <HostList onActivate={() => setSidebarTab('projects')} onOpenSettings={onOpenSettings} />
             </div>
           ) : (
-            /* 项目 tab：已保存项目文件夹树（统一按目录查询） */
+            /* 项目 tab：已保存项目文件夹树（统一按目录查询）。
+               列表为空时由 FolderRecentList 渲染空状态；工作区解析的等待用文件夹内
+               的局部 spinner 过渡，不做整列表转圈，避免打开会话导致侧栏整体重载。 */
             <div ref={recentsSelectionRootRef} className={`flex-1 overflow-hidden ${isEditMode ? 'select-none' : ''}`}>
-              {search ? (
-                /* 搜索：文件夹 + session 就地筛选 */
-                <FolderRecentList
-                  projects={sortedFolderProjects}
-                  {...commonFolderRecentListProps}
-                  onReorderProject={handleReorderProjectGroup}
-                  workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
-                  pinnedSessions={resolvedPinnedSessions}
-                  unavailablePinnedEntries={unavailablePinnedEntries}
-                />
-              ) : shouldWaitForWorkspaceResolution && folderProjects.length === 0 ? (
-                /* 首次加载/无任何项目可展示时才整列表转圈；已有项目时保持列表，
-                   当前项目的工作区解析用文件夹内的局部 spinner 过渡，避免打开会话导致侧栏整体重载 */
-                <div className="flex h-full items-center justify-center text-accent-main-100">
-                  <Spinner size="sm" tone="accent" variant="pixel" />
-                </div>
-              ) : (
-                <FolderRecentList
-                  projects={sortedFolderProjects}
-                  {...commonFolderRecentListProps}
-                  onReorderProject={handleReorderProjectGroup}
-                  workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
-                  pinnedSessions={resolvedPinnedSessions}
-                  unavailablePinnedEntries={unavailablePinnedEntries}
-                />
-              )}
+              <FolderRecentList
+                projects={sortedFolderProjects}
+                {...commonFolderRecentListProps}
+                onReorderProject={handleReorderProjectGroup}
+                workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
+                pinnedSessions={resolvedPinnedSessions}
+                unavailablePinnedEntries={unavailablePinnedEntries}
+              />
             </div>
           )}
         </div>
