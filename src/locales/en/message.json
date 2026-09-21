@@ -7,6 +7,13 @@
   "forkFromHere": "Fork from here",
   "forkingFromHere": "Forking...",
   "stepsCount": "{{done}}/{{total}} steps",
+  "thinkingStepCount": "{{count}} steps",
+  "diffChips": {
+    "more": "+{{count}} files",
+    "editCount": "Edited {{count}} times",
+    "hunk": "Edit {{index}}/{{total}}",
+    "truncated": "… remaining changes omitted"
+  },
   "processedFor": "Worked for {{duration}}",
   "processing": "Processing...",
   "processingWithDuration": "Working for {{duration}}",

@@ -205,7 +205,7 @@ export function ToastContainer({ onOpenAbout }: { onOpenAbout: () => void }) {
       {toasts.length >= 2 && (
         <div className="flex justify-end pointer-events-auto">
           <button
-            className="text-[length:var(--fs-xs)] text-text-300 hover:text-text-100 px-2 py-1 rounded-md hover:bg-bg-200 active:bg-bg-300 transition-colors duration-150"
+            className="text-[length:var(--fs-xs)] text-text-300 px-2 py-1 rounded-md hover:bg-bg-200 active:bg-bg-300 transition-colors duration-150"
             onClick={() => notificationStore.dismissAllToasts()}
           >
             {t('toast.clearAll')}

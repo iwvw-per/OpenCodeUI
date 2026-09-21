@@ -349,7 +349,7 @@ function ActionBar({ attachment, hasContent, hasDownloadable, onOpenDetail, show
       <button
         type="button"
         onClick={handleOpenDetail}
-        className={cn(btnBase, 'text-text-400 hover:text-text-200', interactive.subtle)}
+          className={cn(btnBase, 'text-text-400', interactive.subtle)}
         title={t('attachment.viewDetail')}
       >
         <ExpandIcon size={11} />
@@ -362,7 +362,7 @@ function ActionBar({ attachment, hasContent, hasDownloadable, onOpenDetail, show
           onClick={handleCopy}
           className={cn(
             btnBase,
-            copied ? 'text-success-100' : cn('text-text-400 hover:text-text-200', interactive.subtle),
+            copied ? 'text-success-100' : cn('text-text-400', interactive.subtle),
           )}
           title={copied ? t('common:copied') : t('attachment.copyContent')}
         >
@@ -375,7 +375,7 @@ function ActionBar({ attachment, hasContent, hasDownloadable, onOpenDetail, show
         <button
           type="button"
           onClick={handleDownload}
-          className={cn(btnBase, 'text-text-400 hover:text-text-200', interactive.subtle)}
+        className={cn(btnBase, 'text-text-400', interactive.subtle)}
           title={t('attachment.saveToFile')}
         >
           <DownloadIcon size={11} />

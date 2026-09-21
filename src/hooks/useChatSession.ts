@@ -7,9 +7,10 @@ import {
   messageStore,
   useSessionFamily,
   useSessionState,
+  useSessionStatus,
   autoApproveStore,
   childSessionStore,
-  useActiveSessionStore,
+  activeSessionStore,
   type RevertHistoryItem,
 } from '../store'
 import {
@@ -31,6 +32,7 @@ import {
   prefetchCommands,
   prefetchRootDirectory,
   getSessionChildren,
+  getSessionStatus,
   executeCommand,
   summarizeSession,
   updateSession,
@@ -46,7 +48,7 @@ import { getMessageText, isUserMessage, type AssistantMessageInfo, type Message 
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { serverStorage } from '../utils/perServerStorage'
-import { sessionKeyToServerId, splitSessionKey } from '../utils/sessionKey'
+import { sessionKeyToServerId, splitSessionKey, makeSessionKey } from '../utils/sessionKey'
 import { serverStore } from '../store/serverStore'
 import { STORAGE_KEY_SELECTED_AGENT } from '../constants'
 import type { ChatAreaHandle } from '../features/chat'
@@ -105,7 +107,7 @@ export function useChatSession({
   navigateToSession,
   navigateHome,
 }: UseChatSessionOptions) {
-  const { statusMap } = useActiveSessionStore()
+  const routeStatus = useSessionStatus(routeSessionId)
   const { queueFollowupMessages } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
 
   // Agents
@@ -129,7 +131,6 @@ export function useChatSession({
   const { createSession, sessions } = useSessionContext()
   const { sendNotification } = useNotification()
 
-  const routeStatus = routeSessionId ? statusMap[routeSessionId] : undefined
   const routeSessionIdRef = useRef(routeSessionId)
 
   useEffect(() => {
@@ -600,9 +601,14 @@ export function useChatSession({
         try {
           const children = await getSessionChildren(routeSessionId!, effectiveDirectory, paneServerId)
           if (cancelled) return
-          // 注册所有子 session 到 store
+          // 注册所有子 session 到 store。
+          // 刷新后拉回的是历史会话，可能早已结束——不能让它们默认成「正在工作」。
+          // 依据服务端的实时状态判断：busy/retry 才算运行中，其余一律视为已完成。
           for (const child of children) {
-            childSessionStore.registerChildSession(child, paneServerId)
+            const childKey = makeSessionKey(paneServerId, child.id)
+            const status = activeSessionStore.getSessionStatus(childKey)
+            const running = status?.type === 'busy' || status?.type === 'retry'
+            childSessionStore.registerChildSession(child, paneServerId, running ? 'running' : 'idle')
           }
         } catch {
           // 获取子 session 失败不影响主流程
@@ -978,14 +984,24 @@ export function useChatSession({
   // Abort handler
   const handleAbort = useCallback(async () => {
     if (!routeSessionId) return
+    // 乐观置 idle：abort 是 HTTP 请求，服务端不一定立刻补推 session.status。
+    // 只清 messageStore 清不掉 activeSessionStore 里的 status，
+    // 而 isSessionBusy 由它主导——按钮点了像没反应就是这里空窗。
+    // 真正的服务端 status 到达后会覆盖本次本地值。
+    activeSessionStore.updateStatus(routeSessionId, { type: 'idle' })
+    messageStore.handleSessionIdle(routeSessionId)
+    const directory = sessionDirectory || currentDirectory
     try {
-      const directory = sessionDirectory || currentDirectory
       await abortSession(routeSessionId, directory, paneServerId)
-      messageStore.handleSessionIdle(routeSessionId)
     } catch (error) {
       handleError('abort session', error)
+      // 取消失败：拉一次服务端状态并合并，让服务端重新成为唯一依据，
+      // 避免本地乐观置的 idle 掩盖真实的运行中状态。
+      getSessionStatus(directory, paneServerId)
+        .then(statusMap => activeSessionStore.mergeStatusRefresh(statusMap))
+        .catch(() => {})
     }
-  }, [routeSessionId, sessionDirectory, currentDirectory])
+  }, [routeSessionId, sessionDirectory, currentDirectory, paneServerId])
 
   // Command handler (slash commands)
   const handleCommand = useCallback(

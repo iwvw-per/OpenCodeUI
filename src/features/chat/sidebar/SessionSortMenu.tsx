@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ClockIcon, CalendarPlusIcon, SortIcon, SortDescIcon, CheckIcon } from '../../../components/Icons'
 import { DropdownMenu, IconButton } from '../../../components/ui'
+import { interactive } from '../../../utils/interaction'
 import { useLayoutStore, layoutStore } from '../../../store'
 import type { SessionSortField } from '../../../utils'
 
@@ -66,7 +67,7 @@ export function SessionSortMenu() {
         aria-haspopup="menu"
         aria-expanded={isOpen}
         aria-label={t('sidebar.sortSessions', { defaultValue: '排序' })}
-        className={isOpen ? 'bg-bg-200 text-text-100' : undefined}
+        className={isOpen ? interactive.toggleActiveNeutral : 'border border-transparent'}
         title={t('sidebar.sortSessions', { defaultValue: '排序' })}
       >
         {sidebarSessionSortDesc ? <SortDescIcon size={14} /> : <SortIcon size={14} />}

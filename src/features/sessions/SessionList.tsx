@@ -4,7 +4,7 @@ import { SearchIcon, PencilIcon, TrashIcon, ComposeIcon, PinIcon, ArchiveIcon, S
 import { getSelectionRoundClass } from './selectionRound'
 import { formatRelativeTime } from '../../utils/dateUtils'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
-import { IconButton } from '../../components/ui'
+import { IconButton, Spinner } from '../../components/ui'
 import { useInputCapabilities } from '../../hooks/useInputCapabilities'
 import { useSessionActiveEntry } from '../../store/activeSessionStore'
 import { notificationStore, useHasUnreadCompletedNotification } from '../../store/notificationStore'
@@ -381,8 +381,8 @@ export interface SessionListItemProps {
   onSelect: () => void
   onDelete: () => void
   onRename: (newTitle: string) => void
-  /** 归档按钮（项目模式会话行尾部）；缺省不显示 */
-  onArchive?: () => void
+  /** 归档按钮（项目模式会话行尾部）；缺省不显示。可返回 Promise 以便按钮显示归档中动画 */
+  onArchive?: () => void | Promise<void>
   preferTouchUi: boolean
   density?: 'default' | 'compact' | 'minimal'
   showStats?: boolean
@@ -493,11 +493,17 @@ export function SessionListItem({
     setIsEditing(false)
   }
 
-  // 归档：调用方负责 updateSession({ time: { archived } })
-  const handleArchive = (e: React.MouseEvent) => {
+  // 归档：调用方负责 updateSession({ time: { archived } })，返回 Promise 以便失败时复位动画态
+  const [isArchiving, setIsArchiving] = useState(false)
+  const handleArchive = async (e: React.MouseEvent) => {
     e.stopPropagation()
     setShowActions(false)
-    onArchive?.()
+    setIsArchiving(true)
+    try {
+      await onArchive?.()
+    } finally {
+      setIsArchiving(false)
+    }
   }
 
   const handleCancelEdit = () => {
@@ -657,16 +663,19 @@ export function SessionListItem({
     return (
       <div
         className={cn(
-          'group relative flex items-center gap-1 px-2 py-1.5 select-none',
+          // 与父级会话行（ActiveSessionItem）保持同一套几何：
+          // pl-[6px] pr-3 py-2 rounded-lg。子行此前用 px-2 py-1.5，
+          // 悬停高亮的圆角与左右边界都和父行对不齐。
+          'group relative flex items-center gap-1 pl-[6px] pr-3 py-2 rounded-lg border border-transparent select-none',
           getSelectionRoundClass(isEditMode && isChecked, checkedPrev, checkedNext, 'md'),
           interactive.row,
           isEditMode
             ? isChecked
-              ? interactive.rowSelected
-              : 'text-text-300 hover:text-text-200'
+              ? cn(interactive.rowSelected, 'border-border-200')
+              : 'text-text-300'
             : isSelected
-              ? interactive.rowSelected
-              : 'text-text-300 hover:text-text-200',
+              ? cn(interactive.rowSelected, 'border-border-200')
+              : 'text-text-300',
           showActions && !isEditMode && 'bg-bg-200',
         )}
       >
@@ -719,7 +728,7 @@ export function SessionListItem({
           }}
           className={`peer flex min-w-0 flex-1 items-center gap-1.5 bg-transparent border-none p-0 text-left select-none ${
             !isEditMode && onArchive
-              ? actionsVisible
+              ? isArchiving || actionsVisible
                 ? 'pr-7'
                 : 'group-hover:pr-7 group-focus-within:pr-7'
               : ''
@@ -731,7 +740,7 @@ export function SessionListItem({
             <span
               className={`shrink-0 flex items-center gap-1.5 text-[length:var(--fs-xxs)] text-text-500 transition-opacity duration-150 ${
                 !isEditMode && onArchive
-                  ? actionsVisible
+                  ? isArchiving || actionsVisible
                     ? 'hidden'
                     : 'group-hover:hidden group-focus-within:hidden'
                   : ''
@@ -761,17 +770,18 @@ export function SessionListItem({
             data-compact
             onClick={handleArchive}
             className={cn(
-              'absolute right-1.5 top-1/2 -translate-y-1/2 z-10 p-0.5 rounded transition-opacity duration-150 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset',
-              actionsVisible
+              'absolute right-1.5 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center p-0.5 rounded transition-opacity duration-150 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset',
+              actionsVisible || isArchiving
                 ? 'opacity-100 pointer-events-auto'
                 : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto',
               'text-text-500 hover:text-text-200',
-              interactive.subtle,
+              isArchiving ? 'pointer-events-none text-accent-main-100' : interactive.subtle,
             )}
             title={t('chat:sidebar.archiveConversation', { defaultValue: 'Archive' })}
             aria-label={t('chat:sidebar.archiveConversation', { defaultValue: 'Archive' })}
+            disabled={isArchiving}
           >
-            <ArchiveIcon className="w-3.5 h-3.5" />
+            {isArchiving ? <Spinner size="lg" tone="accent" variant="pixel" /> : <ArchiveIcon className="w-3.5 h-3.5" />}
           </button>
         )}
       </div>
@@ -798,10 +808,10 @@ export function SessionListItem({
         interactive.row,
         isEditMode
           ? isChecked
-            ? interactive.rowSelected
+            ? cn(interactive.rowSelected, 'border-border-200')
             : ''
           : isSelected
-            ? interactive.rowSelected
+            ? cn(interactive.rowSelected, 'border-border-200')
             : '',
         showActions && !isEditMode && 'bg-bg-200',
       )}
@@ -823,7 +833,7 @@ export function SessionListItem({
             className={`${isCompact ? 'text-[length:var(--fs-md)]' : 'text-[length:var(--fs-base)]'} truncate font-medium ${
               (isEditMode ? isChecked : isSelected)
                 ? 'text-text-100'
-                : 'text-text-200 group-hover:text-text-100'
+                : 'text-text-200'
             }`}
             title={session.title || t('sessions.untitledChat')}
           >

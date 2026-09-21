@@ -1,6 +1,31 @@
 @import 'tailwindcss';
 
 /* ============================================
+ * 可点击元素默认手型光标
+ * ============================================
+ * Tailwind v4 的 preflight 移除了 v3 里 `button { cursor: pointer }`
+ * 的默认值，按钮回到浏览器默认箭头。这里在 base 层补回：
+ * 显式写了 cursor-default / cursor-not-allowed 等工具类的元素
+ * 优先级更高，不受影响。
+ */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled),
+  [role='menuitem']:not(:disabled),
+  [role='menuitemradio']:not(:disabled),
+  [role='menuitemcheckbox']:not(:disabled),
+  [role='option']:not(:disabled),
+  [role='tab']:not(:disabled),
+  [role='checkbox']:not(:disabled),
+  [role='radio']:not(:disabled),
+  [role='switch']:not(:disabled),
+  label[for],
+  summary {
+    cursor: pointer;
+  }
+}
+
+/* ============================================
  * Tauri WebView backdrop-filter 修复
  * ============================================
  * WebView2 (Windows) 和 WebKitGTK (Linux) 的部分版本
@@ -33,9 +58,10 @@
   background: transparent;
 }
 
-/* 导航到消息时保留顶部空间，避免被对话标题栏遮挡。 */
+/* 导航到消息时保留顶部空间，避免被对话标题栏遮挡。
+ * 与 Header 同源：顶栏高度 + 1rem 呼吸空间。 */
 [data-chat-scroll-root='true'] [data-message-id] {
-  scroll-margin-top: calc(72px + var(--app-safe-top, 0px));
+  scroll-margin-top: calc(var(--chat-header-height, 2.75rem) + 1rem + var(--app-safe-top, 0px));
 }
 
 /* ============================================
@@ -56,6 +82,8 @@
   --safe-area-inset-right: env(safe-area-inset-right, 0px);
   --app-safe-top: 0px;
   --keyboard-inset-bottom: 0px;
+  /* 对话区顶栏高度（不含安全区）。Header、消息区上边距、工作状态卡片上边距共用。 */
+  --chat-header-height: 2.75rem;
 }
 
 /* 支持 dvh 的浏览器使用动态视口高度 */
@@ -116,6 +144,15 @@ body,
   padding-top: var(--app-safe-top, 0px);
 }
 
+/* 对话区顶栏：比通用 safe-topbar 更矮，底部带一条实线分隔。
+ * 面板与消息区的上边距都读这个变量，改高度只需改这一处。
+ * 它只服务对话区 Header，不复用 .mobile-safe-topbar-14（那个还被侧栏/右面板共用）。 */
+.chat-topbar {
+  box-sizing: border-box;
+  height: calc(var(--chat-header-height, 2.75rem) + var(--app-safe-top, 0px));
+  padding-top: var(--app-safe-top, 0px);
+}
+
 .mobile-safe-topbar-10 {
   box-sizing: border-box;
   height: calc(2.5rem + var(--app-safe-top, 0px));
@@ -148,7 +185,8 @@ body,
 }
 
 @keyframes settings-search-highlight {
-  0%, 24% {
+  0%,
+  24% {
     background-color: hsl(var(--accent-main-100) / 0.14);
     box-shadow: 0 0 0 1px hsl(var(--accent-main-100) / 0.38);
   }
@@ -382,9 +420,10 @@ body,
     'Apple Color Emoji', 'Segoe UI Emoji';
   --font-sans: var(--font-ui-sans);
   --font-ui-serif: 'Georgia', 'Noto Serif', serif;
-  --font-mono: 'Fira Code', 'Noto Sans Mono CJK SC', 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular',
-    'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Noto Sans Mono', 'Ubuntu Mono',
-    'WenQuanYi Micro Hei Mono', 'DejaVu Sans Mono', 'Noto Sans CJK SC', ui-monospace, monospace;
+  --font-mono:
+    'Fira Code', 'Noto Sans Mono CJK SC', 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', 'SF Mono', Menlo,
+    Consolas, 'Liberation Mono', 'Noto Sans Mono', 'Ubuntu Mono', 'WenQuanYi Micro Hei Mono', 'DejaVu Sans Mono',
+    'Noto Sans CJK SC', ui-monospace, monospace;
 }
 
 :root[data-mode='dark'] {
@@ -414,9 +453,10 @@ body,
     'Apple Color Emoji', 'Segoe UI Emoji';
   --font-sans: var(--font-ui-sans);
   --font-ui-serif: 'Georgia', 'Noto Serif', serif;
-  --font-mono: 'Fira Code', 'Noto Sans Mono CJK SC', 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular',
-    'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Noto Sans Mono', 'Ubuntu Mono',
-    'WenQuanYi Micro Hei Mono', 'DejaVu Sans Mono', 'Noto Sans CJK SC', ui-monospace, monospace;
+  --font-mono:
+    'Fira Code', 'Noto Sans Mono CJK SC', 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', 'SF Mono', Menlo,
+    Consolas, 'Liberation Mono', 'Noto Sans Mono', 'Ubuntu Mono', 'WenQuanYi Micro Hei Mono', 'DejaVu Sans Mono',
+    'Noto Sans CJK SC', ui-monospace, monospace;
 
   /* Background - 灰调晨雾 */
   --bg-000: 150 10% 99%;
@@ -593,7 +633,10 @@ h6 {
   margin-bottom: 1rem;
 }
 
-.markdown-content.text-\[length\:var\(--fs-sm\)\] .markdown-stream-block:not(:first-child) > :first-child > :first-child {
+.markdown-content.text-\[length\:var\(--fs-sm\)\]
+  .markdown-stream-block:not(:first-child)
+  > :first-child
+  > :first-child {
   margin-top: 0.5rem;
 }
 
@@ -700,7 +743,8 @@ h6 {
   color: hsl(var(--text-300));
 }
 
-.markdown-content .markdown-html-control:is(input:not([type='checkbox']):not([type='radio']), textarea, select, button) {
+.markdown-content
+  .markdown-html-control:is(input:not([type='checkbox']):not([type='radio']), textarea, select, button) {
   max-width: 100%;
   border: 1px solid hsl(var(--border-200) / 0.75);
   border-radius: 5px;
@@ -728,7 +772,8 @@ h6 {
   outline-offset: 2px;
 }
 
-.markdown-content :is(.markdown-html-control[type='checkbox'], .markdown-html-control[type='radio'], .markdown-html-progress) {
+.markdown-content
+  :is(.markdown-html-control[type='checkbox'], .markdown-html-control[type='radio'], .markdown-html-progress) {
   accent-color: hsl(var(--accent-main-100));
 }
 
@@ -978,6 +1023,72 @@ h6 {
     animation: none !important;
     background: none;
     -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* ============================================
+ * 加载态变体（pixel-grid / dots / orbit）
+ *
+ * 替代各处的裸 spinner 圆圈。三种变体共用同一套节奏常量，
+ * 避免同一屏出现三种转速。prefers-reduced-motion 下统一降级为静态。
+ * ============================================ */
+
+/* pixel-grid：3x3 网格按对角线依次点亮 */
+@keyframes loader-pixel {
+  0%,
+  70%,
+  100% {
+    opacity: 0.15;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+
+.loader-pixel-cell {
+  animation: loader-pixel 1.4s ease-in-out infinite;
+}
+
+/* dots：三点依次弹起 */
+@keyframes loader-dot {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+.loader-dot-cell {
+  animation: loader-dot 1.2s ease-in-out infinite;
+}
+
+/* orbit：单点沿圆环匀速旋转 */
+@keyframes loader-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loader-orbit-ring {
+  animation: loader-orbit 1.1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loader-pixel-cell,
+  .loader-dot-cell,
+  .loader-orbit-ring {
+    animation: none !important;
+  }
+  .loader-pixel-cell {
+    opacity: 0.5;
+  }
+  .loader-dot-cell {
+    opacity: 0.6;
   }
 }
 
@@ -1411,8 +1522,8 @@ h6 {
      原值 500 是针对 Inter / PingFang 调的（它们的 400 在 12-14px 偏细），
      换成自托管字体后不再需要。 */
   font-weight: 400;
-  line-height: 1.6;        /* 中英混排要比 1.4 松一些 */
-  letter-spacing: 0.01em;  /* 给中文一点呼吸感 */
+  line-height: 1.6; /* 中英混排要比 1.4 松一些 */
+  letter-spacing: 0.01em; /* 给中文一点呼吸感 */
   font-optical-sizing: auto;
 
   -webkit-font-smoothing: antialiased;

@@ -36,15 +36,18 @@ export function MessageExpandPanel({
   className,
   innerClassName = 'min-h-0 min-w-0 overflow-hidden',
 }: MessageExpandPanelProps) {
-  const outerClass =
-    variant === 'fade'
-      ? expandFadeGridClass(open)
-      : expandGridClass(open, animate, panelClassName)
+  const outerClass = variant === 'fade' ? expandFadeGridClass(open) : expandGridClass(open, animate, panelClassName)
   const style: CSSProperties | undefined = clip ? { clipPath: MSG_EXPAND.clipPath } : undefined
 
   return (
     <div className={className ? `${outerClass} ${className}` : outerClass}>
-      <div ref={contentClassName ? undefined : contentRef} className={innerClassName} style={style}>
+      {/*
+       * 收起后内容仍留在 DOM 里（unmount 有 320ms 延迟，keepMounted 场景更是常驻），
+       * 因此必须显式 inert：否则键盘用户 Tab 会进入高度为 0 的隐藏内容，
+       * 焦点落在看不见的按钮上。aria-hidden 单独用不够——它管的是朗读，
+       * 管不住可聚焦性，包住可聚焦后代本身就是无障碍缺陷。
+       */}
+      <div ref={contentClassName ? undefined : contentRef} className={innerClassName} style={style} inert={!open}>
         {contentClassName ? (
           <div ref={contentRef} className={contentClassName}>
             {children}

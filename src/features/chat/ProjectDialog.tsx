@@ -417,7 +417,7 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '', ser
         <button
           onClick={handleConfirmCurrent}
           className={cn(
-            'flex items-center gap-1.5 px-3 py-1.5 bg-bg-000/40 border border-border-200/60 hover:border-accent-main-100/30 text-text-200 hover:text-accent-main-100 rounded-md text-[length:var(--fs-sm)] font-medium shrink-0 whitespace-nowrap',
+            'flex items-center gap-1.5 px-3 py-1.5 bg-bg-000/40 border border-border-200/60 hover:border-accent-main-100/30 text-text-200 rounded-md text-[length:var(--fs-sm)] font-medium shrink-0 whitespace-nowrap',
             interactive.accent,
           )}
         >
@@ -454,7 +454,7 @@ function ListItem({ id, icon, label, isSelected, onClick, onMouseEnter, action }
         ${
           isSelected
             ? 'bg-bg-200/60 text-text-100'
-            : 'text-text-300 hover:bg-bg-200 hover:text-text-100'
+            : 'text-text-300 hover:bg-bg-200'
         }
       `}
     >

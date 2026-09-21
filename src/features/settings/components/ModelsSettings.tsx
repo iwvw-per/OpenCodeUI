@@ -267,7 +267,7 @@ export function ModelsSettings() {
                       if (providerModels[0]) anchorKeyRef.current = getModelKey(providerModels[0])
                     }}
                     className={`h-7 shrink-0 px-1.5 -mr-1.5 rounded-md text-[length:var(--fs-xs)] font-medium hover:bg-bg-200 transition-colors disabled:opacity-35 disabled:cursor-not-allowed ${
-                      allProviderVisible ? 'text-text-400 hover:text-text-200' : 'text-accent-main-100'
+                      allProviderVisible ? 'text-text-400' : 'text-accent-main-100'
                     }`}
                   >
                     {t(allProviderVisible ? 'models.hideAll' : 'models.showAll')}

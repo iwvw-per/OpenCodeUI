@@ -13,7 +13,7 @@ import {
   TrashIcon,
   CheckIcon,
 } from '../../../components/Icons'
-import { ExpandableSection } from '../../../components/ui'
+import { ExpandableSection, Spinner } from '../../../components/ui'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { useDelayedRender, useSessions, useVcsInfo } from '../../../hooks'
 import { useInputCapabilities } from '../../../hooks/useInputCapabilities'
@@ -26,9 +26,11 @@ import { useBusySessions } from '../../../store/activeSessionStore'
 import { splitSessionKey } from '../../../utils/sessionKey'
 import { notificationStore, useNotifications } from '../../../store/notificationStore'
 import { pinnedSessionsStore, type PinnedSessionEntry } from '../../../store/pinnedSessionsStore'
+import { serverStore } from '../../../store/serverStore'
 import { SessionListItem } from '../../sessions'
 import { getSelectionRoundClass } from '../../sessions/selectionRound'
 import { SessionChildrenSlot } from './SessionChildrenSlot'
+import { buildFolderStatus, type FolderStatus } from './folderStatus'
 import { cn } from '../../../utils/cn'
 import { interactive } from '../../../utils/interaction'
 
@@ -112,89 +114,6 @@ interface FolderRecentListProps {
 interface PendingDeleteSession {
   session: ApiSession
   removeLocal: () => void
-}
-
-interface FolderStatus {
-  dot: string
-  label: string
-  pulse: boolean
-  count?: number
-}
-
-function matchesAnyDirectory(directory: string | undefined, candidates: string[]) {
-  if (!directory) return false
-  return candidates.some(candidate => isSameDirectory(candidate, directory))
-}
-
-function buildFolderStatus(
-  directories: string[],
-  busySessions: ReturnType<typeof useBusySessions>,
-  notifications: ReturnType<typeof useNotifications>,
-  t: ReturnType<typeof useTranslation>['t'],
-): FolderStatus | null {
-  const dirSessions = busySessions.filter(entry => matchesAnyDirectory(entry.directory, directories))
-
-  if (dirSessions.length > 0) {
-    let hasPermission = false
-    let hasQuestion = false
-    let hasRetry = false
-
-    for (const session of dirSessions) {
-      if (session.pendingAction?.type === 'permission') hasPermission = true
-      else if (session.pendingAction?.type === 'question') hasQuestion = true
-      else if (session.status.type === 'retry') hasRetry = true
-    }
-
-    const count = dirSessions.length
-    if (hasPermission) {
-      return {
-        dot: 'bg-warning-100',
-        label: t('chat:activeSession.awaitingPermission'),
-        pulse: false,
-        count,
-      }
-    }
-    if (hasQuestion) {
-      return {
-        dot: 'bg-info-100',
-        label: t('chat:activeSession.awaitingAnswer'),
-        pulse: false,
-        count,
-      }
-    }
-    if (hasRetry) {
-      return {
-        dot: 'bg-warning-100',
-        label: t('chat:activeSession.retrying'),
-        pulse: false,
-        count,
-      }
-    }
-
-    return {
-      dot: 'bg-success-100',
-      label: t('chat:activeSession.working'),
-      pulse: true,
-      count,
-    }
-  }
-
-  const hasUnreadCompleted = notifications.some(
-    notification =>
-      notification.type === 'completed' &&
-      !notification.read &&
-      matchesAnyDirectory(notification.directory, directories),
-  )
-
-  if (hasUnreadCompleted) {
-    return {
-      dot: 'bg-accent-main-100',
-      label: t('chat:notification.completed'),
-      pulse: false,
-    }
-  }
-
-  return null
 }
 
 function getInitialExpandedProjectIds(projects: FolderRecentProject[], currentDirectory?: string): string[] {
@@ -495,6 +414,8 @@ export function FolderRecentList({
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteSession | null>(null)
   const allBusySessions = useBusySessions()
   const allNotifications = useNotifications()
+  // 项目行状态按服务器收窄：缺省用活动服务器（多服务器模式由 SidePanel 显式传入）
+  const statusServerId = serverId ?? serverStore.getActiveServerId()
   const projectById = useMemo(() => new Map(projects.map(project => [project.id, project])), [projects])
   const { handleDragActivated, handleDragFinished } = useCollapseExpandedIdsOnDrag(
     expandedProjectIds,
@@ -551,12 +472,27 @@ export function FolderRecentList({
       if (isProjectExpanded) continue
 
       const statusDirectories = workspaceDirectoriesByProjectId?.get(project.id) ?? [project.worktree]
-      const status = buildFolderStatus(statusDirectories, allBusySessions, allNotifications, t)
+      const status = buildFolderStatus({
+        serverId: statusServerId,
+        directories: statusDirectories,
+        busySessions: allBusySessions,
+        notifications: allNotifications,
+        t,
+      })
       if (status) map.set(project.id, status)
     }
 
     return map
-  }, [projects, expandedProjectIds, isDragging, allBusySessions, allNotifications, t, workspaceDirectoriesByProjectId])
+  }, [
+    projects,
+    expandedProjectIds,
+    isDragging,
+    allBusySessions,
+    allNotifications,
+    t,
+    workspaceDirectoriesByProjectId,
+    statusServerId,
+  ])
 
   const folderStatusByWorkspaceDirectory = useMemo(() => {
     const map = new Map<string, FolderStatus>()
@@ -567,12 +503,43 @@ export function FolderRecentList({
     })
 
     for (const directory of workspaceDirectories) {
-      const status = buildFolderStatus([directory], allBusySessions, allNotifications, t)
+      const status = buildFolderStatus({
+        serverId: statusServerId,
+        directories: [directory],
+        busySessions: allBusySessions,
+        notifications: allNotifications,
+        t,
+      })
       if (status) map.set(directory, status)
     }
 
     return map
-  }, [allBusySessions, allNotifications, t, workspaceDirectoriesByProjectId])
+  }, [allBusySessions, allNotifications, t, workspaceDirectoriesByProjectId, statusServerId])
+
+  /**
+   * 用户展开某个项目时，把该项目（该服务器）下的未读通知一次性清掉。
+   *
+   * 为什么需要：未读点按 directory 汇总，但清理只能靠点击会话行；会话一旦
+   * 不在可见范围（分页只加载前几条、已归档、被别的客户端删除、子会话不在列表）
+   * 就没有入口可点，项目行会永久亮着，展开也找不到是哪个会话。展开即视为
+   * 用户已看过这个项目的更新。
+   *
+   * 只在「用户主动展开」时清，且搜索态强制展开不算（否则一打字就清空所有未读）。
+   * 用前一次展开集合做差，只处理新展开的 id，避免每次列表重渲染重复清理。
+   */
+  const prevExpandedIdsRef = useRef<string[] | null>(null)
+  useEffect(() => {
+    const prev = prevExpandedIdsRef.current
+    prevExpandedIdsRef.current = expandedProjectIds
+    // 首次建立基线、拖拽中临时清空、搜索态强制展开都不做清理
+    if (!prev || isDragging || search) return
+
+    for (const project of projects) {
+      if (!expandedProjectIds.includes(project.id) || prev.includes(project.id)) continue
+      const directories = workspaceDirectoriesByProjectId?.get(project.id) ?? [project.worktree]
+      notificationStore.markDirectoryNotificationsRead(statusServerId, directories, 'completed')
+    }
+  }, [expandedProjectIds, projects, workspaceDirectoriesByProjectId, statusServerId, isDragging, search])
 
   return (
     <>
@@ -981,7 +948,8 @@ function FolderRecentSection({
     }
   }, [isExpanded, inView])
 
-  const { sessions, isLoading, isLoadingMore, hasMore, loadMore, patchLocalSession, removeLocalSession } = useSessions({
+  const { sessions, isLoading, isLoadingMore, hasMore, loadMore, collapse, patchLocalSession, removeLocalSession } =
+  useSessions({
     directory: project.worktree,
     pageSize: DIRECTORY_PAGE_SIZE,
     enabled: hasActivated && !hasWorkspaceTree,
@@ -1170,7 +1138,9 @@ function FolderRecentSection({
               className="text-text-100"
             />
           </button>
-          {/* 项目行 hover 的 + 按钮：在该项目目录下新建会话（全局/无目录项目不显示）；hover 才显示，与移除按钮一致 */}
+          {/* 项目行 hover 的 + 按钮：在该项目目录下新建会话（全局/无目录项目不显示）；hover 才显示，与移除按钮一致。
+              hover 揭示按钮不参与 flex 布局动画：固定 24px 占位、绝对定位到行尾右侧，只做 opacity 淡入。
+              这样展开时不会挤压 title / 推动右侧状态点与时间，避免"划过一行时文字轻微位移"。 */}
           {!isEditMode && onNewSessionInDirectory && project.worktree && (
             <button
               type="button"
@@ -1180,7 +1150,8 @@ function FolderRecentSection({
                 onNewSessionInDirectory(project.worktree)
               }}
               className={cn(
-                'shrink-0 flex items-center justify-center h-6 rounded-full overflow-hidden text-accent-main-100 hover:text-accent-main-200 w-0 mr-0 opacity-0 transition-all group-hover/folder:w-6 group-hover/folder:mr-0.5 group-hover/folder:opacity-100',
+                'absolute right-[34px] z-10 flex items-center justify-center size-6 rounded-full overflow-hidden text-accent-main-100 hover:text-accent-main-200',
+                'opacity-0 transition-opacity duration-150 group-hover/folder:opacity-100 pointer-events-none group-hover/folder:pointer-events-auto',
                 interactive.accent,
               )}
               title={t('sidebar.newTaskInDirectory', { defaultValue: 'New conversation here' })}
@@ -1189,7 +1160,8 @@ function FolderRecentSection({
               <PlusIcon size={13} />
             </button>
           )}
-          {/* 移除项目：hover 显示；二次点击防误触（已保存=移除，服务器发现=隐藏；全局项不显示） */}
+          {/* 移除项目：hover 显示；二次点击防误触（已保存=移除，服务器发现=隐藏；全局项不显示）。
+              与 + 按钮同一套几何：固定占位 + opacity 淡入，不改变布局。 */}
           {!isEditMode && onRemoveProject && project.worktree && (
             <button
               type="button"
@@ -1200,12 +1172,11 @@ function FolderRecentSection({
               }}
               onMouseLeave={disarmRemove}
               className={cn(
-                'shrink-0 flex items-center justify-center h-6 rounded-full overflow-hidden',
+                'absolute right-1.5 z-10 flex items-center justify-center size-6 rounded-full overflow-hidden',
                 removeArmed
-                  ? 'w-6 mr-0.5 bg-danger-100/15 text-danger-100'
-                  : 'w-0 mr-0 text-text-400 opacity-0 group-hover/folder:w-6 group-hover/folder:mr-0.5 group-hover/folder:opacity-100 hover:text-danger-100',
+                  ? 'bg-danger-100/15 text-danger-100 opacity-100 pointer-events-auto'
+                  : 'text-text-400 opacity-0 transition-opacity duration-150 group-hover/folder:opacity-100 pointer-events-none group-hover/folder:pointer-events-auto hover:text-danger-100',
                 !removeArmed && interactive.danger,
-                'transition-all',
               )}
               title={removeArmed ? t('sidebar.removeProjectConfirmClick', { defaultValue: '再次点击确认移除' }) : t('sidebar.removeProject')}
               aria-label={removeArmed ? t('sidebar.removeProjectConfirmClick', { defaultValue: '再次点击确认移除' }) : t('sidebar.removeProject')}
@@ -1235,15 +1206,21 @@ function FolderRecentSection({
               />
             </button>
           )}
-          {/* 状态点紧挨时间：放在主按钮内会被 hover 按钮的透明占位隔开，位置看着不对；hover 时随时间一起隐藏 */}
+          {/* 状态指示：紧挨时间，hover 时隐藏给操作按钮让位。
+              状态分档与项目内会话行（minimal SessionListItem）保持一致：
+              - working：旋转 spinner（不是点），表示有会话正在跑
+              - permission / question / retry：彩色点
+              - unread：主色未读点
+              旋转图标比点更大，容器用 w-3.5 并在右侧留 0.5 间距，避免贴住时间。 */}
           {folderStatus && (
             <span
-              className="relative shrink-0 flex items-center justify-center w-3 h-3 group-hover/folder:hidden"
+              className="relative shrink-0 flex items-center justify-center w-3.5 h-3.5 group-hover/folder:hidden"
               title={folderStatus.count ? `${folderStatus.label} (${folderStatus.count})` : folderStatus.label}
             >
-              <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot}`} />
-              {folderStatus.pulse && (
-                <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot} animate-ping opacity-50`} />
+              {folderStatus.kind === 'working' ? (
+                <SpinnerIcon size={12} className="animate-spin text-accent-main-100" />
+              ) : (
+                <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot}`} />
               )}
             </span>
           )}
@@ -1266,10 +1243,13 @@ function FolderRecentSection({
           {shouldRenderBody && (
             <div onTouchStart={e => e.stopPropagation()}>
               {!hasActivated || (!hasWorkspaceTree && isLoading) ? (
-                // 与 minimal SessionListItem 对齐：状态点占位 + spinner 落在标题文字区
+                // 与 minimal SessionListItem 对齐：状态点占位 + 像素格子 spinner + 扫光文案
                 <div className="flex items-center gap-2 px-2 py-1.5" aria-busy="true">
                   <span className="size-5 shrink-0" aria-hidden="true" />
-                  <SpinnerIcon size={12} className="animate-spin text-accent-main-100" />
+                  <Spinner size="sm" tone="accent" variant="pixel" />
+                  <span className="reasoning-shimmer-text text-[length:var(--fs-sm)]">
+                    {t('sidebar.loadingChats')}
+                  </span>
                 </div>
               ) : hasWorkspaceTree ? (
                 <WorkspaceFolderList
@@ -1324,7 +1304,7 @@ function FolderRecentSection({
                         onSelect={() => onSelectSession(session)}
                         onRename={newTitle => handleRename(session.id, newTitle)}
                         onDelete={() => handleDelete(session.id)}
-                        onArchive={() => void handleArchive(session.id)}
+                        onArchive={() => handleArchive(session.id)}
                         preferTouchUi={preferTouchUi}
                         density="minimal"
                         showStats={showSessionDiffStats}
@@ -1364,7 +1344,7 @@ function FolderRecentSection({
                       aria-busy={isLoadingMore}
                       aria-label={isLoadingMore ? t('common:loadingMore') : t('sidebar.showMoreChats')}
                       className={cn(
-                        'group w-full rounded-md px-2 py-1.5 text-[length:var(--fs-xs)] text-text-400/85 hover:text-text-200',
+                        'group w-full rounded-md px-2 py-1.5 text-[length:var(--fs-xs)] text-text-400/85',
                         interactive.subtle,
                         'disabled:cursor-default disabled:opacity-70',
                       )}
@@ -1377,13 +1357,42 @@ function FolderRecentSection({
                           />
                           <span>{t('sidebar.showMoreChats')}</span>
                           {isLoadingMore ? (
-                            <SpinnerIcon size={12} className="animate-spin text-accent-main-100" />
+                            <Spinner size="sm" tone="accent" variant="pixel" />
                           ) : (
                             <ChevronDownIcon
                               size={12}
                               className="text-text-400/90 transition-colors group-hover:text-text-200"
                             />
                           )}
+                        </span>
+                      </span>
+                    </button>
+                  )}
+
+                  {visibleSessions.length > DIRECTORY_PAGE_SIZE && (
+                    <button
+                      onClick={() => void collapse()}
+                      disabled={isLoadingMore}
+                      aria-busy={isLoadingMore}
+                      aria-label={t('sidebar.showFewerChats')}
+                      title={t('sidebar.showFewerChats')}
+                      className={cn(
+                        'group w-full rounded-md px-2 py-1.5 text-[length:var(--fs-xs)] text-text-400/85',
+                        interactive.subtle,
+                        'disabled:cursor-default disabled:opacity-70',
+                      )}
+                    >
+                      <span className="flex items-center justify-center">
+                        <span className="relative inline-flex shrink-0 items-center gap-1.5 font-medium">
+                          <span
+                            aria-hidden="true"
+                            className="pointer-events-none absolute right-full top-1/2 mr-2 h-px w-6 -translate-y-1/2 bg-text-600/35 transition-colors group-hover:bg-text-500/55"
+                          />
+                          <span>{t('sidebar.showFewerChats')}</span>
+                          <ChevronDownIcon
+                            size={12}
+                            className="rotate-180 text-text-400/90 transition-colors group-hover:text-text-200"
+                          />
                         </span>
                       </span>
                     </button>

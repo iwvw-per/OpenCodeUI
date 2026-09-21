@@ -40,6 +40,7 @@ export const GlobeIcon = wrapTool(Globe)
 export const BrainIcon = wrapTool(Brain)
 export const WrenchIcon = wrapTool(Wrench)
 export const ChecklistIcon = wrapTool(ListChecks)
+/** 子 agent 任务：八角星（lucide Loader）。运行时的旋转由调用方控制。 */
 export const TaskIcon = wrapTool(Loader)
 
 export const QuestionIcon = wrapTool(CircleHelp)

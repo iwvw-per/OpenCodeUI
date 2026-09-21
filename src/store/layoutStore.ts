@@ -8,6 +8,15 @@ import { DEFAULT_SESSION_SORT, isSessionSortField, type SessionSortField } from 
 // 面板位置
 export type PanelPosition = 'bottom' | 'right'
 
+/** 子会话在侧栏的显示策略 */
+export type ChildSessionsDisplayMode = 'off' | 'active' | 'all'
+
+const CHILD_SESSIONS_MODES: ChildSessionsDisplayMode[] = ['off', 'active', 'all']
+
+export function isChildSessionsDisplayMode(value: unknown): value is ChildSessionsDisplayMode {
+  return typeof value === 'string' && (CHILD_SESSIONS_MODES as string[]).includes(value)
+}
+
 // 面板内容类型
 export type PanelTabType = 'terminal' | 'files' | 'changes' | 'mcp' | 'skill' | 'worktree'
 type PersistedPanelTabType = Exclude<PanelTabType, 'terminal'>
@@ -103,7 +112,13 @@ interface LayoutState {
   sidebarExpanded: boolean
   sidebarFolderRecents: boolean
   sidebarFolderRecentsShowDiff: boolean
-  sidebarShowChildSessions: boolean
+  /**
+   * 子会话在侧栏的显示策略：
+   * - off：不显示（仅选中某个子会话时露出它所属的分支）
+   * - active：只显示活跃（busy）+ 正在查看的子会话
+   * - all：始终在父会话下列出全部子会话
+   */
+  sidebarChildSessions: ChildSessionsDisplayMode
   /** 侧栏会话排序字段 */
   sidebarSessionSortField: SessionSortField
   /** 侧栏会话排序方向：true = 倒序（新→旧），false = 正序（旧→新） */
@@ -323,7 +338,7 @@ export class LayoutStore {
     sidebarExpanded: true,
     sidebarFolderRecents: false,
     sidebarFolderRecentsShowDiff: true,
-    sidebarShowChildSessions: false,
+    sidebarChildSessions: 'active',
     sidebarSessionSortField: DEFAULT_SESSION_SORT.field,
     sidebarSessionSortDesc: DEFAULT_SESSION_SORT.desc,
     sendOnEnter: true,
@@ -422,9 +437,14 @@ export class LayoutStore {
         this.state.sidebarFolderRecentsShowDiff = savedFolderRecentsShowDiff !== 'false'
       }
 
+      // 兼容旧值：旧开关 true = 始终显示（all），false = 仅活跃（active）
       const savedShowChildSessions = localStorage.getItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS)
       if (savedShowChildSessions !== null) {
-        this.state.sidebarShowChildSessions = savedShowChildSessions === 'true'
+        if (savedShowChildSessions === 'true') this.state.sidebarChildSessions = 'all'
+        else if (savedShowChildSessions === 'false') this.state.sidebarChildSessions = 'active'
+        else if (isChildSessionsDisplayMode(savedShowChildSessions)) {
+          this.state.sidebarChildSessions = savedShowChildSessions
+        }
       }
 
       // 排序偏好存成 JSON；解析失败/字段非法时保持默认（updated + 倒序）
@@ -552,11 +572,11 @@ export class LayoutStore {
     this.notify()
   }
 
-  setSidebarShowChildSessions(enabled: boolean) {
-    if (this.state.sidebarShowChildSessions === enabled) return
-    this.state.sidebarShowChildSessions = enabled
+  setSidebarChildSessions(mode: ChildSessionsDisplayMode) {
+    if (this.state.sidebarChildSessions === mode) return
+    this.state.sidebarChildSessions = mode
     try {
-      localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, String(enabled))
+      localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, mode)
     } catch {
       /* ignore */
     }
@@ -1233,7 +1253,7 @@ export interface LayoutBackup {
   sidebarExpanded: boolean
   sidebarFolderRecents: boolean
   sidebarFolderRecentsShowDiff: boolean
-  sidebarShowChildSessions: boolean
+  sidebarChildSessions: ChildSessionsDisplayMode
   sidebarSessionSortField: SessionSortField
   sidebarSessionSortDesc: boolean
   sendOnEnter: boolean
@@ -1280,7 +1300,7 @@ export function exportLayoutBackup(): LayoutBackup {
     sidebarExpanded: state.sidebarExpanded,
     sidebarFolderRecents: state.sidebarFolderRecents,
     sidebarFolderRecentsShowDiff: state.sidebarFolderRecentsShowDiff,
-    sidebarShowChildSessions: state.sidebarShowChildSessions,
+    sidebarChildSessions: state.sidebarChildSessions,
     sidebarSessionSortField: state.sidebarSessionSortField,
     sidebarSessionSortDesc: state.sidebarSessionSortDesc,
     sendOnEnter: state.sendOnEnter,
@@ -1333,7 +1353,12 @@ export function importLayoutBackup(raw: unknown): void {
     sidebarExpanded: parsed?.sidebarExpanded === true,
     sidebarFolderRecents: parsed?.sidebarFolderRecents === true,
     sidebarFolderRecentsShowDiff: parsed?.sidebarFolderRecentsShowDiff !== false,
-    sidebarShowChildSessions: parsed?.sidebarShowChildSessions === true,
+    sidebarChildSessions: isChildSessionsDisplayMode(parsed?.sidebarChildSessions)
+      ? parsed.sidebarChildSessions
+      // 兼容旧备份：布尔 true = 始终显示，false = 仅活跃
+      : parsed?.sidebarShowChildSessions === true
+        ? 'all'
+        : 'active',
     sidebarSessionSortField: isSessionSortField(parsed?.sidebarSessionSortField)
       ? parsed.sidebarSessionSortField
       : DEFAULT_SESSION_SORT.field,
@@ -1355,7 +1380,7 @@ export function importLayoutBackup(raw: unknown): void {
     STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF,
     String(nextState.sidebarFolderRecentsShowDiff),
   )
-  localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, String(nextState.sidebarShowChildSessions))
+  localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, nextState.sidebarChildSessions)
   localStorage.setItem(
     STORAGE_KEY_SIDEBAR_SESSION_SORT,
     JSON.stringify({ field: nextState.sidebarSessionSortField, desc: nextState.sidebarSessionSortDesc }),

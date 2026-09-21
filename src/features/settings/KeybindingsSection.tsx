@@ -291,7 +291,7 @@ export function KeybindingsSection() {
             type="button"
             onClick={resetAll}
             className={cn(
-              'h-7 px-2 rounded-md text-[length:var(--fs-xs)] font-medium text-text-400 hover:text-danger-100',
+              'h-7 px-2 rounded-md text-[length:var(--fs-xs)] font-medium text-text-400',
               interactive.danger,
               interactive.focusRingCompact,
             )}

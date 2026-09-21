@@ -460,7 +460,7 @@ function ZoomableImage({ url, alt }: { url: string; alt: string }) {
             onClick={resetView}
             aria-label={t('attachment.zoomReset')}
             className={cn(
-              'px-2 py-1 rounded-md text-[length:var(--fs-sm)] font-mono text-text-400 hover:text-text-100 transition-colors min-w-[52px] min-h-[44px] sm:min-h-0 flex items-center justify-center',
+              'px-2 py-1 rounded-md text-[length:var(--fs-sm)] font-mono text-text-400 transition-colors min-w-[52px] min-h-[44px] sm:min-h-0 flex items-center justify-center',
               interactive.subtle,
             )}
             title={t('attachment.zoomReset')}

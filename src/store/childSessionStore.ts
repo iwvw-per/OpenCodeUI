@@ -58,10 +58,13 @@ class ChildSessionStore {
   // ============================================
 
   /**
-   * 注册一个新的子 session（从 session.created 事件调用）
-   * @param serverId 子 session 所属服务器（用于把原始 sessionId 复合化）
+   * 注册一个新的子 session。
+   *
+   * `status` 只在「重建历史关系」时显式传入：实时事件（session.created）天然是
+   * 新会话，可安全默认 running；但刷新后从服务端拉回的子会话可能早已结束，
+   * 一律标 running 会让已完成的子代理重新显示为「正在工作」。
    */
-  registerChildSession(session: ApiSession, serverId?: string) {
+  registerChildSession(session: ApiSession, serverId?: string, status?: ChildSessionInfo['status']) {
     if (!session.parentID) return // 不是子 session
 
     const childKey = makeSessionKey(serverId ?? serverStore.getActiveServerId(), session.id)
@@ -81,7 +84,7 @@ class ChildSessionStore {
       parentID: parentKey,
       title: session.title || i18n.t('chat:permissionDialog.subtaskFallback'),
       agent: session.agent,
-      status: 'running',
+      status: status ?? 'running',
       createdAt: session.time.created,
     })
 

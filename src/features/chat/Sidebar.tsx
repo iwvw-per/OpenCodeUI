@@ -4,7 +4,9 @@ import { SidePanel } from './sidebar/SidePanel'
 import { ProjectDialog } from './ProjectDialog'
 import { useMultiServerStore } from '../../store/multiServerStore'
 import { useDirectory } from '../../hooks'
-import { isTauri, isTauriMobile } from '../../utils/tauri'
+import { getDesktopPlatform, isTauri, isTauriMobile } from '../../utils/tauri'
+import { DESKTOP_TITLEBAR_HEIGHT } from '../../constants/desktopWindow'
+import { DesktopNavControls } from '../../components/DesktopNavControls'
 import { type ApiSession } from '../../api'
 import { useChatViewport } from './chatViewport'
 
@@ -401,6 +403,23 @@ export const Sidebar = memo(function Sidebar({
           ${isResizing ? 'transition-none' : 'transition-[width] duration-300 ease-out'}
         `}
       >
+        {/* Windows 桌面：侧边栏顶部工具栏 —— 承载侧栏开关 + 导航控件，与下方内容用分隔线分开。
+            开关图标与下方各项图标（mx-2 + paddingLeft:6，图标中心 24px）水平对齐；
+            展开/收起时位置固定，其余导航按钮仅在展开时依次排列（gap-1）。
+            左右各留 pl-2 / pr-2：拉到最小宽度时按钮行与左右边界、竖线都留出间距。 */}
+        {getDesktopPlatform() === 'windows' && (
+          <div
+            className="flex items-center shrink-0 border-b border-border-200/50 pl-2 pr-2 gap-1"
+            style={{ height: DESKTOP_TITLEBAR_HEIGHT }}
+          >
+            <DesktopNavControls
+              sidebarOpen={isOpen}
+              onToggleSidebar={handleToggle}
+              showExtra={isOpen}
+            />
+          </div>
+        )}
+
         <SidePanel
           onNewSession={onNewSession}
           onSelectSession={onSelectSession}
@@ -412,6 +431,7 @@ export const Sidebar = memo(function Sidebar({
           onToggleSidebar={handleToggle}
           contextLimit={contextLimit}
           onOpenSettings={onOpenSettings}
+          hideHeader={getDesktopPlatform() === 'windows'}
         />
 
         {isOpen && (

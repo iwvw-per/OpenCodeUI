@@ -24,6 +24,9 @@ interface BottomPanelProps {
   directory?: string
   /** 数据所属服务器（跟随焦点 session；缺省用活动服务器） */
   serverId?: string
+  /** 右侧浮层面板让位时传入：给底部面板加 padding-right，避免被浮层盖住 */
+  className?: string
+  style?: React.CSSProperties
 }
 
 function PanelFallback() {
@@ -35,7 +38,7 @@ function PanelFallback() {
   )
 }
 
-export const BottomPanel = memo(function BottomPanel({ directory, serverId }: BottomPanelProps) {
+export const BottomPanel = memo(function BottomPanel({ directory, serverId, className, style }: BottomPanelProps) {
   const { t } = useTranslation(['components', 'common'])
   const { bottomPanelOpen, bottomPanelHeight } = useLayoutStore()
   const sessionId = useCurrentSessionId()
@@ -224,25 +227,27 @@ export const BottomPanel = memo(function BottomPanel({ directory, serverId }: Bo
   )
 
   return (
-    <ResizablePanel
-      position="bottom"
-      isOpen={bottomPanelOpen}
-      overlay={interaction.bottomPanelBehavior === 'overlay'}
-      overlayBackdrop={false}
-      size={bottomPanelHeight}
-      maxSize={layout.bottomPanel.maxHeight}
-      onSizeChange={h => layoutStore.setBottomPanelHeight(h)}
-      onClose={() => layoutStore.closeBottomPanel()}
-    >
-      <PanelContainer
+    <div className={className} style={style}>
+      <ResizablePanel
         position="bottom"
-        directory={normalizedDirectory}
-        onNewTerminal={handleNewTerminal}
-        onCloseTerminal={handleCloseTerminal}
+        isOpen={bottomPanelOpen}
+        overlay={interaction.bottomPanelBehavior === 'overlay'}
+        overlayBackdrop={false}
+        size={bottomPanelHeight}
+        maxSize={layout.bottomPanel.maxHeight}
+        onSizeChange={h => layoutStore.setBottomPanelHeight(h)}
+        onClose={() => layoutStore.closeBottomPanel()}
       >
-        {renderContent}
-      </PanelContainer>
-    </ResizablePanel>
+        <PanelContainer
+          position="bottom"
+          directory={normalizedDirectory}
+          onNewTerminal={handleNewTerminal}
+          onCloseTerminal={handleCloseTerminal}
+        >
+          {renderContent}
+        </PanelContainer>
+      </ResizablePanel>
+    </div>
   )
 })
 
@@ -265,7 +270,13 @@ const TerminalContent = memo(function TerminalContent({ activeTab, directory, se
   return (
     <>
       {terminalTabs.map(tab => (
-        <Terminal key={tab.id} ptyId={tab.id} directory={directory} serverId={tab.serverId ?? serverId} isActive={tab.id === activeTab.id} />
+        <Terminal
+          key={tab.id}
+          ptyId={tab.id}
+          directory={directory}
+          serverId={tab.serverId ?? serverId}
+          isActive={tab.id === activeTab.id}
+        />
       ))}
     </>
   )

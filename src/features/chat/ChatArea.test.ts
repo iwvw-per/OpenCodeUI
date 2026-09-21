@@ -6,6 +6,7 @@ import {
   buildProcessTimeline,
   buildTurnDurationMap,
   buildTurnLatestAssistantIdSet,
+  collectTurnChangedFiles,
   computeAnchorRestoreScrollDelta,
   computeExpandedPageRange,
   estimateMessageRenderWeight,
@@ -1398,5 +1399,49 @@ describe('computeAnchorRestoreScrollDelta', () => {
 
   it('returns a negative value when the anchor drifted upward', () => {
     expect(computeAnchorRestoreScrollDelta(180, 24)).toBe(-156)
+  })
+})
+
+describe('collectTurnChangedFiles', () => {
+  function editToolPart(id: string, messageID: string, filePath: string, before: string, after: string): ToolPart {
+    return {
+      id,
+      sessionID: 'session-1',
+      messageID,
+      type: 'tool',
+      callID: `call-${id}`,
+      tool: 'edit',
+      state: {
+        status: 'completed',
+        input: {},
+        output: 'ok',
+        title: 'Edit file',
+        metadata: { files: [{ filePath, before, after }] },
+        time: { start: 1, end: 2 },
+      },
+    }
+  }
+
+  it('aggregates files across all assistant messages of a turn', () => {
+    const a = createAssistantMessage('assistant-1', [editToolPart('t1', 'assistant-1', 'src/a.ts', 'x\n', 'x\ny\n')])
+    const b = createAssistantMessage('assistant-2', [editToolPart('t2', 'assistant-2', 'src/a.ts', 'y\n', 'y\nz\n')])
+    const files = collectTurnChangedFiles([a, b])
+    expect(files.map(f => f.path)).toEqual(['src/a.ts'])
+    expect(files[0].additions).toBe(2)
+    expect(files[0].deletions).toBe(0)
+    expect(files[0].editCount).toBe(2)
+  })
+
+  it('keeps distinct files separate', () => {
+    const a = createAssistantMessage('assistant-1', [editToolPart('t1', 'assistant-1', 'src/a.ts', 'x\n', 'x\ny\n')])
+    const b = createAssistantMessage('assistant-2', [editToolPart('t2', 'assistant-2', 'src/b.ts', 'a\n', 'a\nb\n')])
+    const files = collectTurnChangedFiles([a, b])
+    expect(files.map(f => f.path).sort()).toEqual(['src/a.ts', 'src/b.ts'])
+  })
+
+  it('ignores non-assistant messages', () => {
+    const user = { ...createUserMessage('user-1', 1), parts: [editToolPart('t1', 'user-1', 'src/a.ts', 'x\n', 'x\ny\n')] }
+    const files = collectTurnChangedFiles([user])
+    expect(files).toEqual([])
   })
 })

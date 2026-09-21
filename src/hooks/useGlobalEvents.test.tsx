@@ -17,9 +17,12 @@ const {
   getPendingQuestionsMock,
   replyPermissionMock,
   childBelongsToSessionMock,
+  getSessionInfoMock,
   getFocusedSessionIdMock,
   getSessionAndDescendantsMock,
   notificationPushMock,
+  markSessionNotificationsReadMock,
+  removeSessionNotificationsMock,
   playNotificationSoundDedupedMock,
   getSoundSnapshotMock,
   isSystemEnabledMock,
@@ -40,9 +43,12 @@ const {
   getPendingQuestionsMock: vi.fn(() => Promise.resolve([])),
   replyPermissionMock: vi.fn(() => Promise.resolve()),
   childBelongsToSessionMock: vi.fn<(sessionId: string, rootSessionId: string) => boolean>(() => false),
+  getSessionInfoMock: vi.fn<(sessionId: string) => unknown>(() => undefined),
   getFocusedSessionIdMock: vi.fn<() => string | null>(() => null),
   getSessionAndDescendantsMock: vi.fn((sessionId: string) => [sessionId]),
   notificationPushMock: vi.fn(),
+  markSessionNotificationsReadMock: vi.fn(),
+  removeSessionNotificationsMock: vi.fn(),
   playNotificationSoundDedupedMock: vi.fn(),
   isSystemEnabledMock: vi.fn((type: string) => type !== 'permission'),
   applyServerConnectedTimestampMock: vi.fn(),
@@ -103,6 +109,7 @@ vi.mock('../store', () => ({
   childSessionStore: {
     belongsToSession: childBelongsToSessionMock,
     getSessionAndDescendants: getSessionAndDescendantsMock,
+    getSessionInfo: getSessionInfoMock,
     markIdle: vi.fn(),
     markError: vi.fn(),
     registerChildSession: vi.fn(),
@@ -132,6 +139,8 @@ vi.mock('../store/activeSessionStore', () => ({
 vi.mock('../store/notificationStore', () => ({
   notificationStore: {
     push: notificationPushMock,
+    markSessionNotificationsRead: markSessionNotificationsReadMock,
+    removeSessionNotifications: removeSessionNotificationsMock,
   },
 }))
 
@@ -167,9 +176,12 @@ describe('useGlobalEvents', () => {
     getPendingQuestionsMock.mockClear()
     replyPermissionMock.mockClear()
     childBelongsToSessionMock.mockReset()
+    getSessionInfoMock.mockReset()
     getFocusedSessionIdMock.mockReset()
     getSessionAndDescendantsMock.mockReset()
     notificationPushMock.mockReset()
+    markSessionNotificationsReadMock.mockReset()
+    removeSessionNotificationsMock.mockReset()
     playNotificationSoundDedupedMock.mockReset()
     getSoundSnapshotMock.mockReset()
     isSystemEnabledMock.mockReset()
@@ -198,6 +210,7 @@ describe('useGlobalEvents', () => {
     checkHealthMock.mockResolvedValue({ status: 'online' })
     onServerChangeMock.mockReturnValue(vi.fn())
     getSessionAndDescendantsMock.mockImplementation((sessionId: string) => [sessionId])
+    getSessionInfoMock.mockReturnValue(undefined)
     autoApproveStoreMock.subscribe.mockReturnValue(vi.fn())
     autoApproveStoreMock.getPaneFullAutoMode.mockReturnValue('off')
     autoApproveStoreMock.claimAutoReply.mockReturnValue(true)
@@ -768,4 +781,105 @@ describe('useGlobalEvents', () => {
       expect(playNotificationSoundDedupedMock).not.toHaveBeenCalled()
     },
   )
+
+  it('does not push completed notification for a child session', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    getSessionInfoMock.mockReturnValue({ id: 'local::child-session', parentID: 'local::parent' })
+    activeSessionStoreMock.getSnapshot.mockReturnValue({ statusMap: { 'local::child-session': { type: 'busy' } } })
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+    callbacks!.onSessionStatus?.({ sessionID: 'child-session', status: { type: 'idle' } })
+
+    expect(notificationPushMock).not.toHaveBeenCalled()
+  })
+
+  it('does not push error notification for a child session', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    getSessionInfoMock.mockReturnValue({ id: 'local::child-session', parentID: 'local::parent' })
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+    callbacks!.onSessionError?.({ sessionID: 'child-session', name: 'Error', data: {} })
+
+    expect(notificationPushMock).not.toHaveBeenCalled()
+  })
+
+  it('marks notifications read when the completed session is currently focused', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    getFocusedSessionIdMock.mockReturnValue('local::background-session')
+    activeSessionStoreMock.getSnapshot.mockReturnValue({ statusMap: { 'local::background-session': { type: 'busy' } } })
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+    callbacks!.onSessionStatus?.({ sessionID: 'background-session', status: { type: 'idle' } })
+
+    expect(markSessionNotificationsReadMock).toHaveBeenCalledWith('local::background-session', 'completed')
+    expect(notificationPushMock).not.toHaveBeenCalled()
+  })
+
+  it('treats another server prefix of the focused session as already open', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    getFocusedSessionIdMock.mockReturnValue('local::ses_shared')
+    activeSessionStoreMock.getSnapshot.mockReturnValue({ statusMap: { 'local::ses_shared': { type: 'busy' } } })
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+    callbacks!.onSessionStatus?.({ sessionID: 'ses_shared', status: { type: 'idle' } })
+
+    expect(notificationPushMock).not.toHaveBeenCalled()
+    expect(markSessionNotificationsReadMock).toHaveBeenCalledWith('local::ses_shared', 'completed')
+  })
+
+  it('removes notifications when a session is deleted', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    getSessionAndDescendantsMock.mockReturnValue(['local::deleted-session', 'local::child-session'])
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+    callbacks!.onSessionDeleted?.('deleted-session')
+
+    expect(removeSessionNotificationsMock).toHaveBeenCalledWith('local::deleted-session')
+    expect(removeSessionNotificationsMock).toHaveBeenCalledWith('local::child-session')
+  })
+
+  it('removes notifications when a session is archived', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+    callbacks!.onSessionUpdated?.({ id: 'archived-session', time: { archived: 123 } } as never)
+
+    expect(removeSessionNotificationsMock).toHaveBeenCalledWith('local::archived-session')
+  })
 })

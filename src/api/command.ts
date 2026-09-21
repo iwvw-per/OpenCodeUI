@@ -4,7 +4,7 @@
 
 import { getSDKClient, unwrap } from './sdk'
 import { resolveSessionTarget } from '../utils/sessionKey'
-import { formatPathForApi } from '../utils/directoryUtils'
+import { formatPathForApi, directoryCacheKey } from '../utils/directoryUtils'
 import { serverStore } from '../store/serverStore'
 import i18n from '../i18n'
 
@@ -32,7 +32,9 @@ const commandCache = new Map<string, { data: Command[]; expiresAt: number }>()
 const commandInflight = new Map<string, Promise<Command[]>>()
 
 function getCommandCacheKey(directory?: string, serverId?: string): string {
-  return `${serverId ?? serverStore.getActiveServerId()}::${i18n.resolvedLanguage || i18n.language}::${formatPathForApi(directory, serverId) ?? ''}`
+  // 用与传输格式无关的目录键：pathMode 在 auto 检测期间可能切换，
+  // 直接拼 formatPathForApi 会让同一目录算出两个 key，缓存与在途合并同时失效。
+  return `${serverId ?? serverStore.getActiveServerId()}::${i18n.resolvedLanguage || i18n.language}::${directoryCacheKey(directory)}`
 }
 
 async function fetchCommands(directory?: string, serverId?: string): Promise<Command[]> {

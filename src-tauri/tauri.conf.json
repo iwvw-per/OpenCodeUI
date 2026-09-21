@@ -1,11 +1,11 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "OpenCode",
-  "version": "0.6.80",
+  "version": "0.6.81",
   "identifier": "com.opencodeui.app",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:5174",
+    "devUrl": "http://localhost:5176",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },

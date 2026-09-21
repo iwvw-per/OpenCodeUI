@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTheme } from '../hooks/useTheme'
+import { Spinner } from './ui/Spinner'
 import { createSandboxedHtmlDocument } from './htmlSandbox'
 import { resolveHtmlPreviewResources } from './htmlPreviewResources'
 
@@ -63,7 +64,7 @@ export function HtmlFilePreviewFrame({
   if (!srcDoc) {
     return (
       <div className="flex h-full items-center justify-center" aria-busy="true">
-        <span className="h-4 w-4 animate-spin rounded-full border border-text-400 border-t-transparent" />
+        <Spinner size="lg" tone="muted" />
       </div>
     )
   }

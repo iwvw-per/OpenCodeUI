@@ -20,10 +20,17 @@ import {
   useMemo,
   useState,
 } from 'react'
-import { useVirtualizer, elementScroll, defaultRangeExtractor, type VirtualItem, type Virtualizer } from '@tanstack/react-virtual'
+import {
+  useVirtualizer,
+  elementScroll,
+  defaultRangeExtractor,
+  type VirtualItem,
+  type Virtualizer,
+} from '@tanstack/react-virtual'
 import { useTranslation } from 'react-i18next'
 import { MessageRenderer, ProcessCollapseBlock, messageHasFinalContent, messageHasProcessContent } from '../message'
 import { MessageErrorView } from '../message/parts'
+import type { ChangedFile } from '../message/parts/changedFiles'
 import type { Message, MessageError } from '../../types/message'
 import { RetryStatusInline, type RetryStatusInlineData } from './RetryStatusInline'
 import {
@@ -37,10 +44,12 @@ import {
   buildProcessTimeline,
   buildTurnDurationMap,
   buildTurnLatestAssistantIdSet,
+  collectTurnChangedFiles,
   reuseProcessTimelineItems,
   type ProcessTimelineItem,
 } from './chatPageModel'
 import { useTheme } from '../../hooks/useTheme'
+import { LoadingState } from '../../components/ui/LoadingState'
 import { getStreamingHotIndexes, getTimelineRowYClass, mergeVirtualRangeIndexes } from './chatAreaUtils'
 import { getContentMaxWidthClass, getContentPaddingClass } from './contentWidth'
 import { useAutoScroll } from './virtual/useAutoScroll'
@@ -54,8 +63,36 @@ const PROCESS_SHELL_HEADER = 36
 const EMPTY_WORKING_SHELL_EXTRA_DELAY_MS = 500
 const DEFAULT_BOTTOM_SPACER = 256
 const SESSION_CACHE_LIMIT = 16
+/** 距顶部多少 px 内视为「已到顶」，触发加载更早一段历史 */
+const LOAD_MORE_TOP_THRESHOLD = 200
 
 const bottomSpacerHeight = (bottomPadding: number) => (bottomPadding > 0 ? bottomPadding + 48 : DEFAULT_BOTTOM_SPACER)
+
+/** 无改动时的稳定空数组（避免每次渲染新建引用） */
+const EMPTY_FILES: ChangedFile[] = []
+
+/** 过程壳 header 统计：工具调用数 / 思考段数（折叠时展示，避免展开才知道规模） */
+type ProcessShellChild = { message: Message; processContentScope: 'process' | 'inline' }
+
+function processStepCount(children: ProcessShellChild[]): number {
+  let count = 0
+  for (const child of children) {
+    for (const part of child.message.parts) {
+      if (part.type === 'tool') count++
+    }
+  }
+  return count
+}
+
+function processReasoningCount(children: ProcessShellChild[]): number {
+  let count = 0
+  for (const child of children) {
+    for (const part of child.message.parts) {
+      if (part.type === 'reasoning' && part.text?.trim()) count++
+    }
+  }
+  return count
+}
 
 function estimateTimelineItemSize(item: ProcessTimelineItem | undefined): number {
   if (!item) return ROW_ESTIMATE
@@ -125,6 +162,9 @@ interface MessageBodyProps {
   allowStreamingLayoutAnimation: boolean
   processContentScope?: 'all' | 'process' | 'final' | 'inline'
   onEntryGrowComplete?: (messageId: string) => void
+  sessionId?: string | null
+  /** 本回合聚合的改动文件，仅在最终回复（final）消息上渲染 */
+  turnFiles?: ChangedFile[]
 }
 
 const MessageBody = memo(function MessageBody({
@@ -139,6 +179,8 @@ const MessageBody = memo(function MessageBody({
   allowStreamingLayoutAnimation,
   processContentScope = 'all',
   onEntryGrowComplete,
+  sessionId,
+  turnFiles,
 }: MessageBodyProps) {
   const messageId = message.info.id
   const isUser = message.info.role === 'user'
@@ -162,6 +204,8 @@ const MessageBody = memo(function MessageBody({
             canUndo={isUser ? canUndo : undefined}
             onEnsureParts={NOOP}
             onEntryGrowComplete={isUser ? onEntryGrowComplete : undefined}
+            sessionId={sessionId}
+            turnFiles={turnFiles}
           />
         </div>
       </div>
@@ -185,6 +229,7 @@ interface RowProps {
   allowStreamingLayoutAnimation: boolean
   measureElement: (el: HTMLElement | null) => void
   onEntryGrowComplete?: (messageId: string) => void
+  sessionId?: string | null
 }
 
 const VirtualRow = memo(
@@ -204,6 +249,7 @@ const VirtualRow = memo(
     allowStreamingLayoutAnimation,
     measureElement,
     onEntryGrowComplete,
+    sessionId,
   }: RowProps) {
     const rowRef = useRef<HTMLDivElement | null>(null)
 
@@ -218,6 +264,16 @@ const VirtualRow = memo(
     useLayoutEffect(() => {
       if (rowRef.current) measureElement(rowRef.current)
     }, [measureElement, virtualItem.index, item, rowYClass])
+
+    // 过程壳回合：聚合整轮改动文件，下发给壳外最终回复（final）消息渲染
+    const turnFiles = useMemo(() => {
+      if (item.kind === 'message') return EMPTY_FILES
+      if (item.isActive) return EMPTY_FILES
+      const messages: Message[] = []
+      for (const child of item.children) messages.push(child.message)
+      if (item.finalMessage) messages.push(item.finalMessage)
+      return collectTurnChangedFiles(messages)
+    }, [item])
 
     return (
       <div
@@ -244,6 +300,7 @@ const VirtualRow = memo(
               allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
               processContentScope={item.processContentScope ?? 'all'}
               onEntryGrowComplete={onEntryGrowComplete}
+              sessionId={sessionId}
             />
           ) : (
             <div className="flex justify-start">
@@ -253,6 +310,8 @@ const VirtualRow = memo(
                   startedAt={item.startedAt}
                   durationMs={item.durationMs}
                   isActive={item.isActive}
+                  stepCount={processStepCount(item.children)}
+                  reasoningCount={processReasoningCount(item.children)}
                 >
                   {item.children.map(child => (
                     <MessageBody
@@ -267,6 +326,7 @@ const VirtualRow = memo(
                       isTurnLatestAssistant={turnLatestAssistantIds.has(child.message.info.id)}
                       allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
                       processContentScope={child.processContentScope}
+                      sessionId={sessionId}
                     />
                   ))}
                 </ProcessCollapseBlock>
@@ -283,6 +343,8 @@ const VirtualRow = memo(
                     isTurnLatestAssistant
                     allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
                     processContentScope="final"
+                    sessionId={sessionId}
+                    turnFiles={turnFiles}
                   />
                 )}
               </div>
@@ -309,7 +371,8 @@ const VirtualRow = memo(
     prev.turnLatestAssistantIds === next.turnLatestAssistantIds &&
     prev.allowStreamingLayoutAnimation === next.allowStreamingLayoutAnimation &&
     prev.measureElement === next.measureElement &&
-    prev.onEntryGrowComplete === next.onEntryGrowComplete,
+    prev.onEntryGrowComplete === next.onEntryGrowComplete &&
+    prev.sessionId === next.sessionId,
 )
 
 // ─── 会话缓存（LRU 16） ───────────────────────────────────────
@@ -631,16 +694,34 @@ export const ChatArea = memo(
       // ── 历史加载（prepend 锚点） ──
       const prependAnchor = useRef<{ key: string; offset: number } | undefined>(undefined)
       const prependFrame = useRef<number | undefined>(undefined)
+      // 异步加载在途。期间不允许新的加载，且不接受用户手势取消
+      // （否则锚点会在内容到达前被丢掉，视口跳一下）。
+      const prependFetching = useRef(false)
+      // 锚点恢复（pin）过程中。恢复要跑若干帧 rAF 去追虚拟行的测量结果，
+      // 这段时间视口被钉住，用户上滚会被抵消。所以用户手势要能立刻解除它，
+      // 否则表现为「加载完一段后上滚没反应，得先下滚再上滚」。
+      const prependPinning = useRef(false)
+      // 恢复稳定后回调：用于重新判断是否已到顶、需要继续加载
+      const prependSettled = useRef<(() => void) | undefined>(undefined)
+      // 是否处于「历史加载流程」中（取景 / 在途 / 恢复）。
+      // onScroll 靠它避免在恢复期间重复触发加载。
       const prependLoading = useRef(false)
 
-      const clearPrepend = useCallback(() => {
-        prependLoading.current = false
-        prependAnchor.current = undefined
+      const stopPinFrame = useCallback(() => {
+        prependPinning.current = false
         if (prependFrame.current !== undefined) {
           cancelAnimationFrame(prependFrame.current)
           prependFrame.current = undefined
         }
       }, [])
+
+      const clearPrepend = useCallback(() => {
+        prependLoading.current = false
+        prependFetching.current = false
+        prependAnchor.current = undefined
+        prependSettled.current = undefined
+        stopPinFrame()
+      }, [stopPinFrame])
 
       const updatePrependAnchor = useCallback(() => {
         const root = scrollRef.current
@@ -655,24 +736,51 @@ export const ChatArea = memo(
         }
       }, [])
 
+      // 用户手势：结束 pin，把控制权交回用户。
+      // 在途请求期间不能直接丢弃锚点（内容到达后就没有参照、视口会跳），
+      // 改为按用户当前视口重新取锚点，之后仍做一次恢复。
+      const releasePrependPin = useCallback(() => {
+        if (!prependLoading.current) return
+        if (prependFetching.current) {
+          updatePrependAnchor()
+          return
+        }
+        clearPrepend()
+      }, [clearPrepend, updatePrependAnchor])
+
       const applyPrependAnchor = useCallback(() => {
         const root = scrollRef.current
-        if (!root || !prependAnchor.current) return
+        const finish = () => {
+          prependPinning.current = false
+          prependLoading.current = false
+          prependAnchor.current = undefined
+          prependSettled.current?.()
+        }
+        if (!root || !prependAnchor.current) {
+          finish()
+          return
+        }
         if (prependFrame.current !== undefined) cancelAnimationFrame(prependFrame.current)
+        prependPinning.current = true
         let frames = 0,
           stable = 0
         const apply = () => {
           prependFrame.current = undefined
           const a = prependAnchor.current
-          if (!a) return
+          if (!a) {
+            finish()
+            return
+          }
           const el = root.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(a.key)}"]`)
           const delta = el ? el.getBoundingClientRect().top - root.getBoundingClientRect().top - a.offset : undefined
           if (delta !== undefined && Math.abs(delta) > 0.5) {
             root.scrollTop += delta
             stable = 0
           } else stable++
-          if (++frames >= 180 || stable >= 30) {
-            if (!prependLoading.current) prependAnchor.current = undefined
+          // stable 阈值保持小：虚拟行测量在 prepend 后一两帧内就稳定了，
+          // 原先 30 帧（约 0.5s）会把视口多钉半秒，上滚被抵消。
+          if (++frames >= 180 || stable >= 3) {
+            finish()
             return
           }
           prependFrame.current = requestAnimationFrame(apply)
@@ -682,16 +790,9 @@ export const ChatArea = memo(
 
       const capturePrepend = useCallback(() => {
         prependLoading.current = true
+        prependFetching.current = true
         updatePrependAnchor()
       }, [updatePrependAnchor])
-
-      const restorePrepend = useCallback(
-        (done: boolean) => {
-          if (done) prependLoading.current = false
-          applyPrependAnchor()
-        },
-        [applyPrependAnchor],
-      )
 
       const loadMore = useCallback(() => {
         capturePrepend()
@@ -702,9 +803,25 @@ export const ChatArea = memo(
           .finally(() => {
             setIsLoadingMore(false)
             loadingMoreRef.current = false
-            restorePrepend(true)
+            prependFetching.current = false
+            applyPrependAnchor()
           })
-      }, [capturePrepend, restorePrepend])
+      }, [capturePrepend, applyPrependAnchor])
+
+      // 锚点恢复稳定后：若用户仍在顶部、还有历史，继续加载下一段。
+      // 这样连续上滚可以「一段接一段」，不必先下滚再上滚。
+      useEffect(() => {
+        prependSettled.current = () => {
+          if (loadingMoreRef.current || !hasMoreRef.current) return
+          const el = scrollRef.current
+          if (!el) return
+          if (el.scrollTop > LOAD_MORE_TOP_THRESHOLD) return
+          loadMore()
+        }
+        return () => {
+          prependSettled.current = undefined
+        }
+      }, [loadMore])
 
       // fill: 内容不足以填满视口时自动加载
       const fillFrame = useRef<number | undefined>(undefined)
@@ -755,11 +872,11 @@ export const ChatArea = memo(
 
       // ── 事件处理 ──
       const onScroll = useCallback(() => {
-        if (prependLoading.current) updatePrependAnchor()
         computeScrollState()
         if (
           userScrolledRef.current &&
-          (scrollRef.current?.scrollTop ?? 0) < 200 &&
+          !prependLoading.current &&
+          (scrollRef.current?.scrollTop ?? 0) < LOAD_MORE_TOP_THRESHOLD &&
           !loadingMoreRef.current &&
           hasMoreRef.current
         ) {
@@ -767,19 +884,36 @@ export const ChatArea = memo(
         }
         // 始终走 handleScroll：滚动条/键盘也能离底；程序贴底靠 markAuto 过滤
         autoHandleScroll()
-      }, [updatePrependAnchor, computeScrollState, autoHandleScroll, loadMore, userScrolledRef])
+      }, [computeScrollState, autoHandleScroll, loadMore, userScrolledRef])
 
       const onWheel = useCallback(
         (e: React.WheelEvent<HTMLDivElement>) => {
-          if (!prependLoading.current) clearPrepend()
+          // 用户手势优先：立刻结束锚点恢复，把视口交还用户。
+          // 在途请求不受影响（进行中的请求仍会按新锚点做一次恢复）。
+          releasePrependPin()
           autoHandleWheel(e.nativeEvent)
+
+          // 兜底：已在顶部时继续上滚不会产生 scroll 事件（scrollTop 已是 0），
+          // 只靠 onScroll 就会漏掉这次意图。这里直接按手势补触发一次加载。
+          const el = scrollRef.current
+          if (
+            e.deltaY < 0 &&
+            userScrolledRef.current &&
+            !prependLoading.current &&
+            !loadingMoreRef.current &&
+            hasMoreRef.current &&
+            el &&
+            el.scrollTop <= LOAD_MORE_TOP_THRESHOLD
+          ) {
+            void loadMore()
+          }
         },
-        [autoHandleWheel, clearPrepend],
+        [autoHandleWheel, releasePrependPin, loadMore, userScrolledRef, hasMoreRef, loadingMoreRef, prependLoading],
       )
 
       const onTouchStart = useCallback(() => {
-        if (!prependLoading.current) clearPrepend()
-      }, [clearPrepend])
+        releasePrependPin()
+      }, [releasePrependPin])
 
       // ── Effects（parent key remount 后，这里只处理本实例生命周期） ──
 
@@ -960,9 +1094,8 @@ export const ChatArea = memo(
         <div className="h-full overflow-hidden contain-strict relative">
           {loadState === 'loading' && visibleMessages.length === 0 && (
             <div className="absolute inset-0 z-10 flex items-center justify-center">
-              <div className="flex flex-col items-center gap-3 text-text-400 session-loading-indicator">
-                <span className="w-5 h-5 border-2 border-text-400/30 border-t-text-400 rounded-full animate-spin" />
-                <span className="text-[length:var(--fs-base)]">{t('chatArea.loadingSession')}</span>
+              <div className="session-loading-indicator">
+                <LoadingState label={t('chatArea.loadingSession')} />
               </div>
             </div>
           )}
@@ -973,7 +1106,9 @@ export const ChatArea = memo(
             className="h-full overflow-y-auto overflow-x-hidden custom-scrollbar contain-content"
             style={{
               overflowAnchor: 'none',
-              paddingTop: 'calc(5rem + var(--app-safe-top, 0px))',
+              // 顶栏高度 + 呼吸空间：与 Header 共用 --chat-header-height，
+              // 改顶栏高度时消息首行不会被压住
+              paddingTop: 'calc(var(--chat-header-height, 2.75rem) + 1.5rem + var(--app-safe-top, 0px))',
             }}
             onWheel={onWheel}
             onTouchStart={onTouchStart}
@@ -982,10 +1117,7 @@ export const ChatArea = memo(
           >
             {visibleMessages.length > 0 && isLoadingMore && (
               <div className="flex justify-center py-3" aria-live="polite">
-                <div className="flex items-center gap-2 text-text-400 text-[length:var(--fs-sm)]">
-                  <span className="w-3.5 h-3.5 border-2 border-text-400/30 border-t-text-400 rounded-full animate-spin" />
-                  {t('chatArea.loadingHistory')}
-                </div>
+                <LoadingState label={t('chatArea.loadingHistory')} size="sm" layout="row" showElapsed={false} />
               </div>
             )}
 
@@ -1011,6 +1143,7 @@ export const ChatArea = memo(
                     allowStreamingLayoutAnimation={allowStreamingLayoutAnimation}
                     measureElement={virtualizer.measureElement as (el: HTMLElement | null) => void}
                     onEntryGrowComplete={emptyShellGate.onEntryGrowComplete}
+                    sessionId={sessionId}
                   />
                 )
               })}

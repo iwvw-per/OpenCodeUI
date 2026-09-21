@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { diffLines } from 'diff'
 import { ChevronDownIcon, ChevronRightIcon, MaximizeIcon } from './Icons'
 import { CopyButton } from './ui'
+import { Spinner } from './ui/Spinner'
 import { DiffViewer, useDiffViewerData, type ViewMode } from './DiffViewer'
 import { CodePreview } from './CodePreview'
 import { detectLanguage } from '../utils/languageUtils'
@@ -305,7 +306,7 @@ export const ContentBlock = memo(function ContentBlock({
           {/* Loading spinner */}
           {isLoading && (
             <div className="flex items-center gap-1.5 text-text-400 ml-1">
-              <div className="w-3 h-3 border-2 border-accent-main-100/30 border-t-accent-main-100 rounded-full animate-spin" />
+              <Spinner size="sm" tone="accent" />
               {resolvedLoadingText && <span>{resolvedLoadingText}</span>}
             </div>
           )}

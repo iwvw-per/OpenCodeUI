@@ -247,7 +247,7 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
                 setQuery('')
                 setSelectedIndex(0)
               }}
-              className="text-text-400 hover:text-text-200 text-[length:var(--fs-sm)]"
+              className="text-text-400 hover:bg-bg-200 hover:border-border-200 border border-transparent rounded px-1 text-[length:var(--fs-sm)]"
             >
               {t('common:clear')}
             </button>
@@ -269,7 +269,7 @@ export function CommandPalette({ isOpen, onClose, commands }: CommandPaletteProp
                 className={`
                   w-full flex items-center justify-between rounded-md px-2 py-2 text-left
                   transition-colors duration-100
-                  ${index === activeIndex ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:bg-bg-200 hover:text-text-100'}
+                  ${index === activeIndex ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:bg-bg-200'}
                 `}
               >
                 <div className="flex items-center gap-2.5 min-w-0">

@@ -86,6 +86,7 @@ vi.mock('../store', () => ({
     getSessionAndDescendants: vi.fn(() => []),
   },
   useActiveSessionStore: () => ({ statusMap: activeSessionStatusMap }),
+  useSessionStatus: (sessionId: string | null) => (sessionId ? activeSessionStatusMap[sessionId] : undefined),
 }))
 
 vi.mock('../hooks', () => ({

@@ -20,7 +20,7 @@ export { childSessionStore, useChildSessions, useSessionFamily } from './childSe
 export type { ChildSessionInfo } from './childSessionStore'
 
 export { layoutStore, useLayoutStore, exportLayoutBackup, importLayoutBackup } from './layoutStore'
-export type { LayoutBackup } from './layoutStore'
+export type { LayoutBackup, ChildSessionsDisplayMode } from './layoutStore'
 
 export { changeScopeStore, useSessionChangeScope } from './changeScopeStore'
 export type { ChangeScopeMode } from './changeScopeStore'
@@ -64,7 +64,13 @@ export {
 } from './notificationStore'
 export type { NotificationEntry, NotificationPreferencesBackup, NotificationType, ToastItem } from './notificationStore'
 
-export { activeSessionStore, useActiveSessionStore, useBusySessions, useBusyCount } from './activeSessionStore'
+export {
+  activeSessionStore,
+  useActiveSessionStore,
+  useBusySessions,
+  useBusyCount,
+  useSessionStatus,
+} from './activeSessionStore'
 export type { ActiveSessionEntry } from './activeSessionStore'
 
 export { serviceStore, useServiceStore, exportServiceSettingsBackup, importServiceSettingsBackup } from './serviceStore'

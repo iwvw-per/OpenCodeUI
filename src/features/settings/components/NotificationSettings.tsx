@@ -300,7 +300,7 @@ function EventSoundCard({
             ${
               eventConfig.soundId === 'none'
                 ? 'bg-accent-main-100/15 text-accent-main-100'
-                : 'text-text-400 hover:bg-bg-200 hover:text-text-200'
+                : 'text-text-400 hover:bg-bg-200'
             }`}
         >
           {t('notifications.noSound')}
@@ -315,7 +315,7 @@ function EventSoundCard({
               ${
                 eventConfig.soundId === sid
                   ? 'bg-accent-main-100/15 text-accent-main-100'
-                  : 'text-text-400 hover:bg-bg-200 hover:text-text-200'
+                  : 'text-text-400 hover:bg-bg-200'
               }`}
           >
             {BUILTIN_SOUNDS[sid]}
@@ -330,7 +330,7 @@ function EventSoundCard({
               ${
                 eventConfig.soundId === 'custom'
                   ? 'bg-accent-main-100/15 text-accent-main-100'
-                  : 'text-text-400 hover:bg-bg-200 hover:text-text-200'
+                  : 'text-text-400 hover:bg-bg-200'
               }`}
           >
             {t('notifications.customSound')}
@@ -352,7 +352,7 @@ function EventSoundCard({
             onClick={handleExportCustom}
             disabled={audioBusy !== null}
             className={cn(
-              'text-[length:var(--fs-xs)] text-accent-main-100 hover:text-accent-main-200 px-1.5 py-0.5 rounded-md',
+              'text-[length:var(--fs-xs)] text-accent-main-100 px-1.5 py-0.5 rounded-md',
               interactive.accent,
             )}
           >
@@ -362,7 +362,7 @@ function EventSoundCard({
             type="button"
             onClick={handleRemoveCustom}
             disabled={audioBusy !== null}
-            className="text-[length:var(--fs-xs)] text-text-400 hover:text-danger-100 px-1.5 py-0.5 rounded-md hover:bg-danger-100/10 transition-colors"
+            className="text-[length:var(--fs-xs)] text-text-400 px-1.5 py-0.5 rounded-md hover:bg-danger-100/10 transition-colors"
           >
             {t('notifications.removeCustom')}
           </button>
@@ -377,7 +377,7 @@ function EventSoundCard({
           onClick={() => fileInputRef.current?.click()}
           disabled={audioBusy !== null}
           className={cn(
-            'text-[length:var(--fs-xs)] text-accent-main-100 hover:text-accent-main-200 px-2 py-1 rounded-md disabled:opacity-50',
+            'text-[length:var(--fs-xs)] text-accent-main-100 px-2 py-1 rounded-md disabled:opacity-50',
             interactive.accent,
           )}
         >

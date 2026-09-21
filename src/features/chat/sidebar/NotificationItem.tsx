@@ -143,7 +143,7 @@ export function NotificationItem({ entry, resolvedSession, onSelect }: Notificat
         >
           <div className="flex min-w-0 items-center gap-1.5">
             <p
-              className="min-w-0 flex-1 truncate text-[length:var(--fs-md)] font-medium text-text-200 group-hover:text-text-100"
+              className="min-w-0 flex-1 truncate text-[length:var(--fs-md)] font-medium text-text-200"
               title={displayTitle}
             >
               {displayTitle}

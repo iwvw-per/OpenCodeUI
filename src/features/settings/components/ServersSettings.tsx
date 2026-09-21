@@ -289,7 +289,7 @@ function EditServerForm({
       <button
         type="button"
         onClick={() => setShowAuth(!showAuth)}
-        className="flex items-center gap-1.5 text-[length:var(--fs-xs)] text-accent-main-100 hover:text-accent-main-200 transition-colors"
+        className="flex items-center gap-1.5 text-[length:var(--fs-xs)] text-accent-main-100 transition-colors hover:bg-bg-200"
       >
         <KeyIcon size={10} />
         {showAuth ? t('servers.hideAuth') : t('servers.addAuth')}
@@ -437,7 +437,7 @@ function AddServerForm({
       <button
         type="button"
         onClick={() => setShowAuth(!showAuth)}
-        className="flex items-center gap-1.5 text-[length:var(--fs-xs)] text-accent-main-100 hover:text-accent-main-200 transition-colors"
+        className="flex items-center gap-1.5 text-[length:var(--fs-xs)] text-accent-main-100 transition-colors hover:bg-bg-200"
       >
         <KeyIcon size={10} />
         {showAuth ? t('servers.hideAuth') : t('servers.addAuth')}

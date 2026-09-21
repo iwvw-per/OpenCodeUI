@@ -794,7 +794,7 @@ export const ModelSelector = memo(
           }}
           disabled={disabled || isLoading}
           aria-expanded={isOpen}
-          className="group flex items-center gap-2 px-2 py-1.5 text-text-200 rounded-lg hover:bg-bg-200 hover:text-text-100 transition-colors duration-150 active:bg-bg-300 cursor-pointer text-[length:var(--fs-base)]"
+          className="group flex items-center gap-2 px-2 py-1.5 text-text-200 rounded-lg hover:bg-bg-200 transition-colors duration-150 active:bg-bg-300 cursor-pointer text-[length:var(--fs-base)]"
           title={displayName}
         >
           <span className="font-medium truncate max-w-[240px]">{displayName}</span>

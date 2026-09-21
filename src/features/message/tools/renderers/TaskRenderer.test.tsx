@@ -54,12 +54,11 @@ describe('TaskHeader', () => {
     expect(onToggle).not.toHaveBeenCalled()
   })
 
-  it('uses the title and its remaining row space to toggle details', () => {
+  it('uses the title row to toggle details', () => {
     const { navigateToSession, onToggle } = renderHeader()
-    const titleButton = screen.getByRole('button', { name: /Inspect the renderer/ })
+    const rowButton = screen.getByRole('button', { name: /Inspect the renderer/ })
 
-    expect(titleButton).toHaveClass('flex-1')
-    fireEvent.click(titleButton)
+    fireEvent.click(rowButton)
 
     expect(onToggle).toHaveBeenCalledOnce()
     expect(navigateToSession).not.toHaveBeenCalled()

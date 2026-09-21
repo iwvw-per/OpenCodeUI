@@ -9,6 +9,7 @@ import { useServerStore } from '../../../hooks/useServerStore'
 import { getProjectGroupIdentity } from './projectGrouping'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { IconButton } from '../../../components/ui/IconButton'
+import { Spinner } from '../../../components/ui/Spinner'
 import { Tabs, TabsList, TabsTrigger } from '../../../components/ui/Tabs'
 import { SidebarFooter } from './SidebarFooter'
 import {
@@ -22,7 +23,6 @@ import {
   ManageSessionsIcon,
   FolderMinusIcon,
   CheckIcon,
-  SpinnerIcon,
   GlobeIcon,
 } from '../../../components/Icons'
 import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog } from '../../../hooks'
@@ -66,6 +66,8 @@ interface SidePanelProps {
   onToggleSidebar: () => void
   contextLimit?: number
   onOpenSettings?: () => void
+  /** 桌面端标题栏已承载 logo 与开关：隐藏顶部 header 行 */
+  hideHeader?: boolean
 }
 
 interface ProjectItem {
@@ -152,6 +154,7 @@ export function SidePanel({
   onToggleSidebar,
   contextLimit = 200000,
   onOpenSettings,
+  hideHeader = false,
 }: SidePanelProps) {
   const { t } = useTranslation(['chat', 'common'])
   const {
@@ -190,7 +193,10 @@ export function SidePanel({
     catalogDirectories,
     catalogServerId,
   )
-  const { sidebarShowChildSessions, sidebarSessionSortDesc } = useLayoutStore()
+  const { sidebarChildSessions, sidebarSessionSortDesc } = useLayoutStore()
+  // all = 始终列出全部子会话；active = 只列活跃/正在查看；off = 不额外列出
+  const showAllChildSessions = sidebarChildSessions === 'all'
+  const showActiveChildSessions = sidebarChildSessions !== 'off'
   const normalizedCurrentDirectory = useMemo(
     () => (currentDirectory ? normalizeToForwardSlash(currentDirectory) : undefined),
     [currentDirectory],
@@ -215,7 +221,9 @@ export function SidePanel({
   const [isBatchDeleting, setIsBatchDeleting] = useState(false)
 
   // 已隐藏的服务器发现目录（每主机独立；"移除"发现项目 = 加入隐藏列表，不再展示）
-  const [hiddenDirectories, setHiddenDirectories] = useState<Set<string>>(() => new Set(readHiddenDirectories(activeServerId)))
+  const [hiddenDirectories, setHiddenDirectories] = useState<Set<string>>(
+    () => new Set(readHiddenDirectories(activeServerId)),
+  )
   useEffect(() => {
     setHiddenDirectories(new Set(readHiddenDirectories(activeServerId)))
   }, [activeServerId])
@@ -490,9 +498,9 @@ export function SidePanel({
     [sessionLookup],
   )
 
-  // 开关开 → 拉 /children 全量：选中的 root 或选中子 session 时保持其父展开
+  // all → 拉 /children 全量：选中的 root 或选中子 session 时保持其父展开
   const expandedChildSessionIds = useMemo(() => {
-    if (search || !sidebarShowChildSessions || !selectedSessionId) return undefined
+    if (search || !showAllChildSessions || !selectedSessionId) return undefined
     // 选中 session 可能属于任意服务器，直接用全服务器的 childSessionStore 判断
     if (childSessionStore.getChildSessionIds(selectedSessionId).length > 0) {
       return new Set([splitSessionKey(selectedSessionId).sessionId])
@@ -500,9 +508,9 @@ export function SidePanel({
     const pid = findParentId(selectedSessionId)
     if (pid) return new Set([pid])
     return undefined
-  }, [search, sidebarShowChildSessions, selectedSessionId, findParentId])
+  }, [search, showAllChildSessions, selectedSessionId, findParentId])
 
-  // 开关关 → 只挂活跃的 + 选中的子 session
+  // active → 只挂活跃的 + 选中的子 session；off → 只挂选中的那个
   const inlineChildSessions = useMemo(() => {
     if (search) return undefined
     const map = new Map<string, ApiSession[]>()
@@ -515,26 +523,24 @@ export function SidePanel({
       }
       if (!arr.some(s => s.id === session.id)) arr.push(session)
     }
-    for (const entry of busySessions) {
-      const pid = findParentId(entry.sessionId)
-      // 父可能在其它服务器的会话列表里，因此放宽为「只要解析出父 id 就挂上」，
-      // 不再要求父在 rootSessionIds（那只是当前服务器的列表）
-      if (pid) {
-        const rawId = splitSessionKey(entry.sessionId).sessionId
-        // sessionLookup 只含 active 服务器会话；其他服务器的子 session 用 entry 构造
-        const s =
-          sessionLookup.get(rawId) ??
-          (entry.title || entry.directory
-            ? ({ id: rawId, title: entry.title, directory: entry.directory } as ApiSession)
-            : undefined)
-        if (s) add(pid, s)
+    if (showActiveChildSessions) {
+      for (const entry of busySessions) {
+        const pid = findParentId(entry.sessionId)
+        // 父可能在其它服务器的会话列表里，因此放宽为「只要解析出父 id 就挂上」，
+        // 不再要求父在 rootSessionIds（那只是当前服务器的列表）
+        if (pid) {
+          const rawId = splitSessionKey(entry.sessionId).sessionId
+          // sessionLookup 只含 active 服务器会话；其他服务器的子 session 用 entry 构造
+          const s =
+            sessionLookup.get(rawId) ??
+            (entry.title || entry.directory
+              ? ({ id: rawId, title: entry.title, directory: entry.directory } as ApiSession)
+              : undefined)
+          if (s) add(pid, s)
+        }
       }
     }
-    if (
-      !sidebarShowChildSessions &&
-      selectedSessionId &&
-      !rootSessionIds.has(splitSessionKey(selectedSessionId).sessionId)
-    ) {
+    if (selectedSessionId && !rootSessionIds.has(splitSessionKey(selectedSessionId).sessionId)) {
       // 只挂「当前服务器列表里能确认是父」的，避免把别的服务器的会话误挂上来
       const pid = findParentId(selectedSessionId)
       if (pid && rootSessionIds.has(pid)) {
@@ -547,7 +553,7 @@ export function SidePanel({
     search,
     busySessions,
     selectedSessionId,
-    sidebarShowChildSessions,
+    showActiveChildSessions,
     rootSessionIds,
     expandedChildSessionIds,
     sessionLookup,
@@ -732,7 +738,14 @@ export function SidePanel({
 
     // 不展示「全局」文件夹：全局把所有会话堆在一起条目多且卡，用户只按项目打开会话
     return list
-  }, [serverCurrentProject, folderProjectGroups, discoveredProjectItems, projectOrder, currentDirectory, currentProject])
+  }, [
+    serverCurrentProject,
+    folderProjectGroups,
+    discoveredProjectItems,
+    projectOrder,
+    currentDirectory,
+    currentProject,
+  ])
 
   // 新添加/新保存的项目自动展开（服务器发现的 isDerived 项目不自动展开，避免一堆目录同时加载）
   const prevFolderProjectIdsRef = useRef<string[] | null>(null)
@@ -986,6 +999,9 @@ export function SidePanel({
   const commonFolderRecentListProps = {
     currentDirectory,
     selectedSessionId,
+    // 项目 tab 的数据源是活动服务器；状态汇总（busy/未读）必须用同一个 serverId 收窄，
+    // 否则另一台服务器同名路径的会话状态会挂到本服务器项目行上
+    serverId: activeServerId,
     // 搜索时强制展开所有项目：让各项目加载会话供就地筛选（否则折叠项目的会话未加载会被误隐藏）
     expandedProjectIds: search ? folderProjects.map(project => project.id) : expandedRecentProjectIds,
     onExpandedProjectIdsChange: setExpandedRecentProjectIds,
@@ -1011,52 +1027,51 @@ export function SidePanel({
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* ===== Header ===== */}
-      <div className="mobile-safe-topbar-14 shrink-0 flex items-center">
-        {/* Logo 区域 - 展开时显示 */}
+      {hideHeader ? null : (
         <div
-          className="overflow-hidden transition-[width,padding,opacity] duration-300 ease-out"
-          style={{
-            width: showLabels ? 'auto' : 0,
-            paddingLeft: showLabels ? 16 : 0,
-            opacity: showLabels ? 1 : 0,
-          }}
+          className={`shrink-0 flex items-center border-b border-border-200/60 px-2 gap-1 ${
+            isMobile ? 'mobile-safe-topbar-14' : 'h-11'
+          }`}
         >
-          <a href="/" className="flex items-center whitespace-nowrap">
-            <span className="text-[length:var(--fs-heading-3)] font-semibold text-text-100 tracking-tight">
-              {t('header.openCode')}
-            </span>
-          </a>
-        </div>
-
-        {!isMobile && (
-          <div
-            className="flex-1 flex items-center transition-all duration-300 ease-out"
-            style={{ justifyContent: showLabels ? 'flex-end' : 'center', paddingRight: showLabels ? 8 : 0 }}
-          >
+          {/* 折叠按钮 - 最左侧，与下方各项目图标对齐（mx-2 + paddingLeft 6） */}
+          {!isMobile && (
             <button
               onClick={onToggleSidebar}
               aria-label={isExpanded ? t('sidebar.collapseSidebar') : t('sidebar.expandSidebar')}
               className={cn(
-                'h-8 w-8 flex items-center justify-center rounded-lg text-text-300 hover:text-text-100',
+                'h-8 w-8 flex items-center justify-center rounded-lg text-text-300 hover:text-text-100 shrink-0',
                 interactive.row,
                 'transition-all duration-200',
               )}
+              style={{ paddingLeft: 6, paddingRight: 6 }}
             >
               <SidebarIcon size={16} />
             </button>
+          )}
+
+          {/* Logo 区域 - 折叠按钮右侧，占满剩余宽度，展开时显示 */}
+          <div
+            className="flex-1 overflow-hidden transition-[opacity] duration-300 ease-out min-w-0"
+            style={{ opacity: showLabels ? 1 : 0 }}
+          >
+            <a href="/" className="flex items-center whitespace-nowrap h-full">
+              <span className="text-[length:var(--fs-heading-3)] font-semibold text-text-100 tracking-tight">
+                {t('header.openCode')}
+              </span>
+            </a>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ===== Navigation - 图标位置固定；间距与 Header 面板按钮对齐 ===== */}
-      <div className="flex flex-col gap-0.5 mx-2 -mt-2.5">
+      <div className={`flex flex-col gap-1 mx-2 ${hideHeader ? 'mt-2' : 'mt-1'}`}>
         {/* New Chat - 图标始终在 padding-left: 6px 位置，收起时刚好居中 */}
         <button
           type="button"
           onClick={onNewSession}
           aria-label={t('sidebar.newChat')}
           className={cn(
-            'h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 group overflow-hidden',
+            'h-8 flex items-center rounded-lg text-text-300 group overflow-hidden',
             interactive.row,
             'transition-all duration-300',
           )}
@@ -1090,7 +1105,7 @@ export function SidePanel({
           onClick={onAddProject}
           aria-label={t('sidebar.newProject')}
           className={cn(
-            'h-8 flex items-center rounded-lg text-text-300 hover:text-text-100 group overflow-hidden',
+            'h-8 flex items-center rounded-lg text-text-300 group overflow-hidden',
             interactive.row,
             'transition-all duration-300',
           )}
@@ -1199,10 +1214,7 @@ export function SidePanel({
                     <button
                       type="button"
                       onClick={() => setBatchDeleteSessionConfirm(true)}
-                      className={cn(
-                        'p-1.5 rounded-md text-text-500 hover:text-danger-100',
-                        interactive.danger,
-                      )}
+                      className={cn('p-1.5 rounded-md text-text-500 hover:text-danger-100', interactive.danger)}
                       title={t('sidebar.deleteSessionsWithCount', { count: selectedSessionIds.size })}
                       aria-label={t('sidebar.deleteSessionsWithCount', { count: selectedSessionIds.size })}
                     >
@@ -1230,10 +1242,7 @@ export function SidePanel({
                     onClick={exitEditMode}
                     aria-label={t('sidebar.doneManaging')}
                     aria-pressed
-                    className={cn(
-                      'p-1.5 rounded-md text-text-500 hover:text-text-100',
-                      interactive.subtle,
-                    )}
+                    className={cn('p-1.5 rounded-md text-text-500 hover:text-text-100', interactive.subtle)}
                     title={t('sidebar.doneManaging')}
                   >
                     <CheckIcon size={14} />
@@ -1256,7 +1265,10 @@ export function SidePanel({
                       <GlobeIcon size={13} />
                       <span className="truncate">{t('sidebar.hosts', { defaultValue: 'Hosts' })}</span>
                     </TabsTrigger>
-                    <TabsTrigger value="projects" title={t('sidebar.projectByFolder', { defaultValue: 'Group by project' })}>
+                    <TabsTrigger
+                      value="projects"
+                      title={t('sidebar.projectByFolder', { defaultValue: 'Group by project' })}
+                    >
                       <FolderIcon size={13} />
                       <span className="truncate">{t('sidebar.project', { defaultValue: 'Project' })}</span>
                     </TabsTrigger>
@@ -1288,10 +1300,7 @@ export function SidePanel({
             </div>
           ) : (
             /* 项目 tab：已保存项目文件夹树（统一按目录查询） */
-            <div
-              ref={recentsSelectionRootRef}
-              className={`flex-1 overflow-hidden ${isEditMode ? 'select-none' : ''}`}
-            >
+            <div ref={recentsSelectionRootRef} className={`flex-1 overflow-hidden ${isEditMode ? 'select-none' : ''}`}>
               {search ? (
                 /* 搜索：文件夹 + session 就地筛选 */
                 <FolderRecentList
@@ -1306,7 +1315,7 @@ export function SidePanel({
                 /* 首次加载/无任何项目可展示时才整列表转圈；已有项目时保持列表，
                    当前项目的工作区解析用文件夹内的局部 spinner 过渡，避免打开会话导致侧栏整体重载 */
                 <div className="flex h-full items-center justify-center text-accent-main-100">
-                  <SpinnerIcon size={14} className="animate-spin" />
+                  <Spinner size="sm" tone="accent" variant="pixel" />
                 </div>
               ) : (
                 <FolderRecentList

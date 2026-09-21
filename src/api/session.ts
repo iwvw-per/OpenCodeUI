@@ -6,12 +6,19 @@
 import { getSDKClient, unwrap } from './sdk'
 import { resolveSessionTarget } from '../utils/sessionKey'
 import { normalizeTodoItems } from './todo'
-import { formatPathForApi } from '../utils/directoryUtils'
+import { formatPathForApi, directoryCacheKey } from '../utils/directoryUtils'
 import { getSessionMessages } from './message'
 import { normalizeFileDiffs } from '../types/api/file'
 import { INITIAL_MESSAGE_LIMIT } from '../constants/pagination'
 import { serverStore } from '../store/serverStore'
-import { readSessionListCache, writeSessionListCache, invalidateSessionListCache } from './sessionListCache'
+import {
+  readSessionListCache,
+  writeSessionListCache,
+  invalidateSessionListCache,
+  dedupeSessionListRequest,
+} from './sessionListCache'
+import { singleFlight } from '../utils/singleFlight'
+import { stripSessionListDetails } from './sanitize'
 import type { ApiSession, SessionListParams, FileDiff, ApiMessageWithParts, ApiUserMessage } from './types'
 import type { SessionStatusMap } from '../types/api/session'
 import type { TodoItem } from '../types/api/event'
@@ -29,10 +36,16 @@ function normalizeSessionList(value: unknown): ApiSession[] {
 
 /**
  * 获取所有 session 的当前状态
+ *
+ * 同 (server, directory) 的并发调用共享一次网络请求：初始化、目录切换、
+ * SSE 重连都会触发全量拉取，不去重会在同一帧发出多份相同请求。
  */
 export async function getSessionStatus(directory?: string, serverId?: string): Promise<SessionStatusMap> {
-  const sdk = getSDKClient(serverId)
-  return unwrap(await sdk.session.status({ directory: formatPathForApi(directory, serverId) }))
+  const sid = serverId ?? serverStore.getActiveServerId()
+  return singleFlight(`status:${sid}:${directoryCacheKey(directory)}`, async () => {
+    const sdk = getSDKClient(serverId)
+    return unwrap(await sdk.session.status({ directory: formatPathForApi(directory, serverId) }))
+  })
 }
 
 /**
@@ -103,13 +116,18 @@ export async function getSessions(
 ): Promise<ApiSession[]> {
   const sdk = getSDKClient(serverId)
   const { directory, roots, start, search, limit, includeArchived, archivedOnly, skipCache } = params
+  // 服务端的 active 过滤是 time_archived IS NULL，会把恢复后的会话
+  // （time.archived === 0，falsy-but-present）排除掉，导致恢复的会话不回显。
+  // 因此无论目标列表是活跃还是归档，都向服务端请求归档（archived: true 包含式），
+  // 再在客户端按 time.archived 真值分桶（见 openchamber splitGlobalSessionsByArchived）。
+  const sdkArchived = true
   const sdkQuery = {
     directory: formatPathForApi(directory, serverId),
     roots,
     start,
     search,
     limit,
-    archived: includeArchived ?? archivedOnly,
+    archived: sdkArchived,
   }
   const cacheQuery = { ...sdkQuery, includeArchived, archivedOnly, skipCache }
 
@@ -119,15 +137,20 @@ export async function getSessions(
   // 直接返回缓存引用会把缓存内容改坏
   if (cached) return cached.slice()
 
-  const sessions = normalizeSessionList(unwrap(await sdk.experimental.session.list(sdkQuery)))
-  const result = archivedOnly
-    ? sessions.filter(session => Boolean(session.time?.archived))
-    : includeArchived
-      ? sessions
-      : sessions.filter(session => !session.time?.archived)
+  return dedupeSessionListRequest(cacheServerId, cacheQuery, async () => {
+    const sessions = normalizeSessionList(unwrap(await sdk.experimental.session.list(sdkQuery)))
+    const filtered = archivedOnly
+      ? sessions.filter(session => Boolean(session.time?.archived))
+      : includeArchived
+        ? sessions
+        : sessions.filter(session => !session.time?.archived)
+    // 列表渲染不需要 summary.diffs / revert 快照 / permission 详情，
+    // 这些字段单条可达数百 KB，且会被缓存 30s，去掉后缓存占用同步下降。
+    const result = filtered.map(stripSessionListDetails)
 
-  writeSessionListCache(cacheServerId, cacheQuery, result)
-  return result.slice()
+    writeSessionListCache(cacheServerId, cacheQuery, result)
+    return result.slice()
+  })
 }
 
 /**
@@ -141,11 +164,7 @@ export async function getArchivedSessions(params: SessionListParams = {}, server
 /**
  * 恢复已归档的 session（把 time.archived 清为 0）
  */
-export async function restoreSession(
-  sessionId: string,
-  directory?: string,
-  serverId?: string,
-): Promise<ApiSession> {
+export async function restoreSession(sessionId: string, directory?: string, serverId?: string): Promise<ApiSession> {
   return updateSession(sessionId, { time: { archived: 0 } }, directory, serverId)
 }
 
@@ -154,8 +173,15 @@ export async function restoreSession(
  */
 export async function getSession(sessionId: string, directory?: string, serverId?: string): Promise<ApiSession> {
   const target = resolveSessionTarget(sessionId, serverId)
-  const sdk = getSDKClient(target.serverId)
-  return unwrap(await sdk.session.get({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }))
+  // 首屏时 loadSession、SidePanel、元数据补齐会各取一次同一会话，
+  // 合并同 key 在途请求。key 用与传输格式无关的目录键，
+  // 避免 pathMode 在 auto 检测期间切换导致 key 失配。
+  return singleFlight(`session:${target.serverId}:${target.sessionId}:${directoryCacheKey(directory)}`, async () => {
+    const sdk = getSDKClient(target.serverId)
+    return unwrap(
+      await sdk.session.get({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }),
+    )
+  })
 }
 
 /**
@@ -211,7 +237,9 @@ export async function updateSession(
 export async function deleteSession(sessionId: string, directory?: string, serverId?: string): Promise<boolean> {
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
-  unwrap(await sdk.session.delete({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }))
+  unwrap(
+    await sdk.session.delete({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }),
+  )
   invalidateSessionListCache(target.serverId)
   return true
 }
@@ -226,7 +254,9 @@ export async function deleteSession(sessionId: string, directory?: string, serve
 export async function abortSession(sessionId: string, directory?: string, serverId?: string): Promise<boolean> {
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
-  unwrap(await sdk.session.abort({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }))
+  unwrap(
+    await sdk.session.abort({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }),
+  )
   return true
 }
 
@@ -258,7 +288,12 @@ export async function revertMessage(
 export async function unrevertSession(sessionId: string, directory?: string, serverId?: string): Promise<ApiSession> {
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
-  return unwrap(await sdk.session.unrevert({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }))
+  return unwrap(
+    await sdk.session.unrevert({
+      sessionID: target.sessionId,
+      directory: formatPathForApi(directory, target.serverId),
+    }),
+  )
 }
 
 /**
@@ -267,7 +302,9 @@ export async function unrevertSession(sessionId: string, directory?: string, ser
 export async function shareSession(sessionId: string, directory?: string, serverId?: string): Promise<ApiSession> {
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
-  return unwrap(await sdk.session.share({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }))
+  return unwrap(
+    await sdk.session.share({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }),
+  )
 }
 
 /**
@@ -276,13 +313,20 @@ export async function shareSession(sessionId: string, directory?: string, server
 export async function unshareSession(sessionId: string, directory?: string, serverId?: string): Promise<ApiSession> {
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
-  return unwrap(await sdk.session.unshare({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }))
+  return unwrap(
+    await sdk.session.unshare({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }),
+  )
 }
 
 /**
  * Fork session
  */
-export async function forkSession(sessionId: string, messageId?: string, directory?: string, serverId?: string): Promise<ApiSession> {
+export async function forkSession(
+  sessionId: string,
+  messageId?: string,
+  directory?: string,
+  serverId?: string,
+): Promise<ApiSession> {
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
   return unwrap(
@@ -318,10 +362,19 @@ export async function summarizeSession(
 /**
  * 获取子 session
  */
-export async function getSessionChildren(sessionId: string, directory?: string, serverId?: string): Promise<ApiSession[]> {
+export async function getSessionChildren(
+  sessionId: string,
+  directory?: string,
+  serverId?: string,
+): Promise<ApiSession[]> {
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
-  return unwrap(await sdk.session.children({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }))
+  return unwrap(
+    await sdk.session.children({
+      sessionID: target.sessionId,
+      directory: formatPathForApi(directory, target.serverId),
+    }),
+  )
 }
 
 /**
@@ -336,6 +389,8 @@ export type ApiTodo = TodoItem
 export async function getSessionTodos(sessionId: string, directory?: string, serverId?: string): Promise<ApiTodo[]> {
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
-  const todos = unwrap(await sdk.session.todo({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }))
+  const todos = unwrap(
+    await sdk.session.todo({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }),
+  )
   return normalizeTodoItems(todos)
 }

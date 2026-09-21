@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { notificationStore, useUnreadCompletedSessionIds } from './notificationStore'
+import { notificationStore, notificationServerId, useUnreadCompletedSessionIds } from './notificationStore'
 
 // 未读小点残留的回归保护。
 // 数据源是 notificationStore 里的 completed 通知；标记已读必须能按 sessionId 清掉，
@@ -160,5 +160,84 @@ describe('notificationStore 跨前缀匹配（同一会话多条 SSE）', () => 
     const remaining = notificationStore.getSnapshot().notifications
     expect(remaining.length).toBe(1)
     expect(remaining[0].sessionId).toBe('local::ses_b')
+  })
+})
+
+describe('notificationStore serverId 归属', () => {
+  beforeEach(() => {
+    notificationStore.clearAll()
+  })
+
+  it('push 时从复合 key 记录 serverId', () => {
+    notificationStore.push('completed', 'Done', 'completed', 'aiagent:inst_x::ses_1', '/repo')
+    const [entry] = notificationStore.getSnapshot().notifications
+    expect(entry.serverId).toBe('aiagent:inst_x')
+    expect(notificationServerId(entry)).toBe('aiagent:inst_x')
+  })
+
+  it('旧数据没有 serverId 字段时从复合 key 反解', () => {
+    const entry = {
+      id: 'legacy',
+      type: 'completed' as const,
+      title: 'Done',
+      body: 'completed',
+      sessionId: 'remote::ses_legacy',
+      directory: '/repo',
+      timestamp: 0,
+      read: false,
+    }
+    expect(notificationServerId(entry)).toBe('remote')
+  })
+})
+
+describe('notificationStore 按目录批量已读', () => {
+  beforeEach(() => {
+    notificationStore.clearAll()
+  })
+
+  it('清掉指定服务器 + 目录下的未读 completed', () => {
+    notificationStore.push('completed', 'A', 'done', 'local::ses_a', '/repo')
+    notificationStore.push('completed', 'B', 'done', 'local::ses_b', '/repo')
+
+    notificationStore.markDirectoryNotificationsRead('local', ['/repo'], 'completed')
+
+    const unread = notificationStore.getSnapshot().notifications.filter(n => !n.read)
+    expect(unread).toHaveLength(0)
+  })
+
+  it('不误伤另一台服务器同路径的通知', () => {
+    notificationStore.push('completed', 'A', 'done', 'local::ses_a', '/repo')
+    notificationStore.push('completed', 'B', 'done', 'aiagent:inst_x::ses_b', '/repo')
+
+    notificationStore.markDirectoryNotificationsRead('local', ['/repo'], 'completed')
+
+    const unread = notificationStore.getSnapshot().notifications.filter(n => !n.read)
+    expect(unread).toHaveLength(1)
+    expect(unread[0].sessionId).toBe('aiagent:inst_x::ses_b')
+  })
+
+  it('目录路径大小写与斜杠差异视为同一目录', () => {
+    notificationStore.push('completed', 'A', 'done', 'local::ses_a', 'E:\\Repo\\Project\\')
+
+    notificationStore.markDirectoryNotificationsRead('local', ['e:/repo/project'], 'completed')
+
+    expect(notificationStore.getSnapshot().notifications.filter(n => !n.read)).toHaveLength(0)
+  })
+
+  it('不误伤同服务器的其他目录', () => {
+    notificationStore.push('completed', 'A', 'done', 'local::ses_a', '/repo-a')
+    notificationStore.push('completed', 'B', 'done', 'local::ses_b', '/repo-b')
+
+    notificationStore.markDirectoryNotificationsRead('local', ['/repo-a'], 'completed')
+
+    const unread = notificationStore.getSnapshot().notifications.filter(n => !n.read)
+    expect(unread).toHaveLength(1)
+    expect(unread[0].directory).toBe('/repo-b')
+  })
+
+  it('目录列表为空时不做任何事', () => {
+    notificationStore.push('completed', 'A', 'done', 'local::ses_a', '/repo')
+    notificationStore.markDirectoryNotificationsRead('local', [], 'completed')
+    expect(notificationStore.getSnapshot().notifications.filter(n => !n.read)).toHaveLength(1)
   })
 })

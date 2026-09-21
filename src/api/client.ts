@@ -4,9 +4,10 @@
 // ============================================
 
 import { getSDKClient, unwrap } from './sdk'
-import { formatPathForApi } from '../utils/directoryUtils'
+import { formatPathForApi, directoryCacheKey } from '../utils/directoryUtils'
 import { serverStore } from '../store/serverStore'
 import { ttlCacheGet, ttlCacheSet } from '../utils/ttlCache'
+import { singleFlight } from '../utils/singleFlight'
 import type { ModelInfo, ApiProject, ApiPath } from './types'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -78,7 +79,8 @@ export async function getActiveModels(directory?: string, serverId?: string): Pr
           id: modelId,
           name: typeof model.name === 'string' ? model.name : modelId,
           providerId: typeof provider.id === 'string' ? provider.id : '',
-          providerName: typeof provider.name === 'string' ? provider.name : typeof provider.id === 'string' ? provider.id : '',
+          providerName:
+            typeof provider.name === 'string' ? provider.name : typeof provider.id === 'string' ? provider.id : '',
           family: typeof model.family === 'string' ? model.family : '',
           contextLimit: typeof limit.context === 'number' ? limit.context : 0,
           outputLimit: typeof limit.output === 'number' ? limit.output : 0,
@@ -104,7 +106,9 @@ export async function getDefaultModels(directory?: string): Promise<Record<strin
     'Invalid OpenCode providers response',
   )
   const defaults = requireRecord(data.default, 'Invalid OpenCode default model response')
-  return Object.fromEntries(Object.entries(defaults).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+  return Object.fromEntries(
+    Object.entries(defaults).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  )
 }
 
 // ============================================
@@ -114,18 +118,31 @@ export async function getDefaultModels(directory?: string): Promise<Record<strin
 
 /**
  * 获取当前项目
+ *
+ * 首屏多个组件各自调用；合并同 key 在途请求。
  */
 export async function getCurrentProject(directory?: string, serverId?: string): Promise<ApiProject> {
-  const sdk = getSDKClient(serverId)
-  return unwrap(await sdk.project.current({ directory: formatPathForApi(directory, serverId) }))
+  const sid = serverId ?? serverStore.getActiveServerId()
+  return singleFlight(`project-current:${sid}:${directoryCacheKey(directory)}`, async () => {
+    const sdk = getSDKClient(serverId)
+    return unwrap(await sdk.project.current({ directory: formatPathForApi(directory, serverId) }))
+  })
 }
 
 /**
  * 获取项目列表
+ *
+ * 首屏 useProject 与侧栏项目分组会各拉一次；合并同 key 在途请求。
  */
 export async function getProjects(directory?: string, serverId?: string): Promise<ApiProject[]> {
-  const sdk = getSDKClient(serverId)
-  return requireArray<ApiProject>(unwrap(await sdk.project.list({ directory: formatPathForApi(directory, serverId) })), 'Invalid OpenCode project list response')
+  const sid = serverId ?? serverStore.getActiveServerId()
+  return singleFlight(`project-list:${sid}:${directoryCacheKey(directory)}`, async () => {
+    const sdk = getSDKClient(serverId)
+    return requireArray<ApiProject>(
+      unwrap(await sdk.project.list({ directory: formatPathForApi(directory, serverId) })),
+      'Invalid OpenCode project list response',
+    )
+  })
 }
 
 /**

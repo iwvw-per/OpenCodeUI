@@ -103,7 +103,7 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
             <div className="flex justify-between items-center mt-2">
               <Button
                 variant="ghost"
-                className="text-danger-100 hover:text-danger-200 hover:bg-danger-bg px-0"
+                className="text-danger-100 hover:bg-danger-bg px-0"
                 onClick={handleUnshare}
                 disabled={loading}
               >

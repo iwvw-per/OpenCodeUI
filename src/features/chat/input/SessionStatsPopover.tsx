@@ -45,7 +45,7 @@ export function SessionStatsPopover({ stats, tokensPerSec }: SessionStatsPopover
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="shrink-0 flex items-center gap-1 tabular-nums hover:text-text-100 transition-colors data-[state=open]:text-text-100"
+          className="shrink-0 flex items-center gap-1 tabular-nums border border-transparent px-1 rounded-md hover:bg-bg-200 hover:border-border-200 transition-colors data-[state=open]:text-text-100"
           title={t('inputFooter.tokenRate')}
         >
           <StatsIcon size={11} className="shrink-0" />

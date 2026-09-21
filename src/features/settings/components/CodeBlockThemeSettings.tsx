@@ -122,8 +122,8 @@ function CodeBlockThemeSelect({
             role="option"
             aria-selected={theme.id === value}
             onClick={() => selectTheme(theme.id)}
-            className={`flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors ${
-              theme.id === value ? 'bg-bg-200 text-text-100' : 'text-text-100 hover:bg-bg-100'
+            className={`flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors border ${
+              theme.id === value ? 'bg-bg-200 text-text-100 border-border-200' : 'text-text-100 hover:bg-bg-100 border-transparent'
             }`}
           >
             <span className="min-w-0">

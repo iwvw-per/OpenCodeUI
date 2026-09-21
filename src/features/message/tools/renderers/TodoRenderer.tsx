@@ -1,11 +1,13 @@
 import { useTranslation } from 'react-i18next'
-import { ChevronDownIcon, CheckIcon, ClockIcon, CloseIcon, CircleIcon } from '../../../../components/Icons'
+import { CheckIcon, ClockIcon, CloseIcon, CircleIcon, ManageSessionsIcon } from '../../../../components/Icons'
+import { DisclosureRow } from '../../../../components/ui/DisclosureRow'
+import { ProgressBar } from '../../../../components/ui/ProgressBar'
 import type { ToolRendererProps } from '../types'
 import { useDisclosureScrollLock } from '../../../../hooks'
 import { extractTodos } from './todoUtils'
 import { useUiDisclosureState } from '../../../../utils/uiDisclosureState'
 import { MessageExpandPanel } from '../../messageExpand'
-import { chevronClass, useMessageExpandRender } from '../../messageExpandShared'
+import { useMessageExpandRender } from '../../messageExpandShared'
 
 // ============================================
 // Types
@@ -43,23 +45,37 @@ function TodoList({ todos, stateKey }: { todos: TodoItem[]; stateKey: string }) 
   const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
   const completed = todos.filter(t => t.status === 'completed').length
   const total = todos.length
+  const progress = total > 0 ? completed / total : 0
+  const isAllDone = total > 0 && completed === total
+  const percent = Math.round(progress * 100)
 
   return (
-    <div ref={rootRef} className="border border-border-200/50 rounded-md overflow-hidden bg-bg-100 text-[length:var(--fs-sm)]">
-      {/* Header */}
-      <div
+    <div
+      ref={rootRef}
+      className="border border-border-200/50 rounded-md overflow-hidden bg-bg-100 text-[length:var(--fs-sm)]"
+    >
+      <DisclosureRow
         ref={headerRef}
-        className="flex items-center justify-between px-3 h-8 bg-bg-200/50 hover:bg-bg-200 cursor-pointer select-none transition-colors"
+        expanded={!collapsed}
         onClick={() => withScrollLock(() => setCollapsed(!collapsed))}
-      >
-        <div className="flex items-center gap-2">
-          <span className={chevronClass(!collapsed, 'md', 'text-text-400')}>
-            <ChevronDownIcon />
+        inset={false}
+        className="rounded-none bg-bg-200/50 hover:bg-bg-200"
+        icon={<ManageSessionsIcon size={13} className="text-text-500" />}
+        label={<span className="font-mono text-text-300">{t('todo.tasks')}</span>}
+        meta={
+          <span className="flex items-center gap-2">
+            <ProgressBar progress={progress} done={isAllDone} decorative className="w-12" />
+            <span className="tabular-nums text-text-500">{t('todo.completedCount', { completed, total })}</span>
+            <span
+              className={`tabular-nums text-[length:var(--fs-xxs)] font-medium ${
+                isAllDone ? 'text-success-100' : 'text-text-400'
+              }`}
+            >
+              {percent}%
+            </span>
           </span>
-          <span className="text-text-300 font-medium font-mono">{t('todo.tasks')}</span>
-        </div>
-        <span className="text-text-500 tabular-nums">{t('todo.completedCount', { completed, total })}</span>
-      </div>
+        }
+      />
 
       {/* List */}
       <MessageExpandPanel open={!collapsed} innerClassName="overflow-hidden">
@@ -91,7 +107,7 @@ function TodoList({ todos, stateKey }: { todos: TodoItem[]; stateKey: string }) 
 function getTodoIcon(status: TodoItem['status']) {
   const size = 14
   const cls = {
-    completed: 'text-accent-secondary-100',
+    completed: 'text-text-400',
     in_progress: 'text-accent-main-100',
     cancelled: 'text-text-500',
     pending: 'text-text-500',

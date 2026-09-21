@@ -5,8 +5,19 @@
 
 import { getSDKClient, unwrap } from './sdk'
 import { resolveSessionTarget } from '../utils/sessionKey'
-import { formatPathForApi } from '../utils/directoryUtils'
+import { formatPathForApi, directoryCacheKey } from '../utils/directoryUtils'
+import { serverStore } from '../store/serverStore'
+import { singleFlight } from '../utils/singleFlight'
 import type { ApiPermissionRequest, PermissionReply, ApiQuestionRequest, QuestionAnswer } from './types'
+
+/**
+ * 全局待处理请求的合并键。
+ * 目录用与传输格式无关的目录键，避免 pathMode 切换让同一目录算出两个 key。
+ */
+function pendingScopeKey(kind: 'permission' | 'question', directory?: string, serverId?: string): string {
+  const sid = serverId ?? serverStore.getActiveServerId()
+  return `${kind}:${sid}:${directoryCacheKey(directory)}`
+}
 
 // ============================================
 // Permission API
@@ -14,14 +25,19 @@ import type { ApiPermissionRequest, PermissionReply, ApiQuestionRequest, Questio
 
 /**
  * 获取待处理的权限请求列表
+ *
+ * 同一 (server, directory) 的并发调用共享一次网络请求：初始化、目录切换、
+ * SSE 重连会各自触发一次全量拉取，不去重就会在同一帧发出多份相同请求。
  */
 export async function getPendingPermissions(
   sessionId?: string,
   directory?: string,
   serverId?: string,
 ): Promise<ApiPermissionRequest[]> {
-  const sdk = getSDKClient(serverId)
-  const permissions = unwrap(await sdk.permission.list({ directory: formatPathForApi(directory, serverId) }))
+  const permissions = await singleFlight(pendingScopeKey('permission', directory, serverId), async () => {
+    const sdk = getSDKClient(serverId)
+    return unwrap(await sdk.permission.list({ directory: formatPathForApi(directory, serverId) }))
+  })
   if (!sessionId) return permissions
   const target = resolveSessionTarget(sessionId, serverId)
   return permissions.filter((p: ApiPermissionRequest) => p.sessionID === target.sessionId)
@@ -70,14 +86,18 @@ export async function replyPermission(
 
 /**
  * 获取待处理的问题请求列表
+ *
+ * 与 getPendingPermissions 同样做同 key 在途合并。
  */
 export async function getPendingQuestions(
   sessionId?: string,
   directory?: string,
   serverId?: string,
 ): Promise<ApiQuestionRequest[]> {
-  const sdk = getSDKClient(serverId)
-  const questions = unwrap(await sdk.question.list({ directory: formatPathForApi(directory, serverId) }))
+  const questions = await singleFlight(pendingScopeKey('question', directory, serverId), async () => {
+    const sdk = getSDKClient(serverId)
+    return unwrap(await sdk.question.list({ directory: formatPathForApi(directory, serverId) }))
+  })
   if (!sessionId) return questions
   const target = resolveSessionTarget(sessionId, serverId)
   return questions.filter((q: ApiQuestionRequest) => q.sessionID === target.sessionId)

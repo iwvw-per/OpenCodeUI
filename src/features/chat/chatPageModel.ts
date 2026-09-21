@@ -1,4 +1,6 @@
-import type { Message } from '../../types/message'
+import type { Message, ToolPart } from '../../types/message'
+import { collectChangedFiles } from '../message/parts/changedFiles'
+import type { ChangedFile } from '../message/parts/changedFiles'
 
 export const PAGE_MESSAGE_COUNT = 20
 export const PAGE_EXTREME_RENDER_WEIGHT = 700
@@ -1030,4 +1032,19 @@ export function buildProcessTimeline(
   }
 
   return items
+}
+
+/** 一个回合里所有助手消息的改动文件（按消息 id 去重后聚合） */
+export function collectTurnChangedFiles(messages: Message[]): ChangedFile[] {
+  const byId = new Map<string, Message>()
+  for (const m of messages) {
+    if (m && m.info.role === 'assistant') byId.set(m.info.id, m)
+  }
+  const toolParts: ToolPart[] = []
+  for (const m of byId.values()) {
+    for (const part of m.parts) {
+      if (part.type === 'tool') toolParts.push(part)
+    }
+  }
+  return collectChangedFiles(toolParts)
 }

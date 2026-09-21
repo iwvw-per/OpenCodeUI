@@ -11,6 +11,7 @@ import {
   ShareIcon,
   PlugIcon,
   SpinnerIcon,
+  LayersIcon,
 } from '../../components/Icons'
 import { Dialog, IconButton } from '../../components/ui'
 import { cn } from '../../utils/cn'
@@ -18,6 +19,7 @@ import { interactive } from '../../utils/interaction'
 import { ShareDialog } from './ShareDialog'
 import { messageStore, useHeaderSessionMeta, notificationStore } from '../../store'
 import { useLayoutStore, layoutStore } from '../../store/layoutStore'
+import { workStatusStore, useWorkStatus } from '../../store/workStatusStore'
 import { useSessionContext } from '../../contexts/useSessionContext'
 import { updateSession } from '../../api'
 import { useDirectory } from '../../contexts/useDirectory'
@@ -31,6 +33,8 @@ interface HeaderProps {
   onSplitPane?: () => void
   isPaneFullscreen?: boolean
   onTogglePaneFullscreen?: () => void
+  /** 桌面端标题栏内嵌模式：不占独立行高，去掉背景/边框，嵌入 DesktopTitlebar */
+  embedded?: boolean
 }
 
 /** MCP 面板较重（拉状态 + resources）：仅在打开弹窗时才加载 */
@@ -65,8 +69,8 @@ function SessionTitleControl({
     ? 'px-2 py-1.5 text-[length:var(--fs-base)] font-medium text-text-100 bg-transparent border-none outline-none w-[160px] h-full'
     : 'px-3 py-1.5 text-[length:var(--fs-base)] font-medium text-text-100 bg-transparent border-none outline-none w-[200px] lg:w-[300px] h-full'
   const buttonClass = compact
-    ? 'px-2 py-1.5 text-[length:var(--fs-base)] font-medium text-text-200 hover:text-text-100 transition-colors truncate max-w-[200px] cursor-text select-none'
-    : 'px-3 py-1.5 text-[length:var(--fs-base)] font-medium text-text-200 hover:text-text-100 transition-colors truncate max-w-[300px] cursor-text select-none'
+    ? 'px-2 py-1.5 text-[length:var(--fs-base)] font-medium text-text-200 transition-colors truncate max-w-[200px] cursor-text select-none'
+    : 'px-3 py-1.5 text-[length:var(--fs-base)] font-medium text-text-200 transition-colors truncate max-w-[300px] cursor-text select-none'
 
   return (
     <div
@@ -106,10 +110,12 @@ export function Header({
   onSplitPane,
   isPaneFullscreen = false,
   onTogglePaneFullscreen,
+  embedded = false,
 }: HeaderProps) {
   const { t } = useTranslation('chat')
   const { sessionId, sessionDirectory, sessionTitle: currentSessionTitle } = useHeaderSessionMeta()
   const { rightPanelOpen, bottomPanelOpen } = useLayoutStore()
+  const workStatus = useWorkStatus()
   const { refresh } = useSessionContext()
   const { currentDirectory } = useDirectory()
   const { presentation, interaction } = useChatViewport()
@@ -180,7 +186,7 @@ export function Header({
 
   const titleControl = (
     <SessionTitleControl
-      compact={isCompact}
+      compact={isCompact || embedded}
       isEditingTitle={isEditingTitle}
       editTitle={editTitle}
       sessionTitle={sessionTitle}
@@ -193,9 +199,147 @@ export function Header({
     />
   )
 
+  // 桌面端标题栏内嵌：不占独立行高，去掉背景/边框，与 DesktopTitlebar 同排。
+  // data-chat-header-shadow 锚点由 ChatPane 在 pane 内保留占位（斜杠/提及菜单按 pane root 查找）。
+  if (embedded) {
+    return (
+      <div className="flex h-full w-full items-center min-w-0">
+        {/* 会话标题在顶部左侧；标题与右侧按钮之间为拖拽区 */}
+        <div className="flex items-center gap-2 min-w-0 shrink pr-2 z-20">
+          {interaction.sidebarBehavior === 'overlay' && onOpenSidebar && (
+            <IconButton
+              aria-label={t('header.openSidebar')}
+              onClick={onOpenSidebar}
+              className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
+            >
+              <SidebarIcon size={16} />
+            </IconButton>
+          )}
+          <div className="min-w-0">{titleControl}</div>
+        </div>
+
+        <div data-tauri-drag-region className="h-full min-w-0 flex-1" />
+
+        <div className="flex items-center gap-1 pointer-events-auto shrink-0 z-20">
+            {onTogglePaneFullscreen && (
+              <IconButton
+                aria-label={isPaneFullscreen ? 'Exit fullscreen pane' : 'Fullscreen pane'}
+                onClick={onTogglePaneFullscreen}
+                className={cn(
+                  isPaneFullscreen ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
+                  interactive.subtle,
+                )}
+              >
+                {isPaneFullscreen ? <MinimizeIcon size={16} /> : <MaximizeIcon size={16} />}
+              </IconButton>
+            )}
+
+            {onSplitPane && (
+              <IconButton
+                aria-label="Split pane"
+                onClick={onSplitPane}
+                className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
+              >
+                <SplitHorizontalIcon size={16} />
+              </IconButton>
+            )}
+
+            <IconButton
+              aria-label={bottomPanelOpen ? t('header.closeBottomPanel') : t('header.openBottomPanel')}
+              onClick={() => layoutStore.toggleBottomPanel()}
+              className={cn(
+                bottomPanelOpen ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
+                interactive.subtle,
+              )}
+            >
+              <PanelBottomIcon size={16} />
+            </IconButton>
+
+            <IconButton
+              aria-label={rightPanelOpen ? t('header.closePanel') : t('header.openPanel')}
+              onClick={onToggleRightPanel ?? (() => layoutStore.toggleRightPanel())}
+              className={cn(
+                rightPanelOpen ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
+                interactive.subtle,
+              )}
+            >
+              <PanelRightIcon size={16} />
+            </IconButton>
+
+            <IconButton
+              aria-label={t('workStatus.railToggle')}
+              title={t('workStatus.railToggle')}
+              aria-pressed={workStatus.enabled}
+              onClick={() => workStatusStore.toggleEnabled()}
+              className={cn(
+                workStatus.enabled ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
+                interactive.subtle,
+              )}
+            >
+              <LayersIcon size={16} />
+            </IconButton>
+
+            {canOpenDirectory && (
+              <IconButton
+                aria-label={t('header.openProjectDirectory')}
+                title={t('header.openProjectDirectory')}
+                onClick={handleOpenDirectory}
+                className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
+              >
+                <FolderIcon size={16} />
+              </IconButton>
+            )}
+
+            <IconButton
+              aria-label={t('header.mcpStatus')}
+              title={t('header.mcpStatus')}
+              onClick={() => setMcpDialogOpen(true)}
+              className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
+            >
+              <PlugIcon size={16} />
+            </IconButton>
+
+            {sessionId && (
+              <IconButton
+                aria-label={t('header.shareSession')}
+                title={t('header.shareSession')}
+                onClick={() => setShareDialogOpen(true)}
+                className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
+              >
+                <ShareIcon size={16} />
+              </IconButton>
+            )}
+        </div>
+
+        <ShareDialog isOpen={shareDialogOpen} onClose={() => setShareDialogOpen(false)} />
+
+        <Dialog
+          isOpen={mcpDialogOpen}
+          onClose={() => setMcpDialogOpen(false)}
+          title={t('header.mcpStatus')}
+          width="min(560px, calc(100vw - 24px))"
+          className="max-h-[70vh]!"
+          rawContent
+        >
+          {mcpDialogOpen && (
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center py-12 text-text-400">
+                  <SpinnerIcon size={16} className="animate-spin" />
+                </div>
+              }
+            >
+              <McpPanel onClose={() => setMcpDialogOpen(false)} />
+            </Suspense>
+          )}
+        </Dialog>
+      </div>
+    )
+  }
+
   return (
     <div
-      className={`mobile-safe-topbar-14 flex justify-between items-center z-20 bg-bg-100 transition-colors duration-200 relative ${isCompact ? 'px-2' : 'px-4'}`}
+      className={`chat-topbar flex justify-between items-center z-20 bg-bg-100 transition-colors duration-200 relative border-b border-border-200/60 ${isCompact ? 'px-2' : 'px-4'}`}
     >
       <div className="flex items-center gap-2 min-w-0 shrink-1 z-20">
         {interaction.sidebarBehavior === 'overlay' && onOpenSidebar && (
@@ -218,7 +362,7 @@ export function Header({
               aria-label={isPaneFullscreen ? 'Exit fullscreen pane' : 'Fullscreen pane'}
               onClick={onTogglePaneFullscreen}
               className={cn(
-                isPaneFullscreen ? 'text-accent-main-100 bg-bg-200' : 'text-text-300 hover:text-text-100',
+                isPaneFullscreen ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
                 interactive.subtle,
               )}
             >
@@ -240,7 +384,7 @@ export function Header({
             aria-label={bottomPanelOpen ? t('header.closeBottomPanel') : t('header.openBottomPanel')}
             onClick={() => layoutStore.toggleBottomPanel()}
             className={cn(
-              bottomPanelOpen ? 'text-accent-main-100 bg-bg-200' : 'text-text-300 hover:text-text-100',
+              bottomPanelOpen ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
               interactive.subtle,
             )}
           >
@@ -251,11 +395,24 @@ export function Header({
             aria-label={rightPanelOpen ? t('header.closePanel') : t('header.openPanel')}
             onClick={onToggleRightPanel ?? (() => layoutStore.toggleRightPanel())}
             className={cn(
-              rightPanelOpen ? 'text-accent-main-100 bg-bg-200' : 'text-text-300 hover:text-text-100',
+              rightPanelOpen ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
               interactive.subtle,
             )}
           >
             <PanelRightIcon size={16} />
+          </IconButton>
+
+          <IconButton
+            aria-label={t('workStatus.railToggle')}
+            title={t('workStatus.railToggle')}
+            aria-pressed={workStatus.enabled}
+            onClick={() => workStatusStore.toggleEnabled()}
+            className={cn(
+              workStatus.enabled ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
+              interactive.subtle,
+            )}
+          >
+            <LayersIcon size={16} />
           </IconButton>
 
           {canOpenDirectory && (
@@ -319,7 +476,10 @@ export function Header({
         )}
       </Dialog>
 
-      <div data-chat-header-shadow className="absolute top-full left-0 right-0 h-8 bg-gradient-to-b from-bg-100 via-bg-000/60 to-transparent pointer-events-none z-10" />
+      {/* 测量锚点，不是装饰：斜杠菜单 / @ 提及菜单用它的底边作为弹出层
+          不可越过的上边界（见 SlashCommandMenu / MentionMenu）。
+          底边由 Header 自身的 border-b 表达，这里保持透明、只负责留出缓冲高度。 */}
+      <div data-chat-header-shadow className="absolute top-full left-0 right-0 h-8 pointer-events-none" />
     </div>
   )
 }

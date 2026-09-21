@@ -415,7 +415,7 @@ function CustomCSSEditor({
           <Button
             variant="ghost"
             size="sm"
-            className={cn('text-accent-main-100 hover:text-accent-main-200', interactive.accent)}
+            className={cn('text-accent-main-100', interactive.accent)}
             onClick={() => fileInputRef.current?.click()}
           >
             {t('appearance.importCss')}
@@ -424,7 +424,7 @@ function CustomCSSEditor({
             <Button
               variant="ghost"
               size="sm"
-              className={cn('text-accent-main-100 hover:text-accent-main-200', interactive.accent)}
+              className={cn('text-accent-main-100', interactive.accent)}
               onClick={() => {
                 cancelPendingChange()
                 setDraft({ source: value, value: template })
@@ -438,7 +438,7 @@ function CustomCSSEditor({
             <Button
               variant="ghost"
               size="sm"
-              className={cn('text-text-400 hover:text-danger-100', interactive.danger)}
+              className={cn('text-text-400', interactive.danger)}
               onClick={() => {
                 cancelPendingChange()
                 setDraft({ source: value, value: '' })

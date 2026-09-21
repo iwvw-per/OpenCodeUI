@@ -140,7 +140,7 @@ export function EmptyState({ currentProject, projects, onStartChat }: EmptyState
               />
               <button
                 onClick={() => setIsCustomMode(false)}
-                className="text-[length:var(--fs-sm)] text-text-400 hover:text-text-200 transition-colors"
+                className="text-[length:var(--fs-sm)] text-text-400 hover:bg-bg-200 hover:border-border-200 border border-transparent rounded px-1 transition-colors"
               >
                 ← {t('emptyState.backToDirectoryList')}
               </button>

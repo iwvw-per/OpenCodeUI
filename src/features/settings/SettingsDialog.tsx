@@ -364,11 +364,11 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
                   aria-controls={`settings-panel-${vt.id}`}
                   tabIndex={vt.id === tab ? 0 : -1}
                   onClick={() => switchTab(vt.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[length:var(--fs-md)] font-medium transition-colors whitespace-nowrap shrink-0
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[length:var(--fs-md)] font-medium transition-colors whitespace-nowrap shrink-0 border
                     ${
                       vt.id === tab
-                        ? 'bg-bg-200 text-text-100'
-                        : 'text-text-300 hover:bg-bg-200 hover:text-text-100'
+                        ? 'bg-bg-200 text-text-100 border-border-200'
+                        : 'text-text-300 hover:bg-bg-200 border-transparent'
                     }`}
                 >
                   {vt.icon}
@@ -405,23 +405,23 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
       rawContent
     >
       <div className="relative flex h-[min(90vh,820px)]">
-        {/* 关闭按钮 — 绝对定位右上角，悬浮于内容之上，不占布局 */}
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-3 top-3 z-10 hidden md:flex items-center justify-center w-7 h-7 rounded-md text-text-400/60 hover:text-text-200 hover:bg-bg-200 transition-colors"
-          aria-label={t('closeSettings')}
-          title={t('closeSettings')}
-        >
-          <CloseIcon size={16} />
-        </button>
-
-        {/* Left Nav — 与内容共享同一表面，仅靠留白和 active 胶囊区分 */}
+        {/* Left Nav — 独立的侧栏表面，与右侧内容用分隔线区分 */}
         <nav
           aria-label={t('title')}
-          className="w-[204px] xl:w-[228px] shrink-0 pt-10 pr-3 pl-6 xl:pl-7 pb-3 flex flex-col min-h-0"
+          className="w-[204px] xl:w-[228px] shrink-0 p-3 flex flex-col min-h-0 bg-bg-100/70 border-r border-border-200/60"
         >
-          <div className="mb-3 shrink-0">{search}</div>
+          <div className="mb-3 shrink-0 flex items-center gap-2">
+            <div className="min-w-0 flex-1">{search}</div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md text-text-400/60 hover:text-text-200 hover:bg-bg-200 transition-colors"
+              aria-label={t('closeSettings')}
+              title={t('closeSettings')}
+            >
+              <CloseIcon size={15} />
+            </button>
+          </div>
           <div
             role="tablist"
             aria-orientation="vertical"
@@ -447,8 +447,8 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
                         aria-controls={`settings-panel-${vt.id}`}
                         onClick={() => switchTab(vt.id)}
                         tabIndex={active ? 0 : -1}
-                        className={`w-full min-h-8 flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[length:var(--fs-md)] font-medium transition-colors ${
-                          active ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:bg-bg-200 hover:text-text-100'
+                        className={`w-full min-h-8 flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[length:var(--fs-md)] font-medium transition-colors border ${
+                          active ? 'bg-bg-200 text-text-100 border-border-200' : 'text-text-300 hover:bg-bg-200 border-transparent'
                         }`}
                       >
                         <span className={active ? 'text-accent-main-100' : 'text-text-400'}>{vt.icon}</span>
@@ -472,13 +472,13 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
           </div>
         </nav>
 
-        {/* Right Content — 与 nav 同一表面，仅靠左侧留白分隔 */}
+        {/* Right Content — 独立表面，与左侧导航用分隔线区分 */}
         <div
           id={activePanelId}
           role="tabpanel"
           aria-labelledby={`settings-tab-${tab}`}
           ref={scrollRef}
-          className="flex-1 min-w-0 min-h-0 overflow-y-auto custom-scrollbar px-7 pb-8 pt-10 xl:px-8"
+          className="flex-1 min-w-0 min-h-0 overflow-y-auto custom-scrollbar p-5 bg-bg-000/40"
         >
           <TabContent tab={tab} />
         </div>

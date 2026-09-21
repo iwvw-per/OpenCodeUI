@@ -238,7 +238,7 @@ export const InputFooter = memo(function InputFooter({
           <span className="text-text-400/70 shrink-0">·</span>
           <button
             onClick={togglePanel}
-            className={`flex items-center gap-1.5 min-w-0 hover:text-text-100 transition-colors ${
+            className={`flex items-center gap-1.5 min-w-0 border border-transparent px-1 rounded-md hover:bg-bg-200 hover:border-border-200 transition-colors ${
               panelOpen ? 'text-text-100' : ''
             }`}
           >

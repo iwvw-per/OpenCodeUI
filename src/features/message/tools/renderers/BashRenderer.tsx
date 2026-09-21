@@ -270,7 +270,7 @@ function WorkingDirectoryPrompt({ cwd }: { cwd: string }) {
         type="button"
         onClick={handleClick}
         className={`min-w-0 max-w-full truncate text-left font-mono transition-colors ${
-          copied ? 'text-success-100' : 'text-accent-main-100 hover:text-text-100'
+          copied ? 'text-success-100' : 'text-accent-main-100 hover:bg-bg-200 hover:border-border-200 border border-transparent rounded px-1'
         }`}
         title={copied ? 'Copied!' : `Click to copy: ${cwd}`}
         style={{ direction: 'rtl' }}

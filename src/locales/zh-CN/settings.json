@@ -252,8 +252,11 @@
     "folderStyleRecentsDesc": "按项目文件夹分组最近的对话，同时保留默认列表",
     "folderStyleRecentsShowDiff": "文件夹模式显示 Diff",
     "folderStyleRecentsShowDiffDesc": "在文件夹式最近记录中显示会话的增删和文件统计",
-    "showChildSessions": "始终显示子会话",
-    "showChildSessionsDesc": "始终在父会话下列出子会话。关闭时仅显示活跃或正在查看的子会话"
+    "showChildSessions": "子会话显示",
+    "showChildSessionsDesc": "控制父会话下是否列出子会话：仅活跃只显示正在运行或正在查看的，显示则始终列出全部",
+    "showChildSessionsOff": "关闭",
+    "showChildSessionsActive": "仅活跃",
+    "showChildSessionsAll": "显示"
   },
   "workspace": {
     "layout": "布局和阅读",

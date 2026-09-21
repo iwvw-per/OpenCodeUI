@@ -63,7 +63,7 @@ export function Drill({
               <button
                 type="button"
                 onClick={() => api.back(liveStack.length - 1)}
-                className="inline-flex h-7 shrink-0 items-center gap-0.5 text-[length:var(--fs-sm)] leading-none text-text-300 transition-colors hover:text-text-100"
+                className="inline-flex h-7 shrink-0 items-center gap-0.5 text-[length:var(--fs-sm)] leading-none text-text-300 transition-colors hover:bg-bg-200 hover:border-border-200 border border-transparent rounded px-1"
               >
                 <ChevronLeftIcon size={14} className="shrink-0" />
                 <span className="leading-none">{tx('Back', '返回', lang)}</span>
@@ -91,8 +91,8 @@ export function Drill({
                         title={frame.title}
                         className={`inline-flex h-7 min-w-0 max-w-[180px] items-center truncate text-[length:var(--fs-sm)] leading-none transition-colors ${
                           isLast
-                            ? 'cursor-default font-semibold text-text-100'
-                            : 'text-text-300 hover:text-text-100'
+                            ? 'cursor-default text-text-100'
+                            : 'text-text-300 hover:bg-bg-200 hover:border-border-200 border border-transparent rounded px-1'
                         }`}
                       >
                         {frame.title}

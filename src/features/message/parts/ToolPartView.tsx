@@ -1,14 +1,21 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { diffLines } from 'diff'
-import { ChevronDownIcon, ChevronRightIcon } from '../../../components/Icons'
+import { DisclosureRow } from '../../../components/ui/DisclosureRow'
+import { StopIcon } from '../../../components/Icons'
+import { ToolParamChip } from './ToolParamChip'
 import type { ToolPart } from '../../../types/message'
 import { useCompositorExpand, useDisclosureScrollLock } from '../../../hooks'
 import { useNow } from '../../../hooks/useNow'
+import { useMinDurationActive } from '../../../hooks/useMinDurationActive'
 import { serverStore } from '../../../store/serverStore'
+import { childSessionStore } from '../../../store/childSessionStore'
+import { messageStore } from '../../../store/messageStore'
+import { useSessionNavigation } from '../../../contexts/SessionNavigationContext'
+import { abortSession } from '../../../api'
+import { makeSessionKey, splitSessionKey } from '../../../utils/sessionKey'
 import { useTheme } from '../../../hooks/useTheme'
 import { formatToolName, formatDuration } from '../../../utils/formatUtils'
-import { interactive } from '../../../utils/interaction'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 import {
   useInlineToolRequests,
@@ -24,6 +31,7 @@ import {
   DefaultRenderer,
   TodoRenderer,
   TaskRenderer,
+  TaskAgentBadge,
   hasTodos,
 } from '../tools'
 import { MSG_SPACING } from '../messageSpacing'
@@ -57,10 +65,14 @@ export const ToolPartView = memo(function ToolPartView({
 }: ToolPartViewProps) {
   const { t } = useTranslation('message')
   const { state, tool: toolName } = part
+  const { currentSessionId } = useSessionNavigation()
   const title = state.title || getInputDescription(part) || ''
 
   const isActive = state.status === 'running' || state.status === 'pending'
   const isError = state.status === 'error'
+  // 运行态视觉至少保持 300ms：工具跑得极快时扫光只闪一帧，看起来像界面在抖。
+  // 计时读数仍用真实 isActive，只有视觉（扫光、图标旋转）用这个。
+  const showRunningVisual = useMinDurationActive(isActive, 300)
   const now = useNow(250, isActive)
   const startTime = state.time?.start
   const calibratedNow = isActive ? serverStore.getActiveCalibratedNow() : undefined
@@ -132,8 +144,12 @@ export const ToolPartView = memo(function ToolPartView({
   const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
   const effectiveExpanded = expanded || hasPendingInteraction || permissionResolved || isChildFullscreen
   // Android expand: instant layout + max-height fake; collapse: original grid-rows.
-  const { contentRef: expandContentRef, layoutOpen, keepMounted, panelClassName } =
-    useCompositorExpand(effectiveExpanded)
+  const {
+    contentRef: expandContentRef,
+    layoutOpen,
+    keepMounted,
+    panelClassName,
+  } = useCompositorExpand(effectiveExpanded)
   // 展开即挂 body：默认展开的工具 header/body 同帧，不再先 header 后 body
   const shouldRenderBody = useMessageExpandRender(keepMounted)
   const toggleExpanded = useCallback(() => {
@@ -176,13 +192,17 @@ export const ToolPartView = memo(function ToolPartView({
   ])
 
   // Shared icon element
+  // 子代理（task）的图标语义是「正在跑」，运行时让它真的转；
+  // 其它工具图标代表类型，不旋转（转一个文件/终端图标没有意义）。
+  const iconSpins = showRunningVisual && toolName.toLowerCase() === 'task'
   const toolIcon = (
     <div
       className={`
       relative flex items-center justify-center transition-colors duration-200
-      ${isActive ? 'text-text-300' : ''}
+      ${isActive ? 'text-accent-main-100' : ''}
       ${isError ? 'text-danger-100' : ''}
       ${state.status === 'completed' ? 'text-text-400 group-hover:text-text-300' : ''}
+      ${iconSpins ? 'animate-spin' : ''}
     `}
     >
       {getToolIcon(toolName)}
@@ -194,6 +214,56 @@ export const ToolPartView = memo(function ToolPartView({
 
   // Memoize once — shared by both the descriptive header (diffStats) and ToolBody.
   const toolData = useMemo(() => extractToolData(part), [part])
+
+  // ── task 工具的合并表头 ──
+  // task 就是「派生子代理」这个动作本身，它和被派起的子代理不是两个东西，
+  // 所以这一行直接显示「子代理徽标 + 描述」，而不是「Task + 描述」再另起一行。
+  const taskSubagentType =
+    isTaskTool && part.state.input ? ((part.state.input as Record<string, unknown>).subagent_type as string) : undefined
+  const taskAgentLabel = taskSubagentType || (isTaskTool ? 'general' : undefined)
+  const taskBadgeTone = isError
+    ? 'danger'
+    : isActive
+      ? 'accent'
+      : state.status === 'completed'
+        ? 'success'
+        : 'neutral'
+  const taskTitle = taskAgentLabel ? (
+    <span className="flex items-center gap-2">
+      <TaskAgentBadge agentType={taskAgentLabel} tone={taskBadgeTone} sessionId={childSessionId} />
+      {title && <span className="min-w-0 truncate text-[length:var(--fs-sm)]">{title}</span>}
+    </span>
+  ) : null
+
+  // 合并表头后，原来挂在 TaskRenderer 表头里的「停止」按钮要移到这里，
+  // 否则运行中无法中止子代理。
+  const handleStopTask = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (!childSessionId) return
+      const serverId = currentSessionId ? splitSessionKey(currentSessionId).serverId : undefined
+      const childScoped = childSessionId.includes('::')
+        ? childSessionId
+        : makeSessionKey(serverId ?? serverStore.getActiveServerId(), childSessionId)
+      const childInfo = childSessionStore.getSessionInfo(childScoped)
+      const parentSessionId = childInfo?.parentID || currentSessionId || null
+      const parentState = parentSessionId ? messageStore.getSessionState(parentSessionId) : null
+      const directory = parentState?.directory || ''
+      void abortSession(childSessionId, directory, serverId)
+    },
+    [childSessionId, currentSessionId],
+  )
+  const taskStopButton = isTaskTool && isActive && childSessionId ? (
+    <button
+      type="button"
+      onClick={handleStopTask}
+      aria-label={t('task.stop')}
+      title={t('task.stop')}
+      className="w-[18px] h-[18px] p-0 flex items-center justify-center text-text-400 hover:text-danger-100 hover:bg-danger-100/10 active:bg-danger-100/20 rounded-sm transition-colors bg-transparent border-none"
+    >
+      <StopIcon size={10} />
+    </button>
+  ) : null
 
   const handleFullscreenChange = useCallback((isFullscreen: boolean) => {
     setIsChildFullscreen(isFullscreen)
@@ -247,54 +317,47 @@ export const ToolPartView = memo(function ToolPartView({
 
     return (
       <div ref={rootRef} className={`group ${MSG_SPACING.item}`}>
-        <button
-          type="button"
+        <DisclosureRow
           ref={headerRef}
-          className={`flex w-full items-center gap-3 rounded-md ${MSG_SPACING.header} text-left group/header ${interactive.contentRow}`}
+          expanded={effectiveExpanded}
           onClick={toggleExpanded}
-        >
-          <div className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
-            <span
-              className={`shrink-0 font-medium text-[length:var(--fs-md)] leading-tight ${
-                isActive
-                  ? 'reasoning-shimmer-text'
-                  : isError
-                    ? 'text-danger-100'
-                    : 'text-text-200 group-hover/header:text-text-100'
-              }`}
-            >
-              {formatToolName(toolName)}
+          size="sm"
+          className="group/header gap-2"
+          truncateLabel={false}
+          labelTone={showRunningVisual ? 'active' : isError ? 'error' : 'idle'}
+          icon={toolIcon}
+          label={
+            <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+              {taskTitle ?? (
+                <>
+                  <span className="shrink-0 font-medium text-[length:var(--fs-md)] leading-tight">
+                    {formatToolName(toolName)}
+                  </span>
+
+                  {title && <ToolParamChip text={title} error={isError} />}
+                </>
+              )}
+
+              {/* Diff stats — 紧跟 title，收起时且非失败时显示 */}
+              {!effectiveExpanded && !isActive && !isError && (diffStats || hasDiffFiles) && (
+                <span className="shrink-0 flex items-center gap-1 text-[length:var(--fs-xxs)] font-medium tabular-nums">
+                  {(diffStats?.additions ?? 0) > 0 && <span className="text-success-100">+{diffStats!.additions}</span>}
+                  {(diffStats?.deletions ?? 0) > 0 && <span className="text-danger-100">-{diffStats!.deletions}</span>}
+                </span>
+              )}
             </span>
-
-            {title && (
-              <span
-                className={`min-w-0 truncate font-mono text-[length:var(--fs-code)] ${
-                  isActive ? 'reasoning-shimmer-text' : isError ? 'text-danger-100/80' : 'text-text-400'
-                }`}
-              >
-                {title}
-              </span>
-            )}
-
-            {/* Diff stats — 紧跟 title，收起时且非失败时显示 */}
-            {!effectiveExpanded && !isActive && !isError && (diffStats || hasDiffFiles) && (
-              <span className="shrink-0 flex items-center gap-1 text-[length:var(--fs-xxs)] font-medium tabular-nums">
-                {(diffStats?.additions ?? 0) > 0 && <span className="text-success-100">+{diffStats!.additions}</span>}
-                {(diffStats?.deletions ?? 0) > 0 && <span className="text-danger-100">-{diffStats!.deletions}</span>}
-              </span>
-            )}
-          </div>
-
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {duration !== undefined && (state.status === 'completed' || isActive) && (
+          }
+          meta={
+            duration !== undefined &&
+            (state.status === 'completed' || isActive) && (
               <span
                 className={`text-[length:var(--fs-xxs)] tabular-nums ${isError ? 'text-danger-100/70' : isActive ? 'reasoning-shimmer-text' : 'text-text-500'}`}
               >
                 {formatDuration(duration)}
               </span>
-            )}
-          </div>
-        </button>
+            )
+          }
+        />
 
         {expandBody(MSG_SPACING.body)}
       </div>
@@ -305,69 +368,64 @@ export const ToolPartView = memo(function ToolPartView({
   // Grid: [14px icon] [gap 6px] [content] — mirrors ReasoningPartView alignment
   if (compact) {
     return (
-      <div ref={rootRef} className={`group relative grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 items-start ${MSG_SPACING.item}`}>
+      <div
+        ref={rootRef}
+        className={`group relative grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 items-start ${MSG_SPACING.item}`}
+      >
         {/* Icon column — fixed, outside of interactive area */}
         <span className="inline-flex h-9 w-[14px] items-center justify-center shrink-0">{toolIcon}</span>
 
         {/* Content column */}
         <div className="min-w-0">
-          <button
-            type="button"
+          <DisclosureRow
             ref={headerRef}
-            className="flex items-center gap-2 w-full h-9 text-left pl-2 pr-0 hover:bg-bg-200 rounded-sm transition-colors group/header"
+            expanded={effectiveExpanded}
             onClick={toggleExpanded}
-          >
-            <div className="flex items-baseline gap-2 overflow-hidden flex-1 min-w-0">
-              <span
-                className={`font-medium text-[length:var(--fs-md)] leading-tight transition-colors duration-300 shrink-0 ${
-                  isActive
-                    ? 'reasoning-shimmer-text'
-                    : isError
-                      ? 'text-danger-100'
-                      : 'text-text-200 group-hover/header:text-text-100'
-                }`}
-              >
-                {formatToolName(toolName)}
+            size="lg"
+            inset={false}
+            className="group/header pl-2 pr-0"
+            truncateLabel={false}
+            labelTone={showRunningVisual ? 'active' : isError ? 'error' : 'idle'}
+            label={
+              <span className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
+                {taskTitle ?? (
+                  <>
+                    <span className="font-medium text-[length:var(--fs-md)] leading-tight transition-colors duration-300 shrink-0">
+                      {formatToolName(toolName)}
+                    </span>
+                    {title && <ToolParamChip text={title} error={isError} />}
+                  </>
+                )}
               </span>
-              {title && (
+            }
+            meta={
+              <>
+                {duration !== undefined && (state.status === 'completed' || isActive) && (
+                  <span
+                    className={`text-[length:var(--fs-xxs)] tabular-nums ${
+                      isActive ? 'reasoning-shimmer-text' : 'text-text-500'
+                    }`}
+                  >
+                    {formatDuration(duration)}
+                  </span>
+                )}
                 <span
-                  className={`text-[length:var(--fs-sm)] truncate min-w-0 flex-1 font-mono ${
-                    isActive ? 'reasoning-shimmer-text' : 'text-text-400 opacity-70'
+                  className={`text-[length:var(--fs-xxs)] font-medium transition-all duration-300 ${
+                    isActive ? 'opacity-100 text-text-400' : 'opacity-0 w-0 overflow-hidden'
                   }`}
                 >
-                  {title}
+                  {t('toolPart.running')}
                 </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 ml-auto shrink-0">
-              {duration !== undefined && (state.status === 'completed' || isActive) && (
                 <span
-                  className={`text-[length:var(--fs-xxs)] tabular-nums ${
-                    isActive ? 'reasoning-shimmer-text' : 'text-text-500'
+                  className={`text-[length:var(--fs-xxs)] font-medium transition-all duration-300 ${
+                    isError ? 'opacity-100 text-danger-100' : 'opacity-0 w-0 overflow-hidden'
                   }`}
                 >
-                  {formatDuration(duration)}
+                  {t('toolPart.failed')}
                 </span>
-              )}
-              <span
-                className={`text-[length:var(--fs-xxs)] font-medium transition-all duration-300 ${
-                  isActive ? 'opacity-100 text-text-400' : 'opacity-0 w-0 overflow-hidden'
-                }`}
-              >
-                {t('toolPart.running')}
-              </span>
-              <span
-                className={`text-[length:var(--fs-xxs)] font-medium transition-all duration-300 ${
-                  isError ? 'opacity-100 text-danger-100' : 'opacity-0 w-0 overflow-hidden'
-                }`}
-              >
-                {t('toolPart.failed')}
-              </span>
-              <span className="text-text-500">
-                {effectiveExpanded ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
-              </span>
-            </div>
-          </button>
+              </>
+            }
+          />
 
           {expandBody(MSG_SPACING.toolBodyInset)}
         </div>
@@ -394,65 +452,57 @@ export const ToolPartView = memo(function ToolPartView({
       {/* Content Column */}
       <div className="flex-1 min-w-0">
         {/* Header - h-9 和 timeline 图标行等高 */}
-        <button
-          type="button"
+        <DisclosureRow
           ref={headerRef}
-          className="flex items-center gap-2.5 w-full h-9 text-left pl-2 pr-0 hover:bg-bg-200 rounded-sm transition-colors group/header"
+          expanded={effectiveExpanded}
           onClick={toggleExpanded}
-        >
-          <div className="flex items-baseline gap-2 overflow-hidden flex-1 min-w-0">
-            <span
-              className={`font-medium text-[length:var(--fs-md)] leading-tight transition-colors duration-300 shrink-0 ${
-                isActive
-                  ? 'reasoning-shimmer-text'
-                  : isError
-                    ? 'text-danger-100'
-                    : 'text-text-200 group-hover/header:text-text-100'
-              }`}
-            >
-              {formatToolName(toolName)}
-            </span>
+          size="lg"
+          inset={false}
+          className="group/header gap-2.5 pl-2 pr-0"
+          truncateLabel={false}
+          labelTone={showRunningVisual ? 'active' : isError ? 'error' : 'idle'}
+          label={
+            <span className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
+              {taskTitle ?? (
+                <>
+                  <span className="font-medium text-[length:var(--fs-md)] leading-tight transition-colors duration-300 shrink-0">
+                    {formatToolName(toolName)}
+                  </span>
 
-            {title && (
+                  {title && <ToolParamChip text={title} error={isError} />}
+                </>
+              )}
+            </span>
+          }
+          meta={
+            <>
+              {taskStopButton}
+              {duration !== undefined && (state.status === 'completed' || isActive) && (
+                <span
+                  className={`text-[length:var(--fs-xxs)] tabular-nums transition-opacity duration-300 ${
+                    isActive ? 'reasoning-shimmer-text' : 'text-text-500'
+                  }`}
+                >
+                  {formatDuration(duration)}
+                </span>
+              )}
               <span
-                className={`text-[length:var(--fs-sm)] truncate min-w-0 flex-1 font-mono ${
-                  isActive ? 'reasoning-shimmer-text' : 'text-text-400 opacity-70'
+                className={`text-[length:var(--fs-xxs)] font-medium transition-all duration-300 ${
+                  isActive ? 'opacity-100 text-text-400' : 'opacity-0 w-0 overflow-hidden'
                 }`}
               >
-                {title}
+                {t('toolPart.running')}
               </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 ml-auto shrink-0">
-            {duration !== undefined && (state.status === 'completed' || isActive) && (
               <span
-                className={`text-[length:var(--fs-xxs)] tabular-nums transition-opacity duration-300 ${
-                  isActive ? 'reasoning-shimmer-text' : 'text-text-500'
+                className={`text-[length:var(--fs-xxs)] font-medium transition-all duration-300 ${
+                  isError ? 'opacity-100 text-danger-100' : 'opacity-0 w-0 overflow-hidden'
                 }`}
               >
-                {formatDuration(duration)}
+                {t('toolPart.failed')}
               </span>
-            )}
-            <span
-              className={`text-[length:var(--fs-xxs)] font-medium transition-all duration-300 ${
-                isActive ? 'opacity-100 text-text-400' : 'opacity-0 w-0 overflow-hidden'
-              }`}
-            >
-              {t('toolPart.running')}
-            </span>
-            <span
-              className={`text-[length:var(--fs-xxs)] font-medium transition-all duration-300 ${
-                isError ? 'opacity-100 text-danger-100' : 'opacity-0 w-0 overflow-hidden'
-              }`}
-            >
-              {t('toolPart.failed')}
-            </span>
-            <span className="text-text-500">
-              {effectiveExpanded ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
-            </span>
-          </div>
-        </button>
+            </>
+          }
+        />
 
         {expandBody(MSG_SPACING.toolBodyInset)}
       </div>

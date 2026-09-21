@@ -4,15 +4,23 @@
 // ============================================
 
 import { getSDKClient, unwrap } from './sdk'
-import { formatPathForApi } from '../utils/directoryUtils'
+import { formatPathForApi, directoryCacheKey } from '../utils/directoryUtils'
+import { singleFlight } from '../utils/singleFlight'
+import { serverStore } from '../store/serverStore'
 import type { ApiAgent } from './types'
 
 /**
  * 获取 agent 列表
+ *
+ * 首屏 useChatSession 与输入框能力探测会各取一次；合并同 key 在途请求。
+ * key 用与传输格式无关的目录键，避免 pathMode 切换导致重复请求。
  */
 export async function getAgents(directory?: string, serverId?: string): Promise<ApiAgent[]> {
-  const sdk = getSDKClient(serverId)
-  return unwrap(await sdk.app.agents({ directory: formatPathForApi(directory) }))
+  const sid = serverId ?? serverStore.getActiveServerId()
+  return singleFlight(`agents:${sid}:${directoryCacheKey(directory)}`, async () => {
+    const sdk = getSDKClient(serverId)
+    return unwrap(await sdk.app.agents({ directory: formatPathForApi(directory, serverId) }))
+  })
 }
 
 /**

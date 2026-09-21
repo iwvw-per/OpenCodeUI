@@ -186,6 +186,21 @@ export function formatPathForApi(dir: string | undefined | null, serverId?: stri
 }
 
 /**
+ * 生成「与线上传输格式无关」的目录缓存键。
+ *
+ * formatPathForApi 的结果取决于 pathMode，而 auto 模式下检测结果可能在请求
+ * 过程中发生变化（首个响应带反斜杠就会把风格切成 windows）。若直接把它的
+ * 输出拼进缓存/去重 key，同一目录会在切换前后算出两个 key，导致缓存全部失配、
+ * 同一请求被并发发两次（实测 /command、/file 各发 2 次，首屏合计多出数百 ms）。
+ *
+ * 这里统一用正斜杠 + 去末尾斜杠，并保留大小写（大小写敏感后端上不能合并）。
+ * 仅用于 key，不要用于请求参数。
+ */
+export function directoryCacheKey(dir: string | undefined | null): string {
+  return normalizeToForwardSlash(dir)
+}
+
+/**
  * 从后端响应中检测路径风格
  * 分析路径字符串，判断后端使用的是哪种斜杠风格
  */

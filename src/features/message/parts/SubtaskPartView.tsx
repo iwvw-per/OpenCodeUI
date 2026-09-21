@@ -5,6 +5,8 @@ import { useChildSessions, type ChildSessionInfo } from '../../../store'
 import { useSessionNavigation } from '../../../contexts/SessionNavigationContext'
 import { useDisclosureScrollLock } from '../../../hooks'
 import { UsersIcon, ChevronDownIcon, LayersIcon, TerminalIcon, ReturnIcon } from '../../../components/Icons'
+import { Chip } from '../../../components/ui/Chip'
+import { StatusDot } from '../../../components/ui/StatusDot'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 import { MessageExpandPanel } from '../messageExpand'
 import { chevronClass, useMessageExpandRender } from '../messageExpandShared'
@@ -58,11 +60,7 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
         onClick={() => withScrollLock(() => setExpanded(!expanded))}
       >
         {/* Status indicator */}
-        <div
-          className={`flex-shrink-0 w-2 h-2 rounded-full ${
-            isRunning ? 'bg-info-100 animate-pulse' : status === 'error' ? 'bg-danger-100' : 'bg-success-100'
-          }`}
-        />
+        <StatusDot tone={isRunning ? 'running' : status === 'error' ? 'failed' : 'completed'} className="flex-shrink-0" />
 
         {/* Agent icon & name */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -94,7 +92,7 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
                 e.stopPropagation()
                 handleEnter()
               }}
-              className="px-2.5 py-1 text-[length:var(--fs-sm)] font-medium text-text-300 hover:text-text-100 hover:bg-bg-200 rounded-sm transition-colors"
+              className="px-2.5 py-1 text-[length:var(--fs-sm)] font-medium text-text-300 hover:bg-bg-200 rounded-sm transition-colors"
             >
               {t('subtask.enter')}
             </button>
@@ -160,21 +158,9 @@ function SubtaskTitle({ part, status, isRunning }: { part: SubtaskPart; status: 
     <>
       <div className="flex items-center gap-2">
         <span className="text-[length:var(--fs-base)] font-medium text-text-200 truncate">{part.agent}</span>
-        {isRunning && (
-          <span className="text-[length:var(--fs-xxs)] text-info-100 bg-info-100/10 px-1.5 py-0.5 rounded">
-            {t('subtask.running')}
-          </span>
-        )}
-        {status === 'idle' && (
-          <span className="text-[length:var(--fs-xxs)] text-success-100 bg-success-100/10 px-1.5 py-0.5 rounded">
-            {t('subtask.done')}
-          </span>
-        )}
-        {status === 'error' && (
-          <span className="text-[length:var(--fs-xxs)] text-danger-100 bg-danger-100/10 px-1.5 py-0.5 rounded">
-            {t('subtask.error')}
-          </span>
-        )}
+        {isRunning && <Chip tone="accent">{t('subtask.running')}</Chip>}
+        {status === 'idle' && <Chip tone="success">{t('subtask.done')}</Chip>}
+        {status === 'error' && <Chip tone="danger">{t('subtask.error')}</Chip>}
       </div>
       <p className="text-[length:var(--fs-sm)] text-text-400 truncate mt-0.5">{part.description}</p>
     </>

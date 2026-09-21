@@ -176,6 +176,24 @@ function updateRatio(node: PaneNode, splitId: string, ratio: number): PaneNode {
   }
 }
 
+/**
+ * 重算每个 split 的 ratio，使所有叶子面积相等。
+ * 每个 split 的 ratio = first 子树叶子数 / 整棵子树叶子数，
+ * 这样任意嵌套的 split 树（如三分屏 split(split(A,B),C)）都能视觉等分。
+ */
+function equalizeSplitRatios(node: PaneNode): PaneNode {
+  if (node.type === 'leaf') return node
+  const total = countLeaves(node)
+  const firstCount = countLeaves(node.first)
+  const ratio = total === 0 ? 0.5 : firstCount / total
+  return {
+    ...node,
+    ratio,
+    first: equalizeSplitRatios(node.first),
+    second: equalizeSplitRatios(node.second),
+  }
+}
+
 // ============================================
 // Store
 // ============================================
@@ -468,6 +486,16 @@ function createPaneLayoutStore() {
     setRatio(splitId: string, ratio: number) {
       const clamped = Math.max(0.15, Math.min(0.85, ratio))
       _root = updateRatio(_root, splitId, clamped)
+      _refreshSnapshot()
+    },
+
+    /**
+     * 等分所有叶子（如三分屏）：重算每个 split 的 ratio，让各 pane 面积一致。
+     * 用户拖拽调整过 ratio 后，调用此方法会覆盖为均匀分布。
+     */
+    equalizeSplits() {
+      if (_root.type === 'leaf') return
+      _root = equalizeSplitRatios(_root)
       _refreshSnapshot()
     },
 
