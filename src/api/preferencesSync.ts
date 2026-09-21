@@ -59,10 +59,9 @@
 //   - opencode-saved-directories：数组，按 path 去重并集
 //   - opencode-pinned-messages：数组，按 sessionId 去重并集
 //
-// opencode-hidden-directories 例外，保持整键覆盖（跟随服务端 LWW）：
-// 它存的是绝对路径，跨端合并会把别的机器上「已隐藏」的路径带进来 —— 那些
-// 路径在本机可能根本不存在，形成幽灵条目；且取消隐藏的意图无法用条目级
-// 墓碑表达（数组元素是裸字符串，无稳定 ID）。整键覆盖至少保证语义一致。
+// opencode-hidden-directories 已废弃：项目列表不再做服务器侧自动发现，用户
+// 看到的项目完全由 saved-directories 决定，「隐藏发现项」这个概念随之消失。
+// 该键仍在准入前缀下（历史数据不主动删除），但不再有代码写入或读取它。
 //
 // 取消置顶/取消保存的意图用墓碑（tombstone）表达：维护「已删除条目」记录，
 // 合并时排除墓碑项，30 天后自动过期清理。
@@ -354,7 +353,7 @@ type MergeRule =
 /**
  * 按「键名后缀」识别聚合键，这样裸键（opencode-pinned-sessions）与
  * per-server 分桶键（srv:aiagent:inst_X:opencode-pinned-sessions）走同一套
- * 合并规则。opencode-hidden-directories 刻意不在此列，保持整键覆盖。
+ * 合并规则。
  */
 const MERGE_RULES: Record<string, MergeRule> = {
   'opencode-pinned-sessions': { kind: 'array', id: entry => (typeof entry.sessionId === 'string' ? entry.sessionId : null) },
