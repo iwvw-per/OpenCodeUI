@@ -78,6 +78,7 @@
 // ============================================
 
 import { accountRequest, readAccount, type AiAgentAccount } from './aiagent'
+import { serverStore } from '../store/serverStore'
 
 const SYNC_ENABLED_KEY = 'opencode-preferences-sync-enabled'
 const SYNC_META_KEY = 'opencode-preferences-sync-meta'
@@ -361,10 +362,94 @@ const MERGE_RULES: Record<string, MergeRule> = {
   'opencode-pinned-messages': { kind: 'array', id: entry => (typeof entry.sessionId === 'string' ? entry.sessionId : null) },
 }
 
-function mergeRuleFor(key: string): MergeRule | undefined {
+/**
+ * 跨实例聚合的键后缀。
+ *
+ * saved-directories 存的是「用户手工添加的项目目录」，语义上属于用户而非
+ * 某台主机：在笔电上加的项目，切到工作实例时同样应该看到。但存储键带实例
+ * 分桶前缀（srv:aiagent:inst_X:...），不同实例各写一份，切换实例就丢。
+ *
+ * 因此这两个键在同步时做跨实例处理：
+ *   - 读（pull）：把本地所有实例桶里的条目并集写回「当前活动实例」的桶，
+ *     于是切到任一实例都能看到完整列表；
+ *   - 写（push）：把当前实例桶的内容广播到其它实例桶，避免切换实例后
+ *     本地看起来「少了几项」又在下轮 pull 时被当成删除记墓碑。
+ *
+ * pinned-sessions 刻意不在列：它带 sessionId 与 directory，会话属于具体
+ * 后端，跨实例合并会把别的实例的会话带进来形成幽灵条目。
+ */
+const CROSS_INSTANCE_SUFFIXES = new Set(['opencode-saved-directories'])
+
+function keySuffix(key: string): string {
   const separator = key.lastIndexOf(':')
-  const suffix = separator === -1 ? key : key.slice(separator + 1)
-  return MERGE_RULES[suffix]
+  return separator === -1 ? key : key.slice(separator + 1)
+}
+
+function mergeRuleFor(key: string): MergeRule | undefined {
+  return MERGE_RULES[keySuffix(key)]
+}
+
+/** 本地所有实例桶中该后缀的键（用于跨实例聚合与广播）。 */
+function crossInstanceKeys(suffix: string): string[] {
+  const keys: string[] = []
+  for (const key of listStorageKeys()) {
+    if (keySuffix(key) !== suffix) continue
+    if (!/^srv:aiagent:[^:]+:/.test(key)) continue
+    keys.push(key)
+  }
+  return keys
+}
+
+/**
+ * 把当前活动实例桶里的跨实例键广播到其它实例桶（按 path 并集，不是覆盖）。
+ *
+ * 与 applyCrossInstanceAggregation 方向相反：那个是「从别处汇入当前」，
+ * 这个是「从当前分发到别处」。推送前调用，保证本实例的改动对其它实例可见。
+ * 用并集而非覆盖，是为了在别处桶有当前桶没有的条目时不丢数据。
+ */
+function broadcastCrossInstanceKeys(): void {
+  const activeServerId = serverStore.getActiveServerId()
+  for (const suffix of CROSS_INSTANCE_SUFFIXES) {
+    const activeKey = `srv:${activeServerId}:${suffix}`
+    if (localStorage.getItem(activeKey) === null) continue
+    const keys = crossInstanceKeys(suffix)
+    if (keys.length <= 1) continue
+    unionEntriesIntoKey(activeKey, keys.filter(key => key !== activeKey))
+  }
+}
+
+/**
+ * 把 sources 各键里的数组条目按 path 并集写入 targetKey。
+ * 返回 true 表示 targetKey 实际发生了变化。
+ */
+function unionEntriesIntoKey(targetKey: string, sources: string[]): boolean {
+  const merged = new Map<string, Record<string, unknown>>()
+  const collect = (raw: string | null) => {
+    const list = parseJson(raw ?? '')
+    if (!Array.isArray(list)) return
+    for (const entry of list) {
+      const record = asRecord(entry)
+      if (!record) continue
+      const path = typeof record.path === 'string' ? record.path : ''
+      if (!path) continue
+      const existing = merged.get(path)
+      const addedAt = typeof record.addedAt === 'number' ? record.addedAt : 0
+      const existingAt = typeof existing?.addedAt === 'number' ? (existing.addedAt as number) : -1
+      if (!existing || addedAt > existingAt) merged.set(path, record)
+    }
+  }
+
+  collect(localStorage.getItem(targetKey))
+  for (const key of sources) collect(localStorage.getItem(key))
+
+  const raw = JSON.stringify([...merged.values()])
+  try {
+    if (localStorage.getItem(targetKey) === raw) return false
+    localStorage.setItem(targetKey, raw)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function parseJson(raw: string): unknown {
@@ -638,8 +723,32 @@ export async function pullPreferences(account?: AiAgentAccount | null): Promise<
     if (serverIso) stamps[key] = serverIso
   }
 
+  written += applyCrossInstanceAggregation()
+
   writeTombstones(tombstones)
   writeStampState({ stamps, known: { ...known, [SNAPSHOT_KEY]: JSON.stringify(collectLocalPreferences()) } })
+  return written
+}
+
+/**
+ * 把本地所有实例桶里的跨实例键并集写回当前活动实例的桶。
+ *
+ * 背景：saved-directories 按实例分桶（srv:aiagent:inst_X:...），而「用户添加
+ * 的项目目录」属于用户不属于主机。不聚合的话，在笔电实例下加的项目切到工作
+ * 实例就看不到，反之亦然。
+ *
+ * 按 path 去重并保留较新的 addedAt；当前实例桶已有条目的顺序优先保留。
+ * 返回新增的键数量。
+ */
+function applyCrossInstanceAggregation(): number {
+  let written = 0
+  for (const suffix of CROSS_INSTANCE_SUFFIXES) {
+    const keys = crossInstanceKeys(suffix)
+    if (keys.length <= 1) continue
+    const activeKey = `srv:${serverStore.getActiveServerId()}:${suffix}`
+    if (!keys.includes(activeKey)) continue
+    if (unionEntriesIntoKey(activeKey, keys.filter(key => key !== activeKey))) written += 1
+  }
   return written
 }
 
@@ -661,11 +770,16 @@ export async function pushPreferences(account?: AiAgentAccount | null, force = f
     return 0
   }
 
+  // 跨实例键先补写进当前实例的桶，再进入常规推送流程，这样「在别的实例下
+  // 加过的项目」也会随本轮上传，服务端不需要额外改动。
+  broadcastCrossInstanceKeys()
+
+  const entriesWithBroadcast = collectLocalPreferences()
   const stampState = readStampState()
-  const tombstones = recordTombstones(entries, readTombstones())
-  const mergedEntries = { ...entries }
+  const tombstones = recordTombstones(entriesWithBroadcast, readTombstones())
+  const mergedEntries = { ...entriesWithBroadcast }
   for (const key of mergeRuleKeysFromSnapshot()) {
-    const raw = entries[key]
+    const raw = entriesWithBroadcast[key]
     if (raw === undefined) continue
     const rule = mergeRuleFor(key)
     if (!rule) continue
@@ -733,7 +847,7 @@ export async function pushPreferences(account?: AiAgentAccount | null, force = f
   const known = { ...stampState.known }
   for (const [key, value] of Object.entries(values)) {
     known[key] = JSON.stringify(value)
-    if (mergedEntries[key] !== entries[key]) {
+    if (mergedEntries[key] !== entriesWithBroadcast[key]) {
       try {
         localStorage.setItem(key, mergedEntries[key])
       } catch {

@@ -185,7 +185,29 @@ export async function syncInstances(account?: AiAgentAccount | null): Promise<Ai
   for (const instance of instances) {
     ensureServerForInstance(current, instance)
   }
+  pruneStaleAccountServers(instances)
   return instances
+}
+
+/**
+ * 清理本地已不存在于账号下的 AI Agent 服务器。
+ *
+ * 实例被删除或重新创建后，旧的 `aiagent:inst_xxx` 服务器条目会一直留在本地，
+ * 并且可能仍是活动服务器 —— 此时用户新加的项目会写进这个孤儿实例的存储桶
+ * （srv:aiagent:inst_xxx:...），既同步不到、切回来也看不到。
+ *
+ * 活动服务器被清理时回退到本地服务器，避免指向不存在的条目。
+ */
+export function pruneStaleAccountServers(instances: AiAgentInstance[]): string[] {
+  const valid = new Set(instances.map(instance => serverIdForInstance(instance)))
+  const stale = serverStore
+    .getStoredServers()
+    .filter(server => server.id.startsWith('aiagent:') && !valid.has(server.id))
+    .map(server => server.id)
+  for (const id of stale) {
+    serverStore.removeServer(id)
+  }
+  return stale
 }
 
 /** 切换到某个实例作为当前活动服务器 */
@@ -211,6 +233,7 @@ export const AiAgentAccountApi = {
   logout,
   listInstances,
   syncInstances,
+  pruneStaleAccountServers,
   selectInstance,
   clearAccountServers,
 }

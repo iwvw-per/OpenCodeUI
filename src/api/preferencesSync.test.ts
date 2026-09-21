@@ -504,6 +504,59 @@ describe('preferences sync', () => {
     expect(tombstones[key].only).toBeTypeOf('number')
   })
 
+  it('aggregates saved directories across instance buckets on pull', async () => {
+    const account = await seedAccount()
+    const { serverStore } = await import('../store/serverStore')
+
+    // 笔电实例桶里有本地项目，工作实例桶为空；当前活动实例是工作。
+    localStorage.setItem(
+      'srv:aiagent:inst_laptop:opencode-saved-directories',
+      JSON.stringify([{ path: 'E:/Code/OpenCodeUI', name: 'OpenCodeUI', addedAt: 1 }]),
+    )
+    localStorage.setItem('srv:aiagent:inst_work:opencode-saved-directories', JSON.stringify([]))
+    serverStore.addServerWithId('aiagent:inst_work', { name: 'work', url: 'https://panel.example.com/gw/inst_work' })
+    serverStore.setActiveServer('aiagent:inst_work')
+
+    stubPreferencesFetch([])
+    const { pullPreferences } = await import('./preferencesSync')
+    await pullPreferences(account)
+
+    const active = JSON.parse(localStorage.getItem('srv:aiagent:inst_work:opencode-saved-directories') || '[]')
+    expect(active.map((entry: { path: string }) => entry.path)).toEqual(['E:/Code/OpenCodeUI'])
+  })
+
+  it('broadcasts saved directories to other instance buckets on push', async () => {
+    const account = await seedAccount()
+    const { serverStore } = await import('../store/serverStore')
+
+    serverStore.addServerWithId('aiagent:inst_work', { name: 'work', url: 'https://panel.example.com/gw/inst_work' })
+    serverStore.setActiveServer('aiagent:inst_work')
+    localStorage.setItem(
+      'srv:aiagent:inst_work:opencode-saved-directories',
+      JSON.stringify([{ path: 'D:/Code/API-Monitor', name: 'API-Monitor', addedAt: 9 }]),
+    )
+    localStorage.setItem(
+      'srv:aiagent:inst_laptop:opencode-saved-directories',
+      JSON.stringify([{ path: 'E:/Code/OpenCodeUI', name: 'OpenCodeUI', addedAt: 3 }]),
+    )
+
+    let sentValues: Record<string, unknown> = {}
+    stubPreferencesFetch([], (_url, body) => {
+      sentValues = body.values as Record<string, unknown>
+    })
+
+    const { pushPreferences } = await import('./preferencesSync')
+    await pushPreferences(account, true)
+
+    const active = JSON.parse(localStorage.getItem('srv:aiagent:inst_work:opencode-saved-directories') || '[]')
+    expect(active.map((entry: { path: string }) => entry.path).sort()).toEqual([
+      'D:/Code/API-Monitor',
+      'E:/Code/OpenCodeUI',
+    ])
+    const sent = sentValues['srv:aiagent:inst_work:opencode-saved-directories'] as { path: string }[]
+    expect(sent.map(entry => entry.path).sort()).toEqual(['D:/Code/API-Monitor', 'E:/Code/OpenCodeUI'])
+  })
+
   it('toggles the sync switch', async () => {
     const { isSyncEnabled, setSyncEnabled } = await import('./preferencesSync')
     expect(isSyncEnabled()).toBe(false)
