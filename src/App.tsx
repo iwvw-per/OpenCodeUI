@@ -924,6 +924,14 @@ function App() {
       ? chatViewport.layout.rightPanel.dockedWidth || rightPanelWidth
       : 0
 
+  // 网页/Linux 桌面端（无自定义桌面标题栏）：主区顶部那条装饰顶栏是 absolute z-10 的
+  // 不透明 bg-bg-100 条。分屏时 pane 外层带 contain 形成独立层叠上下文，PaneHeader 的
+  // z-20 被锁在里面，无法再与装饰条比高低，装饰条会盖住整条 pane 工具栏（表现为分屏后
+  // 顶部工具栏消失）。single 模式 pane 没有这层包裹，Header 的 z-20 高于装饰条，所以只有
+  // 分屏暴露问题。把 surface 抬到 z-20 即可，装饰条只在右侧面板那一列露出，仍是原来的
+  // 视觉分隔线；右面板抽屉 z-30 依旧在其之上。Windows/macOS 桌面不涉及这条装饰栏，保持原样。
+  const webMainAreaTopBar = !desktopFullHeightSidebar && !usesCustomDesktopTitlebar()
+
   const desktopMainArea = (
     <div
       className="flex-1 flex min-w-0 h-full overflow-hidden bg-bg-000 relative"
@@ -937,7 +945,7 @@ function App() {
       )}
       <div
         ref={surfaceRef}
-        className="flex-1 flex flex-col min-w-0 overflow-hidden"
+        className={`flex-1 flex flex-col min-w-0 overflow-hidden ${webMainAreaTopBar ? 'z-20' : ''}`}
         style={{ minWidth: `${CHAT_SURFACE_MIN_WIDTH}px` }}
       >
         <div className="flex-1 min-h-0">

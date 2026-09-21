@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, Suspense, lazy } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, Suspense, lazy } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   PanelRightIcon,
@@ -65,17 +65,36 @@ function SessionTitleControl({
   handleStartEdit,
   clickToRenameTitle,
 }: SessionTitleControlProps) {
-  const inputClass = compact
-    ? 'px-2 py-1.5 text-[length:var(--fs-base)] font-medium text-text-100 bg-transparent border-none outline-none w-[160px] h-full'
-    : 'px-3 py-1.5 text-[length:var(--fs-base)] font-medium text-text-100 bg-transparent border-none outline-none w-[200px] lg:w-[300px] h-full'
-  const buttonClass = compact
-    ? 'px-2 py-1.5 text-[length:var(--fs-base)] font-medium text-text-200 transition-colors truncate max-w-[200px] cursor-text select-none'
-    : 'px-3 py-1.5 text-[length:var(--fs-base)] font-medium text-text-200 transition-colors truncate max-w-[300px] cursor-text select-none'
+  // 编辑态宽度贴合文字：<input> 不会随 value 自动伸缩，用隐藏镜像 span 量测
+  // 同字体的文字宽度，再作为 input 的宽度。纯 CSS 的 ch 单位在中文/中英混排下
+  // 偏差明显，镜像法不依赖字体度量假设。
+  const measureRef = useRef<HTMLSpanElement>(null)
+  const [inputWidth, setInputWidth] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (!isEditingTitle) return
+    const node = measureRef.current
+    if (!node) return
+    // 量测的是「当前输入值」而非原始标题，这样删除/新增字符时宽度实时跟随。
+    setInputWidth(node.getBoundingClientRect().width)
+  }, [isEditingTitle, editTitle, compact])
+
+  const inputClass = cn(
+    'py-1.5 text-[length:var(--fs-base)] font-medium text-text-100 bg-transparent border-none outline-none h-full',
+    compact ? 'px-2' : 'px-3',
+  )
+  const buttonClass = cn(
+    'py-1.5 text-[length:var(--fs-base)] font-medium text-text-200 transition-colors truncate max-w-full text-left cursor-text select-none',
+    compact ? 'px-2' : 'px-3',
+  )
 
   return (
     <div
       className={cn(
-        'flex items-center rounded-lg transition-all duration-200 p-0.5 min-w-0 shrink',
+        'relative flex items-center rounded-lg transition-all duration-200 p-0.5 min-w-0 max-w-full',
+        // w-fit：宽度贴合标题内容（短标题不占满整行，避免大片空白热区）。
+        // 编辑态同样不撑满，由量测出的 inputWidth 决定。
+        'w-fit',
         // hover 只用底色，不用 border：border 占盒模型空间，悬停加边框会撑大 1~2px 推动相邻元素。
         isEditingTitle
           ? 'bg-bg-200 ring-1 ring-accent-main-100'
@@ -83,18 +102,30 @@ function SessionTitleControl({
       )}
     >
       {isEditingTitle ? (
-        <input
-          ref={titleInputRef}
-          type="text"
-          value={editTitle}
-          onChange={e => setEditTitle(e.target.value)}
-          onBlur={handleRename}
-          onKeyDown={e => {
-            if (e.key === 'Enter') handleRename()
-            if (e.key === 'Escape') setIsEditingTitle(false)
-          }}
-          className={inputClass}
-        />
+        <>
+          <input
+            ref={titleInputRef}
+            type="text"
+            value={editTitle}
+            onChange={e => setEditTitle(e.target.value)}
+            onBlur={handleRename}
+            onKeyDown={e => {
+              if (e.key === 'Enter') handleRename()
+              if (e.key === 'Escape') setIsEditingTitle(false)
+            }}
+            className={inputClass}
+            style={inputWidth === null ? undefined : { width: `${Math.ceil(inputWidth)}px` }}
+          />
+          {/* 量测镜像：与 input 同字体同内边距，内容为当前输入值。
+              absolute + invisible 使其不参与布局、不可见，但仍可被量测。 */}
+          <span
+            ref={measureRef}
+            aria-hidden
+            className={cn(inputClass, 'pointer-events-none invisible absolute whitespace-pre w-auto')}
+          >
+            {editTitle || ' '}
+          </span>
+        </>
       ) : (
           <button type="button" onClick={handleStartEdit} className={buttonClass} title={clickToRenameTitle}>
             {sessionTitle}
@@ -204,8 +235,11 @@ export function Header({
   if (embedded) {
     return (
       <div className="flex h-full w-full items-center min-w-0">
-        {/* 会话标题在顶部左侧；标题与右侧按钮之间为拖拽区 */}
-        <div className="flex items-center gap-2 min-w-0 shrink pr-2 z-20">
+        {/* 会话标题在顶部左侧；标题与右侧按钮之间为拖拽区。
+            空间分配：标题组按内容宽度自适应（max-w 限制不超过可用空间），
+            拖拽区 flex-1 占满剩余 —— 拖拽区必须尽可能大，否则窗口无法拖动。
+            注意：标题容器不能用 flex-1 撑满，那会吃掉拖拽区（曾导致拖拽失效）。 */}
+        <div className="flex items-center gap-2 min-w-0 max-w-full z-20">
           {interaction.sidebarBehavior === 'overlay' && onOpenSidebar && (
             <IconButton
               aria-label={t('header.openSidebar')}
@@ -215,7 +249,8 @@ export function Header({
               <SidebarIcon size={16} />
             </IconButton>
           )}
-          <div className="min-w-0">{titleControl}</div>
+        {/* min-w-0 允许收缩；宽度贴合标题内容，不撑满容器。 */}
+        <div className="min-w-0 shrink">{titleControl}</div>
         </div>
 
         <div data-tauri-drag-region className="h-full min-w-0 flex-1" />
@@ -341,7 +376,7 @@ export function Header({
     <div
       className={`chat-topbar flex justify-between items-center z-20 bg-bg-100 transition-colors duration-200 relative border-b border-border-200/60 ${isCompact ? 'px-2' : 'px-4'}`}
     >
-      <div className="flex items-center gap-2 min-w-0 shrink-1 z-20">
+        <div className="flex min-w-0 flex-1 items-center gap-2 z-20">
         {interaction.sidebarBehavior === 'overlay' && onOpenSidebar && (
           <IconButton
             aria-label={t('header.openSidebar')}
@@ -352,7 +387,7 @@ export function Header({
           </IconButton>
         )}
 
-        <div className="min-w-0">{titleControl}</div>
+          <div className="min-w-0 flex-1 max-w-[min(720px,72%)]">{titleControl}</div>
       </div>
 
       <div className="flex items-center gap-1 pointer-events-auto shrink-0 z-20">
