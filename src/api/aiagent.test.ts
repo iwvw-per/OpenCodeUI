@@ -112,6 +112,59 @@ describe('aiagent account integration', () => {
     await expect(login('panel.example.com', 'salen', 'wrong')).rejects.toThrow('invalid credentials')
   })
 
+  it('prunes stale aiagent servers and falls back to the local server', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/aiagent/auth/login')) {
+        return new Response(JSON.stringify({ success: true, data: { token: 'tok-abc' } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.endsWith('/api/aiagent/instances')) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: [
+              {
+                id: 'inst_live',
+                label: 'work',
+                provider: 'opencode',
+                serverId: 'server-010',
+                port: 4096,
+                enabled: true,
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      return new Response(JSON.stringify({ success: false, error: 'unexpected' }), { status: 500 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { login, ensureServerForInstance, syncInstances } = await import('./aiagent')
+    const { serverStore } = await import('../store/serverStore')
+
+    const account = await login('panel.example.com', 'salen', 'secret-pass-1')
+    const stale = ensureServerForInstance(account, {
+      id: 'inst_gone',
+      label: 'old-laptop',
+      provider: 'opencode',
+      serverId: 'server-011',
+      port: 4096,
+      enabled: true,
+    })
+    expect(serverStore.setActiveServer(stale.id)).toBe(true)
+    expect(serverStore.getActiveServerId()).toBe('aiagent:inst_gone')
+
+    const instances = await syncInstances(account)
+    expect(instances.map(instance => instance.id)).toEqual(['inst_live'])
+    expect(serverStore.getStoredServers().some(server => server.id === 'aiagent:inst_gone')).toBe(false)
+    expect(serverStore.getStoredServers().some(server => server.id === 'aiagent:inst_live')).toBe(true)
+    expect(serverStore.getActiveServerId()).toBe('local')
+  })
+
   it('clears account servers on logout', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ success: true, data: { token: 'tok-abc' } }), {
