@@ -250,7 +250,15 @@
     "empty": "暂无已归档对话",
     "loadFailed": "已归档对话加载失败",
     "restore": "恢复",
-    "delete": "删除"
+    "delete": "删除",
+    "selectAll": "全选",
+    "selectedCount": "已选 {{count}} 条",
+    "totalCount": "共 {{count}} 条",
+    "deleteSelected": "删除所选",
+    "deleteSelectedConfirm": "确定永久删除选中的 {{count}} 条已归档对话？此操作不可恢复。",
+    "clearAll": "全部删除",
+    "clearAllConfirm": "确定永久删除全部 {{count}} 条已归档对话？此操作不可恢复。",
+    "deleteFailed": "部分对话删除失败，请重试。"
   },
   "errors": {
     "reloadConversation": "重新加载会话"

@@ -666,7 +666,7 @@ export function SessionListItem({
           // 与父级会话行（ActiveSessionItem）保持同一套几何：
           // pl-[6px] pr-3 py-2 rounded-lg。子行此前用 px-2 py-1.5，
           // 悬停高亮的圆角与左右边界都和父行对不齐。
-          'group relative flex items-center gap-1 pl-[6px] pr-3 py-2 rounded-lg border border-transparent select-none',
+          'group relative flex items-center gap-1 pl-[6px] pr-3 py-1.5 rounded-lg border border-transparent select-none',
           getSelectionRoundClass(isEditMode && isChecked, checkedPrev, checkedNext, 'md'),
           interactive.row,
           isEditMode
@@ -734,7 +734,7 @@ export function SessionListItem({
               : ''
           }`}
         >
-          <AutoScrollTitle text={session.title || t('sessions.untitledChat')} />
+          <AutoScrollTitle text={session.title || t('sessions.untitledChat')} className="text-[length:var(--fs-xs)]" />
 
           {((hasSummaryStats && session.summary) || session.time?.updated) && (
             <span
@@ -1000,7 +1000,7 @@ function LoadingSpinner({ size = 'md' }: { size?: 'sm' | 'md' }) {
 // AutoScrollTitle - 标题过长时 hover 自动滚动
 // ============================================
 
-function AutoScrollTitle({ text }: { text: string }) {
+function AutoScrollTitle({ text, className }: { text: string; className?: string }) {
   const outerRef = useRef<HTMLSpanElement>(null)
   const innerRef = useRef<HTMLSpanElement>(null)
   const [overflow, setOverflow] = useState(false)
@@ -1026,7 +1026,7 @@ function AutoScrollTitle({ text }: { text: string }) {
       ref={outerRef}
       className={`min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[length:var(--fs-sm)] ${
         overflow ? 'marquee-title name-fade-right' : 'truncate'
-      }`}
+      } ${className ?? ''}`}
       title={text}
     >
       <span

@@ -250,7 +250,15 @@
     "empty": "No archived chats",
     "loadFailed": "Failed to load archived chats",
     "restore": "Restore",
-    "delete": "Delete"
+    "delete": "Delete",
+    "selectAll": "Select all",
+    "selectedCount": "{{count}} selected",
+    "totalCount": "{{count}} archived",
+    "deleteSelected": "Delete selected",
+    "deleteSelectedConfirm": "Permanently delete the {{count}} selected archived chat(s)? This cannot be undone.",
+    "clearAll": "Delete all",
+    "clearAllConfirm": "Permanently delete all {{count}} archived chat(s)? This cannot be undone.",
+    "deleteFailed": "Some chats failed to delete. Please retry."
   },
   "errors": {
     "reloadConversation": "Reload conversation"

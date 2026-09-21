@@ -34,6 +34,7 @@ const {
   autoApproveStoreMock,
   clearSessionRuntimeStateMock,
   clearPaneSessionMock,
+  markIdleMock,
 } = vi.hoisted(() => ({
   subscribeToEventsMock: vi.fn(),
   getSessionStatusMock: vi.fn<(directory?: string) => Promise<Record<string, { type: string }>>>(() => Promise.resolve({})),
@@ -57,6 +58,7 @@ const {
   onServerChangeMock: vi.fn((_listener: (serverId: string) => void) => vi.fn()),
   clearSessionRuntimeStateMock: vi.fn(),
   clearPaneSessionMock: vi.fn(),
+  markIdleMock: vi.fn(),
   getSoundSnapshotMock: vi.fn(() => ({
     currentSessionEnabled: true,
   })),
@@ -110,7 +112,7 @@ vi.mock('../store', () => ({
     belongsToSession: childBelongsToSessionMock,
     getSessionAndDescendants: getSessionAndDescendantsMock,
     getSessionInfo: getSessionInfoMock,
-    markIdle: vi.fn(),
+    markIdle: markIdleMock,
     markError: vi.fn(),
     registerChildSession: vi.fn(),
   },
@@ -813,6 +815,23 @@ describe('useGlobalEvents', () => {
     callbacks!.onSessionError?.({ sessionID: 'child-session', name: 'Error', data: {} })
 
     expect(notificationPushMock).not.toHaveBeenCalled()
+  })
+
+  it('syncs child session status to idle on session.status', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    getSessionInfoMock.mockReturnValue({ id: 'local::child-session', parentID: 'local::parent' })
+    activeSessionStoreMock.getSnapshot.mockReturnValue({ statusMap: { 'local::child-session': { type: 'busy' } } })
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+    callbacks!.onSessionStatus?.({ sessionID: 'child-session', status: { type: 'idle' } })
+
+    expect(markIdleMock).toHaveBeenCalledWith('local::child-session')
   })
 
   it('marks notifications read when the completed session is currently focused', async () => {

@@ -110,7 +110,7 @@ export function SessionChildrenSlot({
     // 缩进会把高亮框一起推右。层级改由子行自身的 padding 表达。
     <div>
       {loading ? (
-        <div className="flex items-center py-1.5 px-2">
+        <div className="flex items-center py-1 px-2">
           <SpinnerIcon size={10} className="animate-spin text-accent-main-100" />
         </div>
       ) : (
