@@ -153,6 +153,18 @@ body,
   padding-top: var(--app-safe-top, 0px);
 }
 
+/* 分屏 pane 顶栏（仅网页/Linux 桌面端）：没有桌面标题栏，pane 顶栏就是可视区最顶部，
+ * 高度必须与侧栏 logo 区（h-11）以及主视图 .chat-topbar 一致，否则分屏后 pane 顶栏
+ * 底边框比侧栏 header 底边框高 0.25rem，视觉错位。Windows/macOS 桌面（pane 顶栏在标题栏
+ * 之下）与移动端（另有 3.5rem 顶部栏）继续用 .mobile-safe-topbar-10（2.5rem），不改动。
+ * 不能读 --chat-header-height：分屏 pane 根节点会把它置零，好让消息区不再为
+ * 「绝对覆盖式 Header」预留行高；而 PaneHeader 是常规流内元素，需要真实行高。 */
+.pane-header {
+  box-sizing: border-box;
+  height: calc(2.75rem + var(--app-safe-top, 0px));
+  padding-top: var(--app-safe-top, 0px);
+}
+
 .mobile-safe-topbar-10 {
   box-sizing: border-box;
   height: calc(2.5rem + var(--app-safe-top, 0px));
