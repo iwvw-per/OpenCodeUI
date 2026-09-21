@@ -17,7 +17,8 @@
 //   3. opencode- 前缀放行，但排除本机专属键：opencode-servers、
 //      opencode-active-server、opencode-binary-path、
 //      opencode-auto-start-service、opencode-service-env-vars、
-//      opencode-terminal-layout
+//      opencode-terminal-layout、opencode-aiagent-account（登录凭证）、
+//      opencode-multi-server（多服务器订阅，含运行时状态）
 //   4. srv:aiagent: 前缀放行，但排除路径/统计类：last-directory、
 //      model-usage-stats、opencode-recent-projects
 //   5. srv: 其它分桶（srv:local:、srv:server-*）一律拒绝
@@ -44,8 +45,9 @@
 //     opencode-service-env-vars：本机二进制路径与服务设置
 //   - opencode-terminal-layout：含全盘目录列表，路径异构且体积大
 //   - opencode-servers：含各端地址与凭证，跨端同步会让其中一台不可用
-//   - last-directory / selected-project-id / opencode-recent-projects：
-//     记录本机上次打开的路径
+//   - last-directory / opencode-recent-projects：记录本机上次打开的路径
+//   - selected-project-id：记录本机当前项目；它不匹配任何准入前缀，
+//     因此落在末尾的「其它一律拒绝」分支，而不是列在排除清单里
 //
 // ============================================
 // 合并语义（多条目容器）
@@ -173,12 +175,49 @@ export function collectLocalPreferences(): Record<string, string> {
     if (!isSyncableKey(key)) continue
     try {
       const value = localStorage.getItem(key)
-      if (value !== null) entries[key] = value
+      if (value !== null && withinValueLimit(value)) entries[key] = value
     } catch {
       // 单项读取失败不影响其余键
     }
   }
   return entries
+}
+
+// 服务端两处独立限制（backend-go/internal/aiagent）：
+//   - 单值上限 256 KB（store.go maxPreferenceValueBytes）→ 413 preference value too large
+//   - 请求体上限 1 MB（service.go decodeJSON 的 io.LimitReader）→ 400 invalid JSON body
+// 超限时的截断发生在 JSON 解析之前，报错文案是「invalid JSON body」，与真实原因
+// （体积过大）完全不符，极难排查。因此在这里按服务端口径先行拦截：
+// 超限的键跳过并保持本地不同步，而不是让整批推送失败、把其它键也一起拖垮。
+const MAX_VALUE_BYTES = 256 * 1024
+const MAX_BODY_BYTES = 1024 * 1024
+
+export function withinValueLimit(value: string): boolean {
+  return byteLength(value) <= MAX_VALUE_BYTES
+}
+
+function byteLength(value: string): number {
+  try {
+    return new TextEncoder().encode(value).length
+  } catch {
+    return value.length
+  }
+}
+
+/** 按请求体上限裁剪：超限时按体积从大到小剔除，保证剩余部分仍能成功推送。 */
+function trimToBodyLimit(values: Record<string, unknown>): Record<string, unknown> {
+  const serialize = (candidate: Record<string, unknown>) =>
+    byteLength(JSON.stringify({ values: candidate, updatedAt: new Date().toISOString() }))
+
+  if (serialize(values) <= MAX_BODY_BYTES) return values
+
+  const ordered = Object.entries(values).sort((a, b) => byteLength(JSON.stringify(b[1])) - byteLength(JSON.stringify(a[1])))
+  const kept: Record<string, unknown> = { ...values }
+  for (const [key] of ordered) {
+    delete kept[key]
+    if (serialize(kept) <= MAX_BODY_BYTES) break
+  }
+  return kept
 }
 
 interface SyncMeta {
@@ -666,12 +705,28 @@ export async function pushPreferences(account?: AiAgentAccount | null, force = f
   const nowIso = new Date().toISOString()
   const updatedAt = resolveStamps(values, stampState.known, stampState.stamps, nowIso)
 
+  // 服务端拒绝空 values（返回 400 "values required"）。本地没有任何可同步键时
+  // 直接跳过推送，但仍要落本地状态，否则每轮轮询都会重新尝试并报错。
+  // 注意 stamps 要沿用原有记录而非写入空对象 —— 否则下次有键变更时会被误判为
+  // 「首次同步」，全体键的时间戳都被刷新，破坏 lastWriteWins 的增量语义。
+  if (Object.keys(values).length === 0) {
+    const known = { ...stampState.known }
+    known[SNAPSHOT_KEY] = JSON.stringify(collectLocalPreferences())
+    writeStampState({ stamps: stampState.stamps, known })
+    writeTombstones(tombstones)
+    writeSyncMeta({
+      lastSyncedAt: Date.now(),
+      fingerprint: fingerprint(collectLocalPreferences()),
+    })
+    return 0
+  }
+
   const result = await accountRequest<{ written?: string[] }>(
     current,
     '/api/aiagent/preferences?lastWriteWins=1',
     {
       method: 'PUT',
-      body: JSON.stringify({ values, updatedAt }),
+      body: JSON.stringify({ values: trimToBodyLimit(values), updatedAt }),
     },
   )
 

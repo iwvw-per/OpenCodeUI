@@ -529,4 +529,96 @@ describe('preferences sync', () => {
     await expect(syncPreferences()).rejects.toThrow()
     expect(getSyncMeta().lastError).toBeTruthy()
   })
+
+  it('skips values over the server per-value limit instead of failing the batch', async () => {
+    // 服务端单值上限 256 KB，超限返回 413 且整批失败；采集阶段就应剔除超限键。
+    const { collectLocalPreferences, withinValueLimit } = await import('./preferencesSync')
+
+    const huge = 'x'.repeat(257 * 1024)
+    localStorage.setItem('font-scale', '0.1')
+    localStorage.setItem('theme-custom-css', huge)
+
+    expect(withinValueLimit(huge)).toBe(false)
+    expect(withinValueLimit('small')).toBe(true)
+
+    const entries = collectLocalPreferences()
+    expect(entries['font-scale']).toBe('0.1')
+    expect(entries['theme-custom-css']).toBeUndefined()
+  })
+
+  it('keeps the request body under the server 1MB limit', async () => {
+    await seedAccount()
+    // 服务端 decodeJSON 用 io.LimitReader(1MB) 读取，超限时会在 JSON 中途截断并
+    // 报 "invalid JSON body"（掩盖真实原因）。这里构造一个整体超限的载荷，
+    // 断言实际发出的请求体仍在 1MB 内。
+    const big = 'y'.repeat(240 * 1024)
+    localStorage.setItem('font-scale', '0.1')
+    localStorage.setItem('theme-custom-css', big)
+    localStorage.setItem('opencode-keybindings', JSON.stringify({ k: big }))
+    localStorage.setItem('sidebar-width', big)
+    localStorage.setItem('i18nextLng', 'zh-CN')
+
+    let sentBody = ''
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/api/aiagent/auth/login')) {
+          return new Response(JSON.stringify({ success: true, data: { token: 'tok-sync' } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+        if (url.includes('/api/aiagent/preferences') && init?.method === 'PUT') {
+          sentBody = String(init.body)
+        }
+        return new Response(JSON.stringify({ success: true, data: { written: [] } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }),
+    )
+
+    const { login } = await import('./aiagent')
+    const account = await login('panel.example.com', 'salen', 'secret-pass-1')
+    const { pushPreferences } = await import('./preferencesSync')
+    await pushPreferences(account, true)
+
+    expect(sentBody.length).toBeGreaterThan(0)
+    const bytes = new TextEncoder().encode(sentBody).length
+    expect(bytes).toBeLessThanOrEqual(1024 * 1024)
+
+    // 小键必须在裁剪后留下，不能被整体丢弃。
+    expect(JSON.parse(sentBody).values['i18nextLng']).toBe('zh-CN')
+  })
+
+  it('does not send an empty payload when no key is syncable', async () => {
+    // 服务端拒绝空 values（400 "values required"），客户端应在本地短路。
+    let putCalls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/api/aiagent/auth/login')) {
+          return new Response(JSON.stringify({ success: true, data: { token: 'tok-sync' } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        }
+        if (init?.method === 'PUT') putCalls += 1
+        return new Response(JSON.stringify({ success: true, data: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }),
+    )
+
+    const { login } = await import('./aiagent')
+    const account = await login('panel.example.com', 'salen', 'secret-pass-1')
+    const { pushPreferences } = await import('./preferencesSync')
+    const written = await pushPreferences(account, true)
+
+    expect(written).toBe(0)
+    expect(putCalls).toBe(0)
+  })
 })

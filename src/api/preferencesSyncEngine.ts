@@ -73,6 +73,10 @@ function fingerprintEntries(): string {
   return `${keys.length}:${(hash >>> 0).toString(16)}`
 }
 
+/**
+ * 统一的同步入口：所有触发路径（首同步、轮询、手动）都经此执行，
+ * 以 inFlight 保证同一时刻只有一条链路在读写 stamps / tombstones。
+ */
 async function runSync(force: boolean): Promise<void> {
   if (inFlight) return
   if (!isSyncEnabled() || !readAccount()) return
@@ -106,6 +110,8 @@ function poll(): void {
   if (!isSyncEnabled() || !readAccount() || inFlight) return
   const current = fingerprintEntries()
   if (current !== lastFingerprint) {
+    // 指纹已变说明本地有未推送的改动；若此刻同步在途，runSync 会在 finally 后
+    // 由下一次 poll 处理，不额外排队，避免与在途链路争抢 stamps。
     scheduleSync()
     return
   }
@@ -121,15 +127,9 @@ export async function startPreferencesSync(): Promise<void> {
   if (pollTimer) return
   if (!isSyncEnabled() || !readAccount()) return
 
-  setState({ status: 'syncing' })
-  try {
-    await syncPreferences(undefined, true)
-    lastFingerprint = fingerprintEntries()
-    lastSyncAt = Date.now()
-    setState({ status: 'synced', lastSyncedAt: Date.now(), error: undefined })
-  } catch (error) {
-    setState({ status: 'error', error: error instanceof Error ? error.message : String(error) })
-  }
+  // 经 runSync 统一互斥：登录与轮询可能同时触发，直接调 syncPreferences 会
+  // 绕过 inFlight 造成两条链路并发写 stamps。
+  await runSync(true)
 
   pollTimer = setInterval(poll, POLL_INTERVAL_MS)
 }
@@ -149,13 +149,5 @@ export function stopPreferencesSync(): void {
 /** 手动触发一次双向同步（设置页按钮）。 */
 export async function syncNow(): Promise<void> {
   if (!readAccount()) return
-  setState({ status: 'syncing', error: undefined })
-  try {
-    await syncPreferences(undefined, true)
-    lastFingerprint = fingerprintEntries()
-    lastSyncAt = Date.now()
-    setState({ status: 'synced', lastSyncedAt: Date.now(), error: undefined })
-  } catch (error) {
-    setState({ status: 'error', error: error instanceof Error ? error.message : String(error) })
-  }
+  await runSync(true)
 }

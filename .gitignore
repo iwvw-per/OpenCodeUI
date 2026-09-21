@@ -54,3 +54,6 @@ scripts/diagnose-session-load.mjs
 scripts/profile-chat.mjs
 scripts/serve-dist.mjs
 scripts/trace-session-load.mjs
+
+# 临时探针脚本（可能含凭据，禁止提交）
+probe-*.mjs
