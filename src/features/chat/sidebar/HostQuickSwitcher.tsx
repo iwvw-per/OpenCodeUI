@@ -91,8 +91,8 @@ function HostQuickHostRow({
       className={cn(
         'flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[length:var(--fs-xxs)] transition-colors',
         isActive
-          ? 'bg-accent-main-100/15 text-text-100 font-medium'
-          : 'text-text-400 hover:text-text-200 hover:bg-bg-200',
+          ? 'bg-accent-main-100/15 text-text-100'
+          : 'text-text-400 hover:bg-bg-200',
         interactive.focusRingCompact,
       )}
     >

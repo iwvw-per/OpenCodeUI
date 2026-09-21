@@ -19,6 +19,7 @@ import type { ApiProject, FileDiff, VcsDiffMode, VcsInfo } from '../api/types'
 import { detectLanguage } from '../utils/languageUtils'
 import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
 import { sessionErrorHandler } from '../utils'
+import { interactive } from '../utils/interaction'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
 import { DropdownMenu } from './ui'
@@ -696,7 +697,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
               title={activeChangeModeMeta.label}
               className={`
                 inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors
-                ${changeMenuOpen ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:text-text-100 hover:bg-bg-200'}
+                ${changeMenuOpen ? interactive.toggleActiveNeutral : 'text-text-400 hover:text-text-100 hover:bg-bg-200 border border-transparent'}
               `}
             >
               <span className="shrink-0">{activeChangeModeMeta.icon}</span>
@@ -753,8 +754,8 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                         group flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors
                         ${
                           isSelected
-                            ? 'bg-bg-200/70 text-text-100 font-medium'
-                            : 'text-text-200 hover:bg-bg-200 hover:text-text-100'
+                            ? 'bg-bg-200/70 text-text-100'
+                            : 'text-text-200 hover:bg-bg-200'
                         }
                       `}
                     >
@@ -893,7 +894,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
             <button
               type="button"
               onClick={handleOpenInFiles}
-              className="w-full px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200 hover:text-text-100 rounded-md transition-colors"
+              className="w-full px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] text-text-200 hover:bg-bg-200 rounded-md transition-colors"
             >
               {t('sessionChanges.openInFiles')}
             </button>

@@ -1,6 +1,6 @@
 {
   "name": "opencodeui",
-  "version": "0.6.80",
+  "version": "0.6.81",
   "description": "A third-party web frontend for OpenCode",
   "license": "GPL-3.0-only",
   "type": "module",
@@ -15,6 +15,8 @@
     "format:check": "prettier . --check",
     "test": "vitest",
     "test:run": "vitest run",
+    "profile:chat": "node scripts/profile-chat.mjs",
+    "serve:dist": "node scripts/serve-dist.mjs",
     "validate": "npm run typecheck && npm run lint && npm run test:run && npm run build",
     "release:prepare": "node scripts/prepare-release.mjs",
     "check": "npm run format:check && npm run lint && npm run test:run && npm run build",

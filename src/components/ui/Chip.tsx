@@ -1,0 +1,44 @@
+import { forwardRef } from 'react'
+import { cn } from '../../utils/cn'
+
+export type ChipTone = 'neutral' | 'accent' | 'success' | 'danger' | 'warning' | 'info'
+export type ChipSize = 'xs' | 'sm'
+
+const toneStyles: Record<ChipTone, string> = {
+  neutral: 'bg-bg-300 text-text-300',
+  accent: 'bg-accent-main-100/15 text-accent-main-100',
+  success: 'bg-success-100/15 text-success-100',
+  danger: 'bg-danger-100/15 text-danger-100',
+  warning: 'bg-warning-100/15 text-warning-100',
+  info: 'bg-info-100/15 text-info-100',
+}
+
+const sizeStyles: Record<ChipSize, string> = {
+  xs: 'h-4 px-1 text-[length:var(--fs-xxs)] rounded-xs',
+  sm: 'h-5 px-1.5 text-[length:var(--fs-xxs)] rounded-sm',
+}
+
+interface ChipProps extends React.HTMLAttributes<HTMLSpanElement> {
+  tone?: ChipTone
+  size?: ChipSize
+}
+
+export const Chip = forwardRef<HTMLSpanElement, ChipProps>(
+  ({ tone = 'neutral', size = 'sm', className, ...props }, ref) => (
+    <span
+      ref={ref}
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1 font-medium leading-none whitespace-nowrap',
+        // shimmer 文本靠 -webkit-text-fill-color: transparent 实现，而该属性**会继承**。
+        // 放进扫光容器（如运行中的折叠行 label）时，chip 只设 color 覆盖不了它，
+        // 表现为底色还在、文字消失。这里显式恢复为自身文字色。
+        '[-webkit-text-fill-color:currentColor]',
+        sizeStyles[size],
+        toneStyles[tone],
+        className,
+      )}
+      {...props}
+    />
+  ),
+)
+Chip.displayName = 'Chip'

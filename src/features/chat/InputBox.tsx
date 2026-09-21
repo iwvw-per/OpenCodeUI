@@ -535,6 +535,12 @@ function InputBoxComponent({
     const agentAttachment = attachments.find(a => a.type === 'agent')
     const mentionedAgent = agentAttachment?.agentName
 
+    // 乐观清空：与 submitCommandOptimistically 一致，先把输入框清掉让点击立即有反馈，
+    // 网络往返在后台进行；失败时若用户没有重新输入则恢复草稿。
+    // 否则后端繁忙时点击发送要等整个 prompt 请求返回才看到输入框变化。
+    const draftSnapshot: HistoryEntry = { text, attachments: [...attachments] }
+    resetDraft()
+
     void runSubmit(
       () =>
         onSend(text, attachments, {
@@ -542,8 +548,13 @@ function InputBoxComponent({
           variant: selectedVariant,
         }),
       () => {
-        resetDraft()
         onClearRevert?.()
+      },
+      () => {
+        const currentDraft = latestDraftRef.current
+        if (currentDraft.text.length === 0 && currentDraft.attachments.length === 0) {
+          restoreDraft(draftSnapshot)
+        }
       },
     )
   }, [
@@ -554,6 +565,7 @@ function InputBoxComponent({
     onClearRevert,
     onSend,
     resetDraft,
+    restoreDraft,
     runSubmit,
     selectedAgent,
     selectedVariant,

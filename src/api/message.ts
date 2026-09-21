@@ -4,6 +4,7 @@
 // ============================================
 
 import { getSDKClient, unwrap } from './sdk'
+import { sanitizeMessageWithParts } from './sanitize'
 import { resolveSessionTarget } from '../utils/sessionKey'
 import { formatPathForApi } from '../utils/directoryUtils'
 import type {
@@ -95,34 +96,7 @@ export interface SessionMessagePage {
  * 一律原样保留，因此裁剪后 UI 无需回源即可完整显示。
  */
 function projectMessageForStream(message: ApiMessageWithParts): ApiMessageWithParts {
-  let info = message.info
-  let parts = message.parts
-  let changed = false
-
-  const summary = (info as { summary?: { diffs?: unknown } }).summary
-  if (summary?.diffs) {
-    // 保留 title/body（大纲与标题仍需要），只去掉 diffs
-    const { diffs: _diffs, ...restSummary } = summary
-    info = { ...info, summary: restSummary } as ApiMessageWithParts['info']
-    changed = true
-  }
-
-  const hasToolAttachments = parts.some(part => {
-    const attachments = (part as { state?: { attachments?: unknown[] } }).state?.attachments
-    return part.type === 'tool' && Array.isArray(attachments) && attachments.length > 0
-  })
-  if (hasToolAttachments) {
-    parts = parts.map(part => {
-      if (part.type !== 'tool') return part
-      const state = (part as { state?: { attachments?: unknown[] } }).state
-      if (!state?.attachments?.length) return part
-      const { attachments: _attachments, ...restState } = state
-      return { ...part, state: restState } as typeof part
-    })
-    changed = true
-  }
-
-  return changed ? { ...message, info, parts } : message
+  return sanitizeMessageWithParts(message)
 }
 
 function projectPageMessages(messages: ApiMessageWithParts[]): ApiMessageWithParts[] {

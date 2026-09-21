@@ -1,0 +1,230 @@
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Popover, PopoverAnchor, PopoverContent } from '../../../components/ui/Popover'
+import { getMaterialIconUrl } from '../../../utils/materialIcons'
+import { cn } from '../../../utils/cn'
+import { buildDiffPreview, type ChangedFile } from './changedFiles'
+
+const MAX_VISIBLE = 6
+/** 指针离开到关闭的宽限，够用户把指针移进浮层 */
+const CLOSE_DELAY_MS = 120
+
+interface DiffChipsProps {
+  files: ChangedFile[]
+  className?: string
+}
+
+/**
+ * DiffChips — 改动文件概览条。
+ *
+ * 一排 `文件名 +N -M` 的胶囊，hover / 聚焦时弹出该文件的 diff 预览。
+ *
+ * 两个实现要点：
+ * 1. 同一文件多次修改已在上游合并为一条，chip 上标注 `×N`，
+ *    预览里按次分段，避免概览条出现多个同名胶囊。
+ * 2. 浮层只有一份，用虚拟锚点跟随当前 hover 的 chip。
+ *    若每个 chip 各挂一个 Popover，切换时是两个独立浮层各自做进出场动画，
+ *    视觉上是「旧的关、新的开」两次跳动；共用一份后切换只改锚点位置，
+ *    浮层本身做平滑位移。
+ */
+export const DiffChips = memo(function DiffChips({ files, className }: DiffChipsProps) {
+  const { t } = useTranslation('message')
+  const [activePath, setActivePath] = useState<string | null>(null)
+  const closeTimerRef = useRef<number | null>(null)
+  const anchorRef = useRef<HTMLElement | null>(null)
+
+  /**
+   * Radix 把定位 transform 写在浮层的父级 wrapper 上，transition 必须加在那一层。
+   * 且首次打开时 Radix 从 `translate(0, -200%)` 移到目标位，若此时已有过渡会
+   * 从远处「飞入」；因此等两帧定位稳定后再启用位移过渡，只让后续的锚点切换平滑。
+   */
+  const setContentRef = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return
+    const wrapper = node.parentElement
+    if (!wrapper) return
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        wrapper.style.transition = 'transform 160ms cubic-bezier(0.23, 1, 0.32, 1)'
+      })
+    })
+  }, [])
+
+  const cancelClose = useCallback(() => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+  }, [])
+
+  const open = useCallback(
+    (path: string) => {
+      cancelClose()
+      setActivePath(path)
+    },
+    [cancelClose],
+  )
+
+  const scheduleClose = useCallback(() => {
+    cancelClose()
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null
+      setActivePath(null)
+    }, CLOSE_DELAY_MS)
+  }, [cancelClose])
+
+  const activeFile = useMemo(
+    () => (activePath ? (files.find(file => file.path === activePath) ?? null) : null),
+    [activePath, files],
+  )
+
+  if (files.length === 0) return null
+  const visible = files.slice(0, MAX_VISIBLE)
+  const overflow = files.length - visible.length
+
+  return (
+    <div className={cn('flex flex-wrap items-center gap-1.5', className)} onMouseLeave={scheduleClose}>
+      {visible.map(file => (
+        <button
+          key={file.path}
+          type="button"
+          onMouseEnter={event => {
+            anchorRef.current = event.currentTarget
+            open(file.path)
+          }}
+          onFocus={event => {
+            anchorRef.current = event.currentTarget
+            open(file.path)
+          }}
+          onBlur={scheduleClose}
+          className={cn(
+            'inline-flex h-6 max-w-[14rem] items-center gap-1.5 rounded-sm border px-1.5',
+            'font-mono text-[length:var(--fs-xxs)]',
+            'transition-colors duration-150',
+            activePath === file.path
+              ? 'border-border-300 bg-bg-200 text-text-100'
+              : 'border-border-200/50 bg-bg-100 text-text-300 hover:bg-bg-200',
+          )}
+          title={file.path}
+        >
+          <FileGlyph path={file.path} />
+          <span className="min-w-0 truncate">{basename(file.path)}</span>
+          {file.additions > 0 && <span className="shrink-0 tabular-nums text-success-100">+{file.additions}</span>}
+          {file.deletions > 0 && <span className="shrink-0 tabular-nums text-danger-100">-{file.deletions}</span>}
+          {file.editCount > 1 && (
+            <span
+              className="shrink-0 tabular-nums text-text-500"
+              title={t('diffChips.editCount', { count: file.editCount })}
+            >
+              ×{file.editCount}
+            </span>
+          )}
+        </button>
+      ))}
+
+      {overflow > 0 && (
+        <span className="font-mono text-[length:var(--fs-xxs)] text-text-500">
+          {t('diffChips.more', { count: overflow })}
+        </span>
+      )}
+
+      <Popover open={!!activeFile} onOpenChange={next => !next && setActivePath(null)}>
+        {/* 虚拟锚点：位置由 activePath 对应的 chip 决定，浮层只有这一份 */}
+        <PopoverAnchor virtualRef={anchorRef} />
+        <PopoverContent
+          ref={setContentRef}
+          align="start"
+          sideOffset={6}
+          className="w-[min(34rem,80vw)] p-0 text-[length:var(--fs-xxs)]"
+          onOpenAutoFocus={event => event.preventDefault()}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+        >
+          {activeFile && <DiffPanel file={activeFile} />}
+        </PopoverContent>
+      </Popover>
+    </div>
+  )
+})
+
+function DiffPanel({ file }: { file: ChangedFile }) {
+  const { t } = useTranslation('message')
+  const sections = useMemo(() => buildDiffPreview(file.hunks), [file.hunks])
+
+  return (
+    <>
+      <div className="flex items-center gap-2 border-b border-border-200/50 px-2.5 py-1.5 font-mono">
+        <span className="min-w-0 flex-1 truncate text-text-300" title={file.path}>
+          {file.path}
+        </span>
+        <span className="shrink-0 tabular-nums">
+          {file.additions > 0 && <span className="text-success-100">+{file.additions}</span>}
+          {file.deletions > 0 && (
+            <span className="text-danger-100">
+              {file.additions > 0 ? ' ' : ''}-{file.deletions}
+            </span>
+          )}
+        </span>
+      </div>
+
+      <div className="max-h-72 overflow-y-auto custom-scrollbar">
+        {sections.map(section => (
+          <div key={section.index}>
+            {sections.length > 1 && (
+              <div className="flex items-center gap-2 border-b border-border-200/30 bg-bg-200/40 px-2.5 py-1 font-mono text-text-500">
+                <span>{t('diffChips.hunk', { index: section.index, total: sections.length })}</span>
+                <span className="ml-auto tabular-nums">
+                  {section.additions > 0 && <span className="text-success-100">+{section.additions}</span>}
+                  {section.deletions > 0 && (
+                    <span className="text-danger-100">
+                      {section.additions > 0 ? ' ' : ''}-{section.deletions}
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+            <div className="py-1 font-mono leading-[1.7]">
+              {section.lines.map((line, index) => (
+                <div
+                  key={index}
+                  className={cn(
+                    'flex gap-2 px-2.5 whitespace-pre',
+                    line.type === 'add' ? 'bg-success-100/10 text-success-100' : '',
+                    line.type === 'del' ? 'bg-danger-100/10 text-danger-100' : '',
+                    line.type === 'ctx' ? 'text-text-400' : '',
+                  )}
+                >
+                  <span className="w-3 shrink-0 select-none opacity-70">
+                    {line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '}
+                  </span>
+                  <span className="min-w-0 flex-1 overflow-hidden text-ellipsis">{line.text || ' '}</span>
+                </div>
+              ))}
+              {section.truncated && <div className="px-2.5 py-1 text-text-500">{t('diffChips.truncated')}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
+function FileGlyph({ path }: { path: string }) {
+  return (
+    <img
+      src={getMaterialIconUrl(path, 'file')}
+      alt=""
+      width={12}
+      height={12}
+      className="block size-3 shrink-0"
+      loading="lazy"
+      decoding="async"
+      onError={event => {
+        event.currentTarget.style.visibility = 'hidden'
+      }}
+    />
+  )
+}
+
+function basename(path: string): string {
+  return path.split(/[/\\]/).pop() || path
+}

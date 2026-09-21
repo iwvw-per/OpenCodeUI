@@ -186,7 +186,7 @@ describe('LayoutStore backup import', () => {
       sidebarExpanded: false,
       sidebarFolderRecents: true,
       sidebarFolderRecentsShowDiff: false,
-      sidebarShowChildSessions: true,
+      sidebarChildSessions: 'all',
       sidebarSessionSortField: 'created',
       sidebarSessionSortDesc: false,
       sendOnEnter: false,
@@ -199,7 +199,7 @@ describe('LayoutStore backup import', () => {
     // 内存状态（UI + 再次导出读的是它）必须同步更新
     expect(layoutStore.getState().sidebarExpanded).toBe(false)
     expect(layoutStore.getState().sidebarFolderRecents).toBe(true)
-    expect(layoutStore.getState().sidebarShowChildSessions).toBe(true)
+    expect(layoutStore.getState().sidebarChildSessions).toBe('all')
     expect(layoutStore.getState().sidebarSessionSortField).toBe('created')
     expect(layoutStore.getState().sidebarSessionSortDesc).toBe(false)
     expect(layoutStore.getState().sendOnEnter).toBe(false)

@@ -13,6 +13,7 @@ import morphdom from 'morphdom'
 import { CodeBlock } from './CodeBlock'
 import { CodeIcon, EyeIcon, HandIcon, RetryIcon, ZoomInIcon, ZoomOutIcon } from './Icons'
 import { CopyButton } from './ui'
+import { Spinner } from './ui/Spinner'
 import { useTheme } from '../hooks/useTheme'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
 import { detectLanguage } from '../utils/languageUtils'
@@ -459,7 +460,7 @@ const MarkdownMermaid = memo(function MarkdownMermaid({ code, isIncomplete }: { 
         className="my-4 first:mt-0 last:mb-0 flex min-h-40 items-center justify-center"
         aria-label="Rendering diagram"
       >
-        <span className="h-4 w-4 animate-spin rounded-full border-2 border-text-400/25 border-t-text-400" />
+        <Spinner size="lg" tone="muted" />
       </div>
     )
   }

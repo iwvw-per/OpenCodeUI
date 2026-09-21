@@ -8,7 +8,7 @@
 
 import { memo, useCallback, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useServerStore } from '../../../hooks/useServerStore'
+import { useServerStore, type ServerHealth } from '../../../hooks/useServerStore'
 import { subscribeToServerConnectionState, getServerConnectionInfo, type ConnectionInfo } from '../../../api/events'
 import { CogIcon } from '../../../components/Icons'
 import { cn } from '../../../utils/cn'
@@ -24,16 +24,25 @@ function useServerConnectionState(serverId: string): ConnectionInfo {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
-function statusDotClass(state: ConnectionInfo['state']): string {
-  switch (state) {
-    case 'connected':
+/**
+ * 状态点颜色以健康探测为准（真实可达性），SSE 连接状态仅补充 connecting 过渡态。
+ * health 的 `checking`/`offline`/`error`/`unauthorized` 是主动请求 /global/health 的结论，
+ * 比 SSE 长连接的 connected 更可靠——进程死后 SSE 可能还挂着，health 会立刻判离线。
+ */
+function statusDotClass(health: ServerHealth | null, connectionState: ConnectionInfo['state']): string {
+  switch (health?.status) {
+    case 'online':
       return 'bg-success-100'
-    case 'connecting':
+    case 'checking':
+      return 'bg-warning-100 animate-pulse'
+    case 'unauthorized':
       return 'bg-warning-100'
+    case 'offline':
     case 'error':
-      return 'bg-error-100'
+      return 'bg-danger-100'
     default:
-      return 'bg-text-500/50'
+      // 从未探测过：fallback 到 SSE 连接状态（connecting 用黄点提示正在握手）
+      return connectionState === 'connecting' ? 'bg-warning-100 animate-pulse' : 'bg-text-500/60'
   }
 }
 
@@ -53,6 +62,8 @@ const HostRow = memo(function HostRow({
   onSelect: (serverId: string) => void
 }) {
   const connectionState = useServerConnectionState(serverId)
+  const { getHealth } = useServerStore()
+  const health = getHealth(serverId)
   return (
     <button
       type="button"
@@ -65,10 +76,10 @@ const HostRow = memo(function HostRow({
       title={url}
     >
       <span className="relative size-5 shrink-0 flex items-center justify-center">
-        <span className={`h-2 w-2 rounded-full ${statusDotClass(connectionState.state)}`} />
-        {connectionState.state === 'connected' && (
+        <span className={`h-2 w-2 rounded-full ${statusDotClass(health, connectionState.state)}`} />
+        {health?.status === 'online' && (
           <span
-            className={`absolute h-2 w-2 rounded-full ${statusDotClass(connectionState.state)} animate-ping opacity-50`}
+            className={`absolute h-2 w-2 rounded-full ${statusDotClass(health, connectionState.state)} animate-ping opacity-50`}
           />
         )}
       </span>
@@ -135,7 +146,7 @@ export function HostList({
           type="button"
           onClick={onOpenSettings}
           className={cn(
-            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[length:var(--fs-sm)] text-text-400 hover:text-text-200',
+            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[length:var(--fs-sm)] text-text-400',
             interactive.subtle,
           )}
         >

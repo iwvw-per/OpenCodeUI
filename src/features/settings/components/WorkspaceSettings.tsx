@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../../hooks'
-import { layoutStore, useLayoutStore } from '../../../store'
+import { layoutStore, useLayoutStore, type ChildSessionsDisplayMode } from '../../../store'
 import { Toggle, SegmentedControl, SettingRow, SettingsSection } from './SettingsUI'
 
 export function WorkspaceSettings() {
@@ -18,7 +18,7 @@ export function WorkspaceSettings() {
   const {
     sidebarFolderRecents,
     sidebarFolderRecentsShowDiff,
-    sidebarShowChildSessions,
+    sidebarChildSessions,
     terminalCopyOnSelect,
     terminalRightClickPaste,
     wakeLock,
@@ -123,11 +123,15 @@ export function WorkspaceSettings() {
         <SettingRow
           label={t('appearance.showChildSessions')}
           description={t('appearance.showChildSessionsDesc')}
-          onClick={() => layoutStore.setSidebarShowChildSessions(!sidebarShowChildSessions)}
         >
-          <Toggle
-            enabled={sidebarShowChildSessions}
-            onChange={() => layoutStore.setSidebarShowChildSessions(!sidebarShowChildSessions)}
+          <SegmentedControl
+            value={sidebarChildSessions}
+            options={[
+              { value: 'off', label: t('appearance.showChildSessionsOff') },
+              { value: 'active', label: t('appearance.showChildSessionsActive') },
+              { value: 'all', label: t('appearance.showChildSessionsAll') },
+            ]}
+            onChange={mode => layoutStore.setSidebarChildSessions(mode as ChildSessionsDisplayMode)}
           />
         </SettingRow>
       </SettingsSection>

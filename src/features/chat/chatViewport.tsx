@@ -61,6 +61,10 @@ interface ComputedViewportInput {
   desktopCollapsedInputDock: boolean
   /** 宽屏模式：对话列与输入框一起变宽 */
   wideMode: boolean
+  /** Windows 全高侧栏：收起时的最小宽度（顶部按钮行宽度），默认 49px rail */
+  sidebarRailWidth?: number
+  /** Windows 全高侧栏：拖拽调节宽度的下限（顶部按钮行合计宽度），默认 SIDEBAR_HARD_MIN_WIDTH */
+  sidebarHardMinWidth?: number
 }
 
 export interface ChatViewportValue {
@@ -132,14 +136,17 @@ function computeChatViewport(input: ComputedViewportInput): Omit<ChatViewportVal
     touchCapable,
     desktopCollapsedInputDock,
     wideMode,
+    sidebarRailWidth,
+    sidebarHardMinWidth,
   } = input
 
   const overlayPanels = viewportWidth < CHAT_VIEWPORT_MOBILE_BREAKPOINT
   const interactionMode: ChatInteractionMode = overlayPanels ? 'touch' : 'pointer'
+  const sidebarMinWidth = sidebarHardMinWidth ?? SIDEBAR_HARD_MIN_WIDTH
 
   const sidebarMaxWidth = clamp(
     getResponsiveSidebarMaxWidth(viewportWidth, preferTouchUi),
-    SIDEBAR_HARD_MIN_WIDTH,
+    sidebarMinWidth,
     SIDEBAR_MAX_WIDTH,
   )
   const sidebarDefaultWidth = clamp(
@@ -148,7 +155,7 @@ function computeChatViewport(input: ComputedViewportInput): Omit<ChatViewportVal
     sidebarMaxWidth,
   )
   const requestedSidebarOpenWidth = sidebarHasCustomWidth
-    ? clamp(requestedSidebarWidth, SIDEBAR_HARD_MIN_WIDTH, sidebarMaxWidth)
+    ? clamp(requestedSidebarWidth, sidebarMinWidth, sidebarMaxWidth)
     : sidebarDefaultWidth
 
   const rightPanelMaxWidth = clamp(
@@ -162,7 +169,7 @@ function computeChatViewport(input: ComputedViewportInput): Omit<ChatViewportVal
 
   let dockedSidebarOpenWidth = requestedSidebarOpenWidth
   let dockedRightPanelWidth = requestedRightPanelDockedWidth
-  const closedSidebarWidth = SIDEBAR_RAIL_WIDTH
+  const closedSidebarWidth = sidebarRailWidth ?? SIDEBAR_RAIL_WIDTH
   const requestedSidebarDockedWidth = sidebarExpanded ? dockedSidebarOpenWidth : closedSidebarWidth
   let remainingSurfaceWidth = viewportWidth - requestedSidebarDockedWidth - dockedRightPanelWidth
 
@@ -175,8 +182,8 @@ function computeChatViewport(input: ComputedViewportInput): Omit<ChatViewportVal
       shortage -= rightShrink
     }
 
-    if (shortage > 0 && sidebarExpanded && dockedSidebarOpenWidth > SIDEBAR_HARD_MIN_WIDTH) {
-      const sidebarShrink = Math.min(shortage, dockedSidebarOpenWidth - SIDEBAR_HARD_MIN_WIDTH)
+    if (shortage > 0 && sidebarExpanded && dockedSidebarOpenWidth > sidebarMinWidth) {
+      const sidebarShrink = Math.min(shortage, dockedSidebarOpenWidth - sidebarMinWidth)
       dockedSidebarOpenWidth -= sidebarShrink
       shortage -= sidebarShrink
     }
@@ -187,7 +194,7 @@ function computeChatViewport(input: ComputedViewportInput): Omit<ChatViewportVal
 
   const sidebarResizeMaxWidth = clamp(
     viewportWidth - CHAT_SURFACE_MIN_WIDTH - dockedRightPanelWidth,
-    SIDEBAR_HARD_MIN_WIDTH,
+    sidebarMinWidth,
     sidebarMaxWidth,
   )
   const rightPanelResizeMaxWidth = clamp(
@@ -226,7 +233,7 @@ function computeChatViewport(input: ComputedViewportInput): Omit<ChatViewportVal
       surfaceWidth: actualSurfaceWidth,
       surfaceMinWidth: CHAT_SURFACE_MIN_WIDTH,
       sidebar: {
-        railWidth: SIDEBAR_RAIL_WIDTH,
+        railWidth: closedSidebarWidth,
         requestedWidth: requestedSidebarOpenWidth,
         openWidth: dockedSidebarOpenWidth,
         dockedWidth: overlayPanels ? 0 : sidebarExpanded ? dockedSidebarOpenWidth : closedSidebarWidth,
@@ -241,7 +248,7 @@ function computeChatViewport(input: ComputedViewportInput): Omit<ChatViewportVal
               SIDEBAR_PREFERRED_MIN_WIDTH,
               Math.max(SIDEBAR_PREFERRED_MIN_WIDTH, viewportWidth - 48),
             ),
-        hardMinWidth: SIDEBAR_HARD_MIN_WIDTH,
+        hardMinWidth: sidebarMinWidth,
         preferredMinWidth: SIDEBAR_PREFERRED_MIN_WIDTH,
         maxWidth: sidebarMaxWidth,
         resizeMaxWidth: sidebarResizeMaxWidth,
@@ -283,10 +290,16 @@ export function useChatViewportController({
   sidebarExpanded,
   rightPanelOpen,
   requestedRightPanelWidth,
+  sidebarRailWidth,
+  sidebarHardMinWidth,
 }: {
   sidebarExpanded: boolean
   rightPanelOpen: boolean
   requestedRightPanelWidth: number
+  /** Windows 全高侧栏：收起时最小宽度 = 顶部按钮行宽度；默认 49px rail */
+  sidebarRailWidth?: number
+  /** Windows 全高侧栏：拖拽调节宽度的下限（顶部按钮行合计宽度） */
+  sidebarHardMinWidth?: number
 }) {
   const { preferTouchUi, hasCoarsePointer, hasTouch } = useInputCapabilities()
   const touchCapable = preferTouchUi || hasCoarsePointer || hasTouch
@@ -375,6 +388,8 @@ export function useChatViewportController({
         touchCapable,
         desktopCollapsedInputDock,
         wideMode,
+        sidebarRailWidth,
+        sidebarHardMinWidth,
       }),
     [
       viewportWidth,
@@ -389,6 +404,8 @@ export function useChatViewportController({
       touchCapable,
       desktopCollapsedInputDock,
       wideMode,
+      sidebarRailWidth,
+      sidebarHardMinWidth,
     ],
   )
 

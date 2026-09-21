@@ -27,7 +27,7 @@ export interface SyncState {
   error?: string
 }
 
-const POLL_INTERVAL_MS = 5_000
+const POLL_INTERVAL_MS = 15_000
 const PUSH_DEBOUNCE_MS = 2_000
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -93,6 +93,7 @@ function schedulePush(): void {
 }
 
 function poll(): void {
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
   if (!isSyncEnabled() || !readAccount() || inFlight) return
   const current = fingerprintEntries()
   if (current === lastFingerprint) return

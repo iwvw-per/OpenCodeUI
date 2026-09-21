@@ -64,7 +64,7 @@ export default defineConfig({
     // Tauri mobile dev 需要通过网络访问 Vite dev server
     host: process.env.TAURI_DEV_HOST || false,
     // 固定端口，避免与占用 5173 的其他工具冲突
-    port: 5174,
+    port: 5176,
     strictPort: true,
     // 允许所有域名
     allowedHosts: true,

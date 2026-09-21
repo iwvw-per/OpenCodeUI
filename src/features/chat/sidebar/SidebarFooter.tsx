@@ -18,6 +18,8 @@ import { CircularProgress } from '../../../components/CircularProgress'
 import { SegmentedControl } from '../../settings/components/SettingsUI'
 import { formatTokens, formatCost, useTheme, useSessionStats } from '../../../hooks'
 import { useHasMessages } from '../../../store'
+import { useServerStore, type ServerHealth } from '../../../hooks/useServerStore'
+import { interactive } from '../../../utils/interaction'
 
 // 状态指示器 - 上下文占用圆环
 function StatusIndicator({
@@ -70,6 +72,10 @@ export function SidebarFooter({
   // 统计与 hasMessages 留在 footer：流式时不让整个 SidePanel 跟着 messages 重渲
   const hasMessages = useHasMessages()
   const stats = useSessionStats(contextLimit)
+  const { activeServer, getHealth } = useServerStore()
+  // 健康探测优先于 SSE 连接态：SSE 长连接在进程死后可能长时间挂着，
+  // health 是真 HTTP 探测（5s 超时判离线），用它决定状态点颜色更准。
+  const activeHealth: ServerHealth | null = activeServer ? getHealth(activeServer.id) : null
   const [isOpen, setIsOpen] = useState(false)
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 260, fromBottom: false })
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
@@ -82,14 +88,23 @@ export function SidebarFooter({
   const menuRef = useRef<HTMLDivElement>(null)
   const closeTimeoutIdRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // 菜单中连接状态显示用
-  const statusColorClass =
-    {
-      connected: 'bg-success-100',
-      connecting: 'bg-warning-100 animate-pulse',
-      disconnected: 'bg-text-500',
-      error: 'bg-danger-100',
-    }[connectionState] || 'bg-text-500'
+  // 菜单中连接状态显示用：health 优先（真实可达性），SSE 仅补充 connecting 过渡态
+  const statusColorClass = (() => {
+    switch (activeHealth?.status) {
+      case 'online':
+        return 'bg-success-100'
+      case 'checking':
+        return 'bg-warning-100 animate-pulse'
+      case 'unauthorized':
+        return 'bg-warning-100'
+      case 'offline':
+      case 'error':
+        return 'bg-danger-100'
+      default:
+        // 从未探测过：fallback 到 SSE 连接态（connecting 用黄点提示正在握手）
+        return connectionState === 'connecting' ? 'bg-warning-100 animate-pulse' : 'bg-text-500/60'
+    }
+  })()
 
   const statsColor =
     stats.contextPercent >= 90 ? 'bg-danger-100' : stats.contextPercent >= 70 ? 'bg-warning-100' : 'bg-accent-main-100'
@@ -221,7 +236,7 @@ export function SidebarFooter({
                     closeMenu()
                     setContextDialogOpen(true)
                   }}
-                  className="shrink-0 text-[length:var(--fs-sm)] leading-none text-text-400 hover:text-text-100 transition-colors"
+                  className="shrink-0 text-[length:var(--fs-sm)] leading-none text-text-400 hover:bg-bg-200 hover:border-border-200 border border-transparent rounded px-1 transition-colors"
                 >
                   {t('sidebar.viewDetails')}
                 </button>
@@ -272,7 +287,7 @@ export function SidebarFooter({
                   toggleWideMode()
                   closeMenu()
                 }}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200 transition-colors text-left"
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:bg-bg-200 transition-colors text-left"
               >
                 {isWideMode ? <MinimizeIcon size={14} /> : <MaximizeIcon size={14} />}
                 <span>{isWideMode ? t('sidebar.standardWidth') : t('sidebar.wideMode')}</span>
@@ -284,7 +299,7 @@ export function SidebarFooter({
                 closeMenu()
                 setShareDialogOpen(true)
               }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200 transition-colors text-left"
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:bg-bg-200 transition-colors text-left"
             >
               <ShareIcon size={14} />
               <span>{t('sidebar.shareChat')}</span>
@@ -295,7 +310,7 @@ export function SidebarFooter({
                 closeMenu()
                 setArchivedDialogOpen(true)
               }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200 transition-colors text-left"
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:bg-bg-200 transition-colors text-left"
             >
               <ArchiveIcon size={14} />
               <span>{t('sidebar.archivedChats')}</span>
@@ -306,7 +321,7 @@ export function SidebarFooter({
                 closeMenu()
                 onOpenSettings?.()
               }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200 transition-colors text-left"
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:bg-bg-200 transition-colors text-left"
             >
               <CogIcon size={14} />
               <span>{t('sidebar.settings')}</span>
@@ -317,7 +332,7 @@ export function SidebarFooter({
           <div className="relative flex items-center gap-2 px-3 py-2 text-[length:var(--fs-xxs)] text-text-300 cursor-default">
             <div className="pointer-events-none absolute inset-x-3 top-0 h-px bg-border-200/30" />
             <div className={`w-1.5 h-1.5 rounded-full ${statusColorClass}`} />
-            <span className="capitalize">{connectionState}</span>
+            <span className="capitalize">{activeHealth ? activeHealth.status : connectionState}</span>
           </div>
         </div>,
         document.body,
@@ -325,7 +340,7 @@ export function SidebarFooter({
     : null
 
   return (
-    <div className="shrink-0 pb-[var(--safe-area-inset-bottom)]">
+    <div className="shrink-0 pb-[var(--safe-area-inset-bottom)] border-t border-border-200/40">
       <div ref={containerRef} className="flex flex-col gap-0.5 mx-2 py-2">
         {/* 状态/设置触发按钮 */}
         <button
@@ -333,7 +348,7 @@ export function SidebarFooter({
           onClick={toggleMenu}
           className={`
             h-8 flex items-center rounded-lg transition-all duration-300 group overflow-hidden
-            ${isOpen ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:text-text-100 hover:bg-bg-200'}
+            ${isOpen ? interactive.toggleActiveNeutral : 'text-text-300 hover:bg-bg-200 border border-transparent'}
           `}
           style={{
             width: showLabels ? '100%' : 32,

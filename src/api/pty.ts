@@ -3,9 +3,10 @@
 // ============================================
 
 import { getSDKClient, unwrap } from './sdk'
-import { getApiBaseUrl, buildQueryString } from './http'
+import { getApiBaseUrl, getAuthHeader, buildQueryString } from './http'
 import { formatPathForApi } from '../utils/directoryUtils'
-import { serverStore } from '../store/serverStore'
+import { serverStore, getUnifiedFetch } from '../store/serverStore'
+import { isTauri } from '../utils/tauri'
 import type { Pty, PtyCreateParams, PtyUpdateParams } from '../types/api/pty'
 
 type LegacyPty = Pty & { running?: boolean; status?: Pty['status'] }
@@ -22,6 +23,11 @@ interface PtyConnectUrlOptions {
    */
   includeAuthInUrl?: boolean
   cursor?: number
+  /**
+   * 浏览器模式下用于 WebSocket 握手鉴权的一次性短令牌。
+   * 仅本地服务器不需要；远程需要认证的服务器在连接前换取。
+   */
+  streamToken?: string
 }
 
 function normalizePty(pty: LegacyPty): Pty {
@@ -133,6 +139,12 @@ export function getPtyConnectUrl(
 
   const queryParams: Record<string, string | number | undefined> = { directory: formatted, cursor }
 
+  // 一次性短令牌：优先于 auth_token。远程服务器（如 API Monitor 网关）在
+  // 需要认证时用短令牌握手，短令牌由调用方在连接前通过 streamToken 换取。
+  if (options?.streamToken) {
+    queryParams.st = options.streamToken
+  }
+
   let wsUrl = wsBase
   if (auth?.password) {
     if (isCrossOrigin) {
@@ -145,4 +157,72 @@ export function getPtyConnectUrl(
   }
 
   return `${wsUrl}/pty/${ptyId}/connect${buildQueryString(queryParams)}`
+}
+
+/**
+ * 获取 PTY 连接 WebSocket URL（异步）。
+ *
+ * 浏览器模式下 WebSocket 无法自定义请求头，而远程服务器（API Monitor 网关）
+ * 要求鉴权。思路：先用 fetch（可带 header）调网关的 stream-token 接口换取
+ * 一次性短令牌，再拼进 WebSocket URL 的 `st` 参数完成握手。
+ *
+ * - 本地服务器（Local）：本地 opencode 通常无鉴权，返回原始 URL。
+ * - Tauri bridge：走 header 传认证，返回不带鉴权的 URL。
+ * - 浏览器 + 远程需要认证的服务器：先换短令牌再返回带 `st` 的 URL。
+ */
+export async function getPtyConnectUrlAsync(
+  ptyId: string,
+  directory?: string,
+  options?: PtyConnectUrlOptions,
+  serverId?: string,
+): Promise<string> {
+  const auth = serverId ? serverStore.getServerAuth(serverId) : serverStore.getActiveAuth()
+  const includeAuthInUrl = options?.includeAuthInUrl ?? true
+
+  // Tauri bridge 走 header，不需换短令牌。
+  if (!includeAuthInUrl || isTauri()) {
+    return getPtyConnectUrl(ptyId, directory, options, serverId)
+  }
+
+  // 非 token 服务器：本地无鉴权或走 password 的 auth_token 方案，直接用原始 URL。
+  if (!auth?.token) {
+    return getPtyConnectUrl(ptyId, directory, options, serverId)
+  }
+
+  // token 认证的远程服务器（如 API Monitor 的 AI Agent 网关）：浏览器 WebSocket
+  // 无法带 Authorization header，必须先用 fetch 换一次性短令牌再拼进 URL。
+  // 换取失败（服务器不支持/未登录）时回退到原始 URL，让握手失败暴露真实错误。
+  try {
+    const streamToken = await fetchStreamToken(serverId)
+    if (streamToken) {
+      return getPtyConnectUrl(ptyId, directory, { ...options, streamToken }, serverId)
+    }
+  } catch {
+    // ignore: fallthrough to raw URL
+  }
+  return getPtyConnectUrl(ptyId, directory, options, serverId)
+}
+
+/** 向服务器换取一次性短令牌（用于 WebSocket 握手鉴权）。 */
+async function fetchStreamToken(serverId?: string): Promise<string> {
+  const baseUrl = getApiBaseUrl(serverId)
+  const authHeader = getAuthHeader(serverId)
+  const f = await getUnifiedFetch()
+
+  const response = await f(`${baseUrl}/stream-token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeader,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`stream-token request failed: ${response.status}`)
+  }
+  const payload: unknown = await response.json().catch(() => ({}))
+  if (!payload || typeof payload !== 'object') return ''
+  const data = (payload as Record<string, unknown>).data
+  if (!data || typeof data !== 'object') return ''
+  const token = (data as Record<string, unknown>).streamToken
+  return typeof token === 'string' ? token : ''
 }

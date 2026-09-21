@@ -175,7 +175,7 @@ describe('InputBox slash command selection', () => {
     expect(textarea.value).toBe('hello world')
   })
 
-  it('waits for send acknowledgement before clearing the draft', async () => {
+  it('clears the draft optimistically and keeps it cleared after send succeeds', async () => {
     let resolveSend: ((value: boolean) => void) | null = null
     const onSend = vi.fn(
       () =>
@@ -190,7 +190,7 @@ describe('InputBox slash command selection', () => {
     fireEvent.change(textarea, { target: { value: 'pending send' } })
     fireEvent.click(screen.getByRole('button', { name: 'send' }))
 
-    expect(textarea.value).toBe('pending send')
+    expect(textarea.value).toBe('')
 
     await act(async () => {
       resolveSend?.(true)
@@ -198,6 +198,60 @@ describe('InputBox slash command selection', () => {
 
     await waitFor(() => {
       expect(textarea.value).toBe('')
+    })
+  })
+
+  it('restores the draft when the send fails and the user has not typed again', async () => {
+    let resolveSend: ((value: boolean) => void) | null = null
+    const onSend = vi.fn(
+      () =>
+        new Promise<boolean>(resolve => {
+          resolveSend = resolve
+        }),
+    )
+
+    render(<InputBox paneId="pane-test" onSend={onSend} />)
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'will fail' } })
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+
+    expect(textarea.value).toBe('')
+
+    await act(async () => {
+      resolveSend?.(false)
+    })
+
+    await waitFor(() => {
+      expect(textarea.value).toBe('will fail')
+    })
+  })
+
+  it('does not clobber text typed while the send was in flight', async () => {
+    let resolveSend: ((value: boolean) => void) | null = null
+    const onSend = vi.fn(
+      () =>
+        new Promise<boolean>(resolve => {
+          resolveSend = resolve
+        }),
+    )
+
+    render(<InputBox paneId="pane-test" onSend={onSend} />)
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'first' } })
+    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+
+    expect(textarea.value).toBe('')
+
+    fireEvent.change(textarea, { target: { value: 'second' } })
+
+    await act(async () => {
+      resolveSend?.(false)
+    })
+
+    await waitFor(() => {
+      expect(textarea.value).toBe('second')
     })
   })
 

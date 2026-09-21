@@ -39,6 +39,8 @@ interface UseSessionsResult {
   setSearch: (search: string) => void
   /** 加载更多 */
   loadMore: () => Promise<void>
+  /** 收起：重置回初始分页并重新拉取 */
+  collapse: () => Promise<void>
   /** 刷新列表 */
   refresh: () => Promise<void>
   /** 创建新会话 */
@@ -317,6 +319,17 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     })
   }, [sessions, search, hasMore, isLoadingMore, fetchSessions, enabled, pageSize])
 
+  // 收起：把 limit 重置回初始 pageSize，重新拉取（对应「展开更多会话」的收起入口）
+  const collapse = useCallback(async () => {
+    if (!enabled || isLoadingMore || currentLimitRef.current <= pageSize) return
+
+    currentLimitRef.current = pageSize
+    await fetchSessions({
+      search: search || undefined,
+      append: true,
+    })
+  }, [enabled, isLoadingMore, pageSize, search, fetchSessions])
+
   // 刷新：显式下拉/重新拉取时绕过列表缓存，保证拿到最新数据
   const refresh = useCallback(async () => {
     if (!enabled) return
@@ -376,6 +389,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     search,
     setSearch,
     loadMore,
+    collapse,
     refresh,
     create,
     remove,

@@ -414,7 +414,7 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
         type="button"
         disabled={!dirty || busy}
         onClick={() => updateConfig(clone(original))}
-        className="inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-[length:var(--fs-xs)] text-text-300 transition-colors hover:bg-bg-200 hover:text-text-100 disabled:opacity-40"
+        className="inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-[length:var(--fs-xs)] text-text-300 transition-colors hover:bg-bg-200 disabled:opacity-40"
       >
         <UndoIcon size={13} />
         {t('config.reset')}
@@ -462,8 +462,8 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                         aria-controls={`config-panel-${id}`}
                         tabIndex={active ? 0 : -1}
                         onClick={() => switchSection(id)}
-                        className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-[length:var(--fs-md)] font-medium transition-colors ${
-                          active ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:bg-bg-200 hover:text-text-100'
+                        className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-[length:var(--fs-md)] font-medium transition-colors border ${
+                          active ? 'bg-bg-200 text-text-100 border-border-200' : 'text-text-300 hover:bg-bg-200 border-transparent'
                         }`}
                       >
                         {CONFIG_TAB_ICONS[id]}
@@ -496,7 +496,7 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                     type="button"
                     disabled={!dirty || busy}
                     onClick={() => updateConfig(clone(original))}
-                    className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[length:var(--fs-sm)] font-medium text-text-300 transition-colors hover:bg-bg-200 active:bg-bg-300 hover:text-text-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[length:var(--fs-sm)] font-medium text-text-300 transition-colors hover:bg-bg-200 active:bg-bg-300 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <UndoIcon size={14} />
                     {t('config.reset')}
@@ -570,8 +570,8 @@ function ConfigEditorDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () 
                             aria-controls={`config-panel-${id}`}
                             tabIndex={active ? 0 : -1}
                             onClick={() => switchSection(id)}
-                            className={`flex min-h-8 w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[length:var(--fs-md)] font-medium transition-colors ${
-                              active ? 'bg-bg-200 text-text-100' : 'text-text-300 hover:bg-bg-200 hover:text-text-100'
+                            className={`flex min-h-8 w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[length:var(--fs-md)] font-medium transition-colors border ${
+                          active ? 'bg-bg-200 text-text-100 border-border-200' : 'text-text-300 hover:bg-bg-200 border-transparent'
                             }`}
                           >
                             <span className={active ? 'text-accent-main-100' : 'text-text-400'}>{CONFIG_TAB_ICONS[id]}</span>

@@ -69,7 +69,9 @@
     "title": "问题",
     "moreCount": "还有 {{count}} 个",
     "minimize": "最小化",
-    "typeYourAnswer": "输入你的回答..."
+    "typeYourAnswer": "输入你的回答...",
+    "pageOf": "{{current}} / {{total}}",
+    "answeredCount": "已答 {{done}}/{{total}}"
   },
   "permissionDialog": {
     "permission": "权限：{{permission}}",
@@ -161,8 +163,10 @@
     "deleteChatConfirm": "确定要删除此对话？此操作无法撤销。",
     "moveFolderUp": "上移文件夹",
     "moveFolderDown": "下移文件夹",
+    "loadingChats": "正在加载对话",
     "noChatsInFolder": "此文件夹中没有对话",
     "showMoreChats": "展开更多会话",
+    "showFewerChats": "收起会话",
     "selectedSessions": "已选 {{count}}",
     "selectedProjects": "已选 {{count}} 个项目",
     "selectedMixed": "{{sessions}} 会话 · {{projects}} 项目",
@@ -250,5 +254,62 @@
   },
   "errors": {
     "reloadConversation": "重新加载会话"
+  },
+  "workStatus": {
+    "ariaLabel": "工作状态",
+    "railToggle": "显示或隐藏工作状态面板",
+    "context": {
+      "label": "上下文"
+    },
+    "section": {
+      "session": "会话",
+      "project": "项目",
+      "turnStats": "轮次统计",
+      "subagents": "子代理",
+      "todos": "任务",
+      "mcp": "MCP",
+      "pinnedMessages": "已固定的消息",
+      "contextSources": "上下文来源"
+    },
+    "turnStats": {
+      "summary": "{{turns}} 轮 · {{steps}} 步",
+      "modelTime": "模型用时",
+      "toolTime": "工具用时",
+      "ttft": "首 token",
+      "tps": "输出速度",
+      "cacheHit": "缓存命中"
+    },
+    "subagent": {
+      "working": "正在工作",
+      "done": "已完成",
+      "failed": "失败"
+    },
+    "mcp": {
+      "toggle": "切换 {{name}}",
+      "needsAuth": "登录",
+      "failed": "失败"
+    },
+    "pinned": {
+      "unavailable": "已固定的消息",
+      "unpin": "取消固定",
+      "reveal": "跳转到该消息",
+      "pin": "固定到面板",
+      "unpinned": "已取消固定"
+    },
+    "breakdown": {
+      "skills": "技能",
+      "mcp": "MCP 服务器",
+      "skillCount": "{{count}} 个技能",
+      "mcpCount": "{{count}} 个 MCP"
+    },
+    "sections": {
+      "open": "选择板块",
+      "dialogTitle": "面板板块",
+      "dialogDescription": "选择工作状态面板显示的内容。隐藏的板块仍保留数据，只是不再显示。",
+      "reorder": "拖动 {{label}} 以重新排序",
+      "allHidden": "未选择任何板块",
+      "showAll": "全部显示",
+      "noneWarning": "面板将显示为空。"
+    }
   }
 }

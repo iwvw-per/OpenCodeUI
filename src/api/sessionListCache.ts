@@ -12,6 +12,7 @@
 
 import type { ApiSession, SessionListParams } from './types'
 import { ttlCacheGet, ttlCacheSet, ttlCacheInvalidate } from '../utils/ttlCache'
+import { directoryCacheKey } from '../utils/directoryUtils'
 
 /** 列表缓存 TTL：够短以避免明显陈旧，够长以覆盖来回切换 */
 const SESSION_LIST_TTL_MS = 30_000
@@ -26,11 +27,13 @@ type SessionListQuery = SessionListParams & {
 
 export function sessionListCacheKey(serverId: string, query: SessionListQuery): string {
   const archived = query.archivedOnly ? 'archived' : query.includeArchived ? 'all' : 'active'
+  // 用与传输格式无关的目录键：pathMode 在 auto 检测期间可能切换，
+  // 直接拼原始目录会让同一目录算出两个 key，缓存与在途合并同时失效。
   return [
     SESSION_LIST_CACHE_PREFIX,
     serverId,
     archived,
-    query.directory ?? '',
+    directoryCacheKey(query.directory),
     query.roots === undefined ? '' : String(query.roots),
     query.search ?? '',
     query.limit ?? '',
@@ -51,6 +54,36 @@ export function readSessionListCache(serverId: string, query: SessionListQuery):
 export function writeSessionListCache(serverId: string, query: SessionListQuery, sessions: ApiSession[]): void {
   if (!isCacheable(query)) return
   ttlCacheSet(sessionListCacheKey(serverId, query), sessions, SESSION_LIST_TTL_MS)
+}
+
+// ============================================
+// 在途请求合并（single-flight）
+// ============================================
+//
+// 侧栏每个项目各挂一个 useSessions，挂载时同时发起请求。这些请求都在同一帧
+// 内未命中缓存，于是同一个 directory 会被并发拉取多次（实测 5 个目录发出 13 次
+// 请求，其中一个目录重复 4 次）。后端本就繁忙时，这些重复请求会互相排队，
+// 直接把会话列表的可见时间拖到十几秒。
+//
+// 同一个 key 的并发请求共享同一个 Promise，只发一次网络。
+
+const inflightSessionLists = new Map<string, Promise<ApiSession[]>>()
+
+/** 复用同 key 的在途请求；没有则调用 factory 并登记，完成后无论成败都移除 */
+export function dedupeSessionListRequest(
+  serverId: string,
+  query: SessionListQuery,
+  factory: () => Promise<ApiSession[]>,
+): Promise<ApiSession[]> {
+  const key = sessionListCacheKey(serverId, query)
+  const inflight = inflightSessionLists.get(key)
+  if (inflight) return inflight
+
+  const request = factory().finally(() => {
+    inflightSessionLists.delete(key)
+  })
+  inflightSessionLists.set(key, request)
+  return request
 }
 
 /**

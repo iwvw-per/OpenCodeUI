@@ -41,17 +41,33 @@ describe('messageExpand', () => {
   it('keeps compositor refs on the actual body node when requested', () => {
     const contentRef = createRef<HTMLDivElement>()
     render(
-      <MessageExpandPanel
-        open
-        contentRef={contentRef}
-        contentClassName="body-padding"
-        innerClassName="overflow-hidden"
-      >
+      <MessageExpandPanel open contentRef={contentRef} contentClassName="body-padding" innerClassName="overflow-hidden">
         <span>body</span>
       </MessageExpandPanel>,
     )
 
     expect(contentRef.current?.className).toBe('body-padding')
     expect(contentRef.current?.parentElement?.className).toBe('overflow-hidden')
+  })
+
+  it('marks the collapsed body inert so its controls stay out of tab order', () => {
+    // 回归保护：收起后内容仍留在 DOM（unmount 有延迟，keepMounted 场景常驻），
+    // 不加 inert 时键盘用户会 Tab 进高度为 0 的隐藏内容。
+    const { container, rerender } = render(
+      <MessageExpandPanel open={false}>
+        <button type="button">hidden action</button>
+      </MessageExpandPanel>,
+    )
+
+    const body = container.querySelector('.overflow-hidden') as HTMLElement | null
+    expect(body).not.toBeNull()
+    expect(body?.hasAttribute('inert')).toBe(true)
+
+    rerender(
+      <MessageExpandPanel open>
+        <button type="button">hidden action</button>
+      </MessageExpandPanel>,
+    )
+    expect((container.querySelector('.overflow-hidden') as HTMLElement).hasAttribute('inert')).toBe(false)
   })
 })

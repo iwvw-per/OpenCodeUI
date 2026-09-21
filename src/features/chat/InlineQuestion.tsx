@@ -6,7 +6,8 @@
 
 import { memo, useState, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckIcon } from '../../components/Icons'
+import { CheckIcon, QuestionIcon } from '../../components/Icons'
+import { ApprovalCard } from '../../components/ui/ApprovalCard'
 import type { ApiQuestionRequest, ApiQuestionInfo, QuestionAnswer } from '../../api'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
 
@@ -116,6 +117,20 @@ export const InlineQuestion = memo(function InlineQuestion({
     return selected.size > 0 || (isCustom && !!customValue)
   })
 
+  const totalQuestions = request.questions.length
+  const isPaged = totalQuestions > 1
+  const [page, setPage] = useState(0)
+  const safePage = Math.min(page, totalQuestions - 1)
+  const answeredCount = request.questions.reduce((acc, _q, idx) => {
+    const selected = answers.get(idx) || new Set()
+    const isCustom = customEnabled.get(idx)
+    const customValue = customValues.get(idx)?.trim()
+    return acc + (selected.size > 0 || (isCustom && !!customValue) ? 1 : 0)
+  }, 0)
+  const isLastPage = safePage >= totalQuestions - 1
+  const goPrev = useCallback(() => setPage(p => Math.max(0, p - 1)), [])
+  const goNext = useCallback(() => setPage(p => Math.min(totalQuestions - 1, p + 1)), [totalQuestions])
+
   // 键盘快捷键：和主输入框一致的 send keybinding 提交，Escape 跳过
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -136,43 +151,98 @@ export const InlineQuestion = memo(function InlineQuestion({
   )
 
   return (
-    <div className="space-y-2" onKeyDown={handleKeyDown}>
-      {/* 问题列表 */}
-      <div className="space-y-3">
-        {request.questions.map((question, qIdx) => (
-          <InlineQuestionItem
-            key={qIdx}
-            question={question}
-            selected={answers.get(qIdx) || new Set()}
-            isCustomEnabled={customEnabled.get(qIdx) || false}
-            customValue={customValues.get(qIdx) || ''}
-            onSelectOption={label => selectOption(qIdx, label)}
-            onSelectCustom={() => selectCustom(qIdx)}
-            onToggleOption={label => toggleOption(qIdx, label)}
-            onToggleCustom={() => toggleCustom(qIdx)}
-            onCustomValueChange={value => updateCustomValue(qIdx, value)}
-          />
-        ))}
+    <ApprovalCard
+      className="focus-within:border-border-300/60"
+      header={
+        <>
+          <QuestionIcon size={14} className="shrink-0 text-text-400" />
+          <span className="font-medium text-text-300">{t('chat:questionDialog.title')}</span>
+          {isPaged && (
+            <span className="ml-auto flex items-center gap-1.5">
+              <span className="tabular-nums text-[length:var(--fs-xxs)] text-text-500">
+                {t('chat:questionDialog.pageOf', { current: safePage + 1, total: totalQuestions })}
+              </span>
+              <span className="flex items-center gap-1">
+                {request.questions.map((_q, idx) => (
+                  <span
+                    key={idx}
+                    className={`size-1 rounded-full transition-colors ${
+                      idx === safePage
+                        ? 'bg-text-300'
+                        : (answers.get(idx) || new Set()).size > 0
+                          ? 'bg-text-500'
+                          : 'bg-border-300'
+                    }`}
+                  />
+                ))}
+              </span>
+            </span>
+          )}
+        </>
+      }
+      footer={
+        <>
+          {isPaged && (
+            <button
+              onClick={goPrev}
+              disabled={safePage === 0 || isReplying}
+              className="px-2.5 h-7 rounded-md text-[length:var(--fs-sm)] text-text-400 hover:bg-bg-200 transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              {t('common:previous')}
+            </button>
+          )}
+          {isPaged && !isLastPage ? (
+            <button
+              onClick={goNext}
+              disabled={isReplying}
+              className="px-2.5 h-7 rounded-md text-[length:var(--fs-sm)] font-medium bg-text-100 text-bg-000 hover:bg-text-200 transition-colors disabled:opacity-50"
+            >
+              {t('common:next')}
+            </button>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={!canSubmit || isReplying}
+              className="px-2.5 h-7 rounded-md text-[length:var(--fs-sm)] font-medium bg-text-100 text-bg-000 hover:bg-text-200 transition-colors disabled:opacity-50"
+            >
+              {t('common:submit')}
+            </button>
+          )}
+          <button
+            onClick={() => onReject(request.id)}
+            disabled={isReplying}
+            className="px-2.5 h-7 rounded-md text-[length:var(--fs-sm)] text-text-400 hover:bg-bg-200 transition-colors disabled:opacity-50"
+          >
+            {t('common:skip')}
+          </button>
+          {isPaged && (
+            <span className="ml-auto tabular-nums text-[length:var(--fs-xxs)] text-text-500">
+              {t('chat:questionDialog.answeredCount', { done: answeredCount, total: totalQuestions })}
+            </span>
+          )}
+        </>
+      }
+    >
+      <div className="space-y-3" onKeyDown={handleKeyDown}>
+        {(isPaged ? [request.questions[safePage]] : request.questions).map((question, i) => {
+          const qIdx = isPaged ? safePage : i
+          return (
+            <InlineQuestionItem
+              key={qIdx}
+              question={question}
+              selected={answers.get(qIdx) || new Set()}
+              isCustomEnabled={customEnabled.get(qIdx) || false}
+              customValue={customValues.get(qIdx) || ''}
+              onSelectOption={label => selectOption(qIdx, label)}
+              onSelectCustom={() => selectCustom(qIdx)}
+              onToggleOption={label => toggleOption(qIdx, label)}
+              onToggleCustom={() => toggleCustom(qIdx)}
+              onCustomValueChange={value => updateCustomValue(qIdx, value)}
+            />
+          )
+        })}
       </div>
-
-      {/* 操作栏 */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={handleSubmit}
-          disabled={!canSubmit || isReplying}
-          className="px-2.5 py-0.5 rounded text-[length:var(--fs-sm)] font-medium bg-text-100 text-bg-000 hover:bg-text-200 transition-colors disabled:opacity-50"
-        >
-          {t('common:submit')}
-        </button>
-        <button
-          onClick={() => onReject(request.id)}
-          disabled={isReplying}
-          className="px-2.5 py-0.5 rounded text-[length:var(--fs-sm)] text-text-400 hover:text-text-200 transition-colors disabled:opacity-50"
-        >
-          {t('common:skip')}
-        </button>
-      </div>
-    </div>
+    </ApprovalCard>
   )
 })
 
@@ -241,10 +311,8 @@ function InlineQuestionItem({
               key={idx}
               onClick={() => (isMultiple ? onToggleOption(option.label) : onSelectOption(option.label))}
               title={option.description}
-              className={`inline-flex min-h-7 items-start gap-1.5 px-2.5 py-1 text-[length:var(--fs-sm)] leading-5 rounded-md border transition-all ${
-                isSelected
-                  ? 'border-text-100 text-text-100 bg-bg-300/40'
-                  : 'border-border-200/60 text-text-300 hover:border-text-400 hover:text-text-200'
+              className={`inline-flex min-h-7 items-start gap-1.5 px-2.5 py-1 text-[length:var(--fs-sm)] leading-5 rounded-md transition-colors border ${
+                isSelected ? 'bg-bg-200 text-text-100 border-border-200' : 'text-text-300 hover:bg-bg-200 border-transparent'
               }`}
             >
               {isMultiple && (
@@ -273,8 +341,8 @@ function InlineQuestionItem({
               else onSelectCustom()
             }
           }}
-          className={`flex min-h-7 items-start gap-1.5 rounded-md border px-2.5 py-1 transition-colors ${
-            isCustomEnabled ? 'border-text-100 bg-bg-300/20' : 'border-border-200/60 hover:border-text-400'
+          className={`flex min-h-7 items-start gap-1.5 rounded-md px-2.5 py-1 transition-colors ${
+            isCustomEnabled ? 'bg-bg-200' : 'hover:bg-bg-200'
           }`}
         >
           {isMultiple && (

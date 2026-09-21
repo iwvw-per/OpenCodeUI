@@ -1,7 +1,9 @@
 import { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDownIcon, LightbulbIcon, SpinnerIcon } from '../../../components/Icons'
+import { LightbulbIcon } from '../../../components/Icons'
 import { ScrollArea } from '../../../components/ui'
+import { DisclosureRow } from '../../../components/ui/DisclosureRow'
+import { Spinner } from '../../../components/ui/Spinner'
 import { useDisclosureScrollLock } from '../../../hooks'
 import { useTheme } from '../../../hooks/useTheme'
 import { MarkdownRenderer } from '../../../components/MarkdownRenderer'
@@ -9,10 +11,8 @@ import type { ReasoningPart } from '../../../types/message'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 import { MSG_SPACING } from '../messageSpacing'
 import { MessageExpandPanel } from '../messageExpand'
-import { chevronClass, useMessageExpandRender } from '../messageExpandShared'
-
-// italic 默认不显示前导图标；如果后续要恢复，只改这里。
-const ITALIC_SHOW_LEADING_GLYPH = false
+import { useMessageExpandRender } from '../messageExpandShared'
+import { firstMeaningfulLine } from './reasoningSummary'
 
 interface ReasoningPartViewProps {
   part: ReasoningPart
@@ -40,11 +40,11 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
   }, [expanded, setExpanded, withScrollLock])
 
   const collapsedPreview = useMemo(() => (displayText || '').replace(/\s+/g, ' ').trim(), [displayText])
-  // markdown 折叠只取第一行，避免整段压扁后末尾硬切
-  const collapsedMarkdownPreview = useMemo(() => {
-    const firstLine = (displayText || '').split(/\r?\n/, 1)[0] ?? ''
-    return firstLine.trim() || collapsedPreview
-  }, [displayText, collapsedPreview])
+  // markdown 折叠取第一条有内容的行（跳过代码块/分隔线），避免摘要只剩 ``` 这类符号
+  const collapsedMarkdownPreview = useMemo(
+    () => firstMeaningfulLine(displayText) || collapsedPreview,
+    [displayText, collapsedPreview],
+  )
   const thoughtDurationLabel = useMemo(() => {
     const start = part.time?.start
     const end = part.time?.end
@@ -151,58 +151,57 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
       '[&_br]:hidden',
     ].join(' ')
 
-    // 与工具 steps / 过程折叠块对齐：header 用 MSG_SPACING.header，根节点不再额外加 py
+    // 与工具 steps / 过程折叠块对齐：统一走 DisclosureRow（py-1 行高 + chevron）
     const content = shouldUseToggle ? (
       <div className="flex flex-col">
-        <button
-          type="button"
+        <DisclosureRow
           ref={headerRef}
+          expanded={expanded}
           onClick={toggleExpanded}
-          aria-expanded={expanded}
-          className={`group/reasoning flex w-full min-w-0 items-center gap-1.5 rounded-md ${MSG_SPACING.header} m-0 border-0 bg-transparent text-left cursor-pointer text-text-400 hover:bg-bg-200 hover:text-text-200 transition-colors`}
-        >
-          <div ref={summaryContainerRef} className="relative min-w-0 flex-1 overflow-hidden">
-            <span className="relative block min-w-0 max-w-full">
-              {expanded ? (
-                <span className={expandedMetaClassName}>
-                  {expandedMetaText}
-                </span>
-              ) : isMarkdownMode ? (
-                <div className={`min-w-0 text-[length:var(--fs-sm)] leading-5 ${collapsedMarkdownClassName}`}>
-                  <MarkdownRenderer
-                    content={collapsedMarkdownPreview}
-                    variant="reasoning"
-                    isStreaming={isPartStreaming}
-                  />
-                </div>
-              ) : (
-                <span
-                  className={[
-                    'block min-w-0 italic',
-                    summaryClassName,
-                    isPartStreaming ? 'reasoning-shimmer-text' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                >
-                  {summaryText}
-                </span>
-              )}
+          size="sm"
+          className="group/reasoning"
+          truncateLabel={false}
+          labelTone="idle"
+          icon={isPartStreaming ? <Spinner size="sm" tone="muted" variant="pixel" /> : <LightbulbIcon size={13} />}
+          label={
+            <span ref={summaryContainerRef} className="relative block min-w-0 max-w-full overflow-hidden">
+              <span className="relative block min-w-0 max-w-full">
+                {expanded ? (
+                  <span className={expandedMetaClassName}>{expandedMetaText}</span>
+                ) : isMarkdownMode ? (
+                  <div className={`min-w-0 text-[length:var(--fs-sm)] leading-5 ${collapsedMarkdownClassName}`}>
+                    <MarkdownRenderer
+                      content={collapsedMarkdownPreview}
+                      variant="reasoning"
+                      isStreaming={isPartStreaming}
+                    />
+                  </div>
+                ) : (
+                  <span
+                    className={[
+                      'block min-w-0 italic',
+                      summaryClassName,
+                      isPartStreaming ? 'reasoning-shimmer-text' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                  >
+                    {summaryText}
+                  </span>
+                )}
+              </span>
+              <span
+                ref={summaryMeasureRef}
+                aria-hidden="true"
+                className={`pointer-events-none absolute inset-0 invisible whitespace-nowrap text-[length:var(--fs-sm)] leading-5 ${
+                  isMarkdownMode ? '' : 'italic'
+                }`}
+              >
+                {summaryText}
+              </span>
             </span>
-            <span
-              ref={summaryMeasureRef}
-              aria-hidden="true"
-              className={`pointer-events-none absolute inset-0 invisible whitespace-nowrap text-[length:var(--fs-sm)] leading-5 ${
-                isMarkdownMode ? '' : 'italic'
-              }`}
-            >
-              {summaryText}
-            </span>
-          </div>
-          <span className={chevronClass(expanded, 'sm', 'group-hover/reasoning:text-text-300')}>
-            <ChevronDownIcon size={12} />
-          </span>
-        </button>
+          }
+        />
 
         <MessageExpandPanel open={expanded} clip>
           {shouldRenderBody &&
@@ -211,45 +210,47 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
                 <MarkdownRenderer content={displayText} variant="reasoning" isStreaming={isPartStreaming} />
               </div>
             ) : (
-              <div className={`${MSG_SPACING.body} text-[length:var(--fs-sm)] leading-6 italic whitespace-pre-wrap break-words overflow-x-hidden text-text-400`}>
+              <div
+                className={`${MSG_SPACING.body} text-[length:var(--fs-sm)] leading-6 italic whitespace-pre-wrap break-words overflow-x-hidden text-text-400`}
+              >
                 {displayText}
               </div>
             ))}
         </MessageExpandPanel>
       </div>
     ) : (
-      <div ref={summaryContainerRef} className={`relative min-w-0 overflow-hidden ${MSG_SPACING.header} text-[length:var(--fs-sm)]`}>
-        {isMarkdownMode ? (
-          <MarkdownRenderer content={displayText} variant="reasoning" isStreaming={isPartStreaming} />
-        ) : (
-          <span className="block min-w-0 text-[length:var(--fs-sm)] leading-5 italic whitespace-pre-wrap break-words text-text-400">
-            {displayText}
-          </span>
-        )}
-        <span
-          ref={summaryMeasureRef}
-          aria-hidden="true"
-          className={`pointer-events-none absolute inset-0 invisible whitespace-nowrap text-[length:var(--fs-sm)] leading-5 ${
-            isMarkdownMode ? '' : 'italic'
-          }`}
-        >
-          {summaryText}
+      <div className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 items-start">
+        {/* 静态单行：无可折叠内容。mt-1 让 h-5 图标盒与右侧 py-1 + leading-5 的首行行盒同心 */}
+        <span className="mt-1 inline-flex h-5 w-[14px] shrink-0 items-center justify-center text-text-500">
+          {isPartStreaming ? <Spinner size="sm" tone="muted" variant="pixel" /> : <LightbulbIcon size={13} />}
         </span>
+        <div
+          ref={summaryContainerRef}
+          className={`relative min-w-0 overflow-hidden ${MSG_SPACING.header} text-[length:var(--fs-sm)]`}
+        >
+          {isMarkdownMode ? (
+            <MarkdownRenderer content={displayText} variant="reasoning" isStreaming={isPartStreaming} />
+          ) : (
+            <span className="block min-w-0 text-[length:var(--fs-sm)] leading-5 italic whitespace-pre-wrap break-words text-text-400">
+              {displayText}
+            </span>
+          )}
+          <span
+            ref={summaryMeasureRef}
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-0 invisible whitespace-nowrap text-[length:var(--fs-sm)] leading-5 ${
+              isMarkdownMode ? '' : 'italic'
+            }`}
+          >
+            {summaryText}
+          </span>
+        </div>
       </div>
     )
 
     return (
       <div ref={rootRef}>
-        {ITALIC_SHOW_LEADING_GLYPH ? (
-          <div className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 items-start">
-            <span className="inline-flex h-5 w-[14px] items-start justify-center pt-[6px] text-text-500">
-              {isPartStreaming ? <SpinnerIcon className="animate-spin" size={14} /> : <LightbulbIcon size={14} />}
-            </span>
-            <div className="min-w-0">{content}</div>
-          </div>
-        ) : (
-          content
-        )}
+        {content}
 
         <span className="sr-only" role="status" aria-live="polite">
           {summaryText}
@@ -265,29 +266,23 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
         expanded ? 'w-full' : 'w-[260px]'
       }`}
     >
-      <button
-        type="button"
+      <DisclosureRow
         ref={headerRef}
+        expanded={expanded}
         onClick={toggleExpanded}
         disabled={!hasContent && !isPartStreaming}
-        className={`w-full grid grid-cols-[auto_minmax(0,1fr)_12px] items-center gap-x-1.5 px-2 py-2 text-text-500 hover:bg-bg-200 transition-colors ${
+        inset={false}
+        size="md"
+        className={`grid grid-cols-[14px_minmax(0,1fr)_14px] gap-x-1.5 rounded-none text-text-500 ${
           !hasContent ? 'cursor-default' : ''
         }`}
-      >
-        <span className="inline-flex w-[14px] items-center justify-center shrink-0">
-          {isPartStreaming ? (
-            <SpinnerIcon className="animate-spin shrink-0" size={14} />
-          ) : (
-            <LightbulbIcon className="shrink-0" size={14} />
-          )}
-        </span>
-        <span className="text-[length:var(--fs-sm)] font-medium leading-5 whitespace-nowrap text-left">
-          {isPartStreaming ? t('reasoning.thinking') : t('reasoning.thinkingLabel')}
-        </span>
-        <span className={chevronClass(expanded, 'sm')}>
-          <ChevronDownIcon size={12} />
-        </span>
-      </button>
+        icon={isPartStreaming ? <Spinner size="md" tone="current" variant="pixel" /> : <LightbulbIcon className="shrink-0" size={14} />}
+        label={
+          <span className="text-[length:var(--fs-sm)] font-medium leading-5 whitespace-nowrap text-left">
+            {isPartStreaming ? t('reasoning.thinking') : t('reasoning.thinkingLabel')}
+          </span>
+        }
+      />
 
       <MessageExpandPanel open={expanded} clip>
         {shouldRenderBody && (

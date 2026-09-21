@@ -119,7 +119,7 @@ export const PreviewTabsBar = memo(function PreviewTabsBar({
                     ? // 激活标签：实底 + 主文字色，与浏览器标签一致（肩部弧线由 .tab-active 提供）
                       'tab-active z-10 h-full bg-bg-100 text-text-100'
                     : cn(
-                        'h-[24px] overflow-hidden rounded-md border-x-[5px] border-transparent bg-transparent text-text-400 hover:text-text-100',
+                        'h-[24px] overflow-hidden rounded-md border-x-[5px] border-transparent bg-transparent text-text-400',
                         // 拖拽落点用浅 accent 底提示，与 hover 底色可区分
                         isDragOver ? 'bg-accent-main-100/8' : interactive.row,
                       ),

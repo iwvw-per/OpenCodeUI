@@ -77,7 +77,7 @@ export const MessageErrorView = memo(function MessageErrorView({ error, stateKey
               <div>
                 <button
                   type="button"
-                  className="flex items-center gap-1 text-[length:var(--fs-sm)] text-text-400 hover:text-text-200 cursor-pointer"
+                  className="flex items-center gap-1 text-[length:var(--fs-sm)] text-text-400 hover:bg-bg-200 hover:border-border-200 border border-transparent rounded px-1 cursor-pointer"
                   onClick={() => withScrollLock(() => setShowRawDiagnostics(!showRawDiagnostics))}
                 >
                   <ChevronDownIcon className={chevronClass(showRawDiagnostics)} />

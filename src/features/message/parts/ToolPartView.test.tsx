@@ -43,6 +43,10 @@ vi.mock('../../../hooks/useTheme', () => ({
 vi.mock('../../../store/serverStore', () => ({
   serverStore: {
     getActiveCalibratedNow: getActiveCalibratedNowMock,
+    // store 模块在导入期会注册 onServerChange 订阅，
+    // mock 必须提供这个函数，否则整个模块图加载失败。
+    onServerChange: () => () => {},
+    getActiveServerId: () => 'local',
   },
 }))
 

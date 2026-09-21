@@ -151,6 +151,15 @@ class ActiveSessionStore {
   getBusyCountSnapshot = (): number => this.cachedBusyCount
 
   /**
+   * 取单个 session 的 status 引用。
+   * statusMap 未命中时返回 undefined，两者引用都稳定，
+   * 供 useSessionStatus 作为 useSyncExternalStore 的 getSnapshot。
+   */
+  getSessionStatus(sessionId: string): SessionStatus | undefined {
+    return this.state.statusMap[sessionId]
+  }
+
+  /**
    * 取单个 session 的活跃条目。
    * cachedBusySessions 内容不变时数组引用稳定，且 recomputeDerived 复用旧数组，
    * 因此未命中（undefined）与命中（同一元素引用）都满足 useSyncExternalStore 的稳定引用契约。
@@ -428,6 +437,20 @@ export function useBusyCount(): number {
 export function useSessionActiveEntry(sessionId: string): ActiveSessionEntry | undefined {
   const getSnapshot = useCallback(
     () => activeSessionStore.getBusySessionEntry(sessionId),
+    [sessionId],
+  )
+  return useSyncExternalStore(activeSessionStore.subscribe, getSnapshot)
+}
+
+/**
+ * 只订阅单个 session 的 status。
+ *
+ * 任意其它 session 的 busy/retry 变化都不会让本组件重渲染；getSnapshot 直接返回
+ * statusMap 里的元素引用，未变化时引用稳定，不会触发额外渲染。
+ */
+export function useSessionStatus(sessionId: string | null): SessionStatus | undefined {
+  const getSnapshot = useCallback(
+    () => (sessionId ? activeSessionStore.getSessionStatus(sessionId) : undefined),
     [sessionId],
   )
   return useSyncExternalStore(activeSessionStore.subscribe, getSnapshot)

@@ -14,6 +14,8 @@
   "create": "Create",
   "submit": "Submit",
   "skip": "Skip",
+  "next": "Next",
+  "previous": "Previous",
   "copy": "Copy",
   "copied": "Copied!",
   "search": "Search",

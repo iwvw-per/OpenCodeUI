@@ -460,7 +460,7 @@ function CreateWorktreeForm({ onSubmit, onCancel, isLoading }: CreateWorktreeFor
           onClick={onCancel}
           disabled={isLoading}
           className={cn(
-            'px-2.5 py-1 text-[length:var(--fs-xs)] text-text-300 hover:text-text-100 rounded-md',
+            'px-2.5 py-1 text-[length:var(--fs-xs)] text-text-300 rounded-md',
             interactive.subtle,
             interactive.focusRingCompact,
             interactive.disabled,

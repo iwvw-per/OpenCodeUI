@@ -10,6 +10,9 @@ import { useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ApiPermissionRequest, PermissionReply } from '../../api'
 import { ContentBlock } from '../../components'
+import { ShieldIcon } from '../../components/Icons'
+import { ApprovalCard } from '../../components/ui/ApprovalCard'
+import { Spinner } from '../../components/ui/Spinner'
 import { autoApproveStore } from '../../store'
 import { themeStore } from '../../store/themeStore'
 
@@ -69,61 +72,74 @@ export const InlinePermission = memo(function InlinePermission({
     onReply(request.id, 'always')
   }
 
-  return (
-    <div className="space-y-2">
-      {/* 内容 — contentHidden 时跳过（ToolBody 已渲染） */}
-      {!contentHidden &&
-        (isFileEdit && diffData ? (
-          <ContentBlock
-            stateKey={`permission:${request.sessionID}:${request.id}:diff`}
-            label={request.permission}
-            filePath={filepath}
-            diff={diffData}
-            collapsible={false}
-            compact={isCompact}
-          />
-        ) : patternsText ? (
-          <ContentBlock
-            stateKey={`permission:${request.sessionID}:${request.id}:patterns`}
-            label={request.permission}
-            content={patternsText}
-            language="bash"
-            collapsible={false}
-            compact={isCompact}
-          />
-        ) : null)}
+  // 内容由 ToolBody 渲染时（contentHidden），只保留操作条
+  const showContent = !contentHidden && (isFileEdit ? !!diffData : !!patternsText)
 
-      {/* 操作按钮 / 已批准状态 */}
-      {resolved ? (
-        <div className="flex items-center gap-2 text-[length:var(--fs-sm)] text-text-400">
-          <span className="inline-block w-3 h-3 border-2 border-accent-main-100 border-t-transparent rounded-full animate-spin" />
-          <span>{t('permissionDialog.applying', { defaultValue: 'Applying…' })}</span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onReply(request.id, 'once')}
-            disabled={isReplying}
-            className="px-2.5 py-0.5 rounded text-[length:var(--fs-sm)] font-medium bg-text-100 text-bg-000 hover:bg-text-200 transition-colors disabled:opacity-50"
-          >
-            {t('permissionDialog.allowOnce')}
-          </button>
-          <button
-            onClick={handleAlways}
-            disabled={isReplying}
-            className="px-2.5 py-0.5 rounded text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 transition-colors disabled:opacity-50"
-          >
-            {t('permissionDialog.alwaysAllow')}
-          </button>
-          <button
-            onClick={() => onReply(request.id, 'reject')}
-            disabled={isReplying}
-            className="px-2.5 py-0.5 rounded text-[length:var(--fs-sm)] text-text-400 hover:text-danger-100 transition-colors disabled:opacity-50"
-          >
-            {t('common:reject')}
-          </button>
-        </div>
-      )}
+  const actions = resolved ? (
+    <div className="flex items-center gap-2 text-[length:var(--fs-sm)] text-text-400">
+      <Spinner size="sm" tone="accent" />
+      <span>{t('permissionDialog.applying', { defaultValue: 'Applying…' })}</span>
     </div>
+  ) : (
+    <>
+      <button
+        onClick={() => onReply(request.id, 'once')}
+        disabled={isReplying}
+        className="px-2.5 h-7 rounded-md text-[length:var(--fs-sm)] font-medium bg-text-100 text-bg-000 hover:bg-text-200 transition-colors disabled:opacity-50"
+      >
+        {t('permissionDialog.allowOnce')}
+      </button>
+      <button
+        onClick={handleAlways}
+        disabled={isReplying}
+        className="px-2.5 h-7 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:bg-bg-200 transition-colors disabled:opacity-50"
+      >
+        {t('permissionDialog.alwaysAllow')}
+      </button>
+      <button
+        onClick={() => onReply(request.id, 'reject')}
+        disabled={isReplying}
+        className="px-2.5 h-7 rounded-md text-[length:var(--fs-sm)] text-text-400 hover:bg-danger-100/10 transition-colors disabled:opacity-50"
+      >
+        {t('common:reject')}
+      </button>
+    </>
+  )
+
+  if (!showContent) {
+    return <div className="flex items-center gap-2">{actions}</div>
+  }
+
+  return (
+    <ApprovalCard
+      header={
+        <>
+          <ShieldIcon size={14} className="shrink-0 text-text-400" />
+          <span className="font-medium text-text-300 font-mono">{request.permission}</span>
+          {filepath && <span className="min-w-0 truncate text-text-500 font-mono">{filepath}</span>}
+        </>
+      }
+      footer={actions}
+    >
+      {isFileEdit && diffData ? (
+        <ContentBlock
+          stateKey={`permission:${request.sessionID}:${request.id}:diff`}
+          label={request.permission}
+          filePath={filepath}
+          diff={diffData}
+          collapsible={false}
+          compact={isCompact}
+        />
+      ) : (
+        <ContentBlock
+          stateKey={`permission:${request.sessionID}:${request.id}:patterns`}
+          label={request.permission}
+          content={patternsText}
+          language="bash"
+          collapsible={false}
+          compact={isCompact}
+        />
+      )}
+    </ApprovalCard>
   )
 })

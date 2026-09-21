@@ -69,7 +69,9 @@
     "title": "Question",
     "moreCount": "+{{count}} more",
     "minimize": "Minimize",
-    "typeYourAnswer": "Type your own answer..."
+    "typeYourAnswer": "Type your own answer...",
+    "pageOf": "{{current}} / {{total}}",
+    "answeredCount": "{{done}}/{{total}} answered"
   },
   "permissionDialog": {
     "permission": "Permission: {{permission}}",
@@ -161,8 +163,10 @@
     "deleteChatConfirm": "Are you sure you want to delete this chat? This action cannot be undone.",
     "moveFolderUp": "Move folder up",
     "moveFolderDown": "Move folder down",
+    "loadingChats": "Loading chats",
     "noChatsInFolder": "No chats in this folder",
     "showMoreChats": "Show more chats",
+    "showFewerChats": "Show fewer chats",
     "selectedSessions": "{{count}} selected",
     "selectedProjects": "{{count}} projects",
     "selectedMixed": "{{sessions}} + {{projects}} selected",
@@ -250,5 +254,62 @@
   },
   "errors": {
     "reloadConversation": "Reload conversation"
+  },
+  "workStatus": {
+    "ariaLabel": "Work status",
+    "railToggle": "Show or hide the work status panel",
+    "context": {
+      "label": "Context"
+    },
+    "section": {
+      "session": "Session",
+      "project": "Project",
+      "turnStats": "Turn stats",
+      "subagents": "Subagents",
+      "todos": "Tasks",
+      "mcp": "MCP",
+      "pinnedMessages": "Pinned messages",
+      "contextSources": "Context sources"
+    },
+    "turnStats": {
+      "summary": "{{turns}} turns · {{steps}} steps",
+      "modelTime": "Model time",
+      "toolTime": "Tool time",
+      "ttft": "TTFT",
+      "tps": "Output speed",
+      "cacheHit": "Cache hit"
+    },
+    "subagent": {
+      "working": "Working",
+      "done": "Done",
+      "failed": "Failed"
+    },
+    "mcp": {
+      "toggle": "Toggle {{name}}",
+      "needsAuth": "Sign in",
+      "failed": "Failed"
+    },
+    "pinned": {
+      "unavailable": "Pinned message",
+      "unpin": "Unpin",
+      "reveal": "Reveal message",
+      "pin": "Pin to panel",
+      "unpinned": "Unpinned"
+    },
+    "breakdown": {
+      "skills": "Skills",
+      "mcp": "MCP servers",
+      "skillCount": "{{count}} skills",
+      "mcpCount": "{{count}} MCP"
+    },
+    "sections": {
+      "open": "Choose sections",
+      "dialogTitle": "Panel sections",
+      "dialogDescription": "Choose what the work-status panel shows. Hidden sections keep their data — they are only left out of the panel.",
+      "reorder": "Drag {{label}} to reorder",
+      "allHidden": "No sections selected",
+      "showAll": "Show all",
+      "noneWarning": "The panel will appear empty."
+    }
   }
 }

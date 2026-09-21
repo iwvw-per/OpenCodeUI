@@ -71,7 +71,7 @@ export function ActiveSessionItem({ entry, resolvedSession, isSelected, onSelect
       <div className="flex-1 min-w-0 pr-1">
         <p
           className={`text-[length:var(--fs-md)] truncate font-medium ${
-            isSelected ? 'text-text-100' : 'text-text-200 group-hover:text-text-100'
+            isSelected ? 'text-text-100' : 'text-text-200'
           }`}
           title={displayTitle}
         >

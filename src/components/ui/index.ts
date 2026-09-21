@@ -17,7 +17,33 @@ export { Input, Textarea } from './Input'
 export { Label } from './Label'
 export { Checkbox } from './Checkbox'
 export { Switch } from './Switch'
-export { Select, SelectTrigger, SelectContent, SelectItem, SelectLabel, SelectSeparator, SelectGroup, SelectValue } from './Select'
+export {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectGroup,
+  SelectValue,
+} from './Select'
+
+// 反馈与状态
+export { Spinner } from './Spinner'
+export type { SpinnerSize, SpinnerTone, SpinnerVariant } from './Spinner'
+export { LoadingState } from './LoadingState'
+export { StatusDot } from './StatusDot'
+export type { StatusTone } from './StatusDot'
+export { Chip } from './Chip'
+export type { ChipTone, ChipSize } from './Chip'
+export { ProgressBar } from './ProgressBar'
+
+// 披露（折叠行）
+export { DisclosureRow } from './DisclosureRow'
+export type { DisclosureRowSize, DisclosureLabelTone } from './DisclosureRow'
+
+// 审批卡片
+export { ApprovalCard } from './ApprovalCard'
 
 // 导航与布局
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './Tabs'

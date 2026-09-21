@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog, Button } from '../../../components/ui'
-import { ArchiveIcon, TrashIcon, UndoIcon } from '../../../components/Icons'
+import { ArchiveIcon, FolderIcon, TrashIcon, UndoIcon } from '../../../components/Icons'
 import { useArchivedSessions } from '../../../hooks'
 import { splitSessionKey } from '../../../utils/sessionKey'
+import { getDirectoryName } from '../../../utils/directoryUtils'
 import { cn } from '../../../utils/cn'
 
 interface ArchivedSessionsDialogProps {
@@ -109,17 +110,20 @@ function ArchivedSessionsBody({ serverId }: { serverId?: string }) {
               <div className="truncate text-[length:var(--fs-sm)] text-text-200">
                 {session.title || t('commands:sessions.untitledChat', { defaultValue: 'Untitled' })}
               </div>
-              <div className="mt-0.5 flex items-center gap-2 text-[length:var(--fs-xxs)] text-text-500">
-                <span className="tabular-nums">{formatArchivedAt(session.time?.archived)}</span>
-                {session.directory && (
-                  <>
-                    <span className="opacity-30">·</span>
-                    <span className="truncate font-mono" title={session.directory}>
-                      {session.directory}
-                    </span>
-                  </>
-                )}
+              {/* 时间与项目各占一行：挤在一行时目录会被时间压得只剩几个字符，
+                  长路径也容易把行撑乱。上下两行后两者都完整可读。 */}
+              <div className="mt-0.5 text-[length:var(--fs-xxs)] tabular-nums text-text-500">
+                {formatArchivedAt(session.time?.archived)}
               </div>
+              {session.directory && (
+                <div
+                  className="mt-0.5 flex items-center gap-1 text-[length:var(--fs-xxs)] text-text-400"
+                  title={session.directory}
+                >
+                  <FolderIcon size={11} className="shrink-0 opacity-60" />
+                  <span className="min-w-0 truncate">{getDirectoryName(session.directory)}</span>
+                </div>
+              )}
             </div>
 
             {isConfirming ? (
@@ -145,7 +149,7 @@ function ArchivedSessionsBody({ serverId }: { serverId?: string }) {
                   onClick={() => void handleRestore(session.id)}
                   className={cn(
                     'flex h-7 items-center gap-1 rounded-md px-2 text-[length:var(--fs-xxs)]',
-                    'text-text-400 hover:bg-bg-200 hover:text-text-100 transition-colors',
+                    'text-text-400 hover:bg-bg-200 transition-colors',
                     isBusy && 'opacity-50',
                   )}
                 >

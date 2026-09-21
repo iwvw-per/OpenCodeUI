@@ -16,15 +16,18 @@ import {
   PlugIcon,
   TeachIcon,
   GitWorktreeIcon,
+  PlusIcon,
 } from './Icons'
 import { layoutStore, useLayoutStore, type PanelTab, type PanelPosition, type PanelTabType } from '../store/layoutStore'
 import { updatePtySession } from '../api/pty'
 import { useTheme } from '../hooks'
 import { uiErrorHandler } from '../utils'
+import { interactive } from '../utils/interaction'
 import { getInternalDragSnapshot, startInternalDrag, subscribeInternalDrag, subscribeInternalDrop } from '../lib/internalDragCore'
 import { useDragEdgeAutoScroll } from '../hooks/useDragEdgeAutoScroll'
 import { IconButton } from './ui/IconButton'
 import { ContextMenuItem } from './ui/ContextMenuItem'
+import { cn } from '../utils/cn'
 
 // ============================================
 // Types
@@ -335,10 +338,12 @@ export const PanelContainer = memo(function PanelContainer({
             />
           ))}
 
-          {/* New Tab Button */}
+          {/* New Tab Button — 与顶栏按钮同尺寸正方形 IconButton */}
           {onNewTerminal && (
-            <button
+            <IconButton
               ref={addButtonRef}
+              aria-label={t('panelContainer.addTab')}
+              title={t('panelContainer.addTab')}
               onClick={() => {
                 if (addMenuPos) {
                   setAddMenuPos(null)
@@ -355,14 +360,13 @@ export const PanelContainer = memo(function PanelContainer({
                   })
                 }
               }}
-              className={`
-                p-2 ml-1 rounded-md transition-colors shrink-0
-                ${addMenuPos ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:text-text-100 hover:bg-bg-200'}
-              `}
-              title={t('panelContainer.addTab')}
+              className={cn(
+                'ml-1',
+                addMenuPos ? interactive.toggleActiveNeutral : 'text-text-400 hover:text-text-100',
+              )}
             >
-              <span className="text-[length:var(--fs-heading-2)] leading-none">+</span>
-            </button>
+              <PlusIcon size={16} />
+            </IconButton>
           )}
         </div>
 
@@ -569,7 +573,7 @@ const PanelTabButton = memo(function PanelTabButton({
         ${
           isActive
             ? 'bg-bg-000 text-text-100 shadow-sm border-border-200/50'
-            : 'text-text-300 hover:text-text-200 hover:bg-bg-200'
+            : 'text-text-300 hover:bg-bg-200'
         }
         ${isDragging ? 'opacity-40 scale-95' : ''}
         ${isDragOver ? 'border-accent-main-100 bg-accent-main-100/10' : ''}

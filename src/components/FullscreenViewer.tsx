@@ -141,7 +141,7 @@ export function ViewModeSwitch({ viewMode, onChange }: { viewMode: ViewMode; onC
         type="button"
         aria-pressed={viewMode === 'split'}
         className={`px-2.5 py-1 rounded-md transition-all ${
-          viewMode === 'split' ? 'bg-bg-100 text-text-100 shadow-sm' : 'text-text-400 hover:text-text-200'
+          viewMode === 'split' ? 'bg-bg-100 text-text-100 shadow-sm border border-border-200' : 'text-text-400 hover:bg-bg-200 border border-transparent'
         }`}
         onClick={() => onChange('split')}
       >
@@ -151,7 +151,7 @@ export function ViewModeSwitch({ viewMode, onChange }: { viewMode: ViewMode; onC
         type="button"
         aria-pressed={viewMode === 'unified'}
         className={`px-2.5 py-1 rounded-md transition-all ${
-          viewMode === 'unified' ? 'bg-bg-100 text-text-100 shadow-sm' : 'text-text-400 hover:text-text-200'
+          viewMode === 'unified' ? 'bg-bg-100 text-text-100 shadow-sm border border-border-200' : 'text-text-400 hover:bg-bg-200 border border-transparent'
         }`}
         onClick={() => onChange('unified')}
       >

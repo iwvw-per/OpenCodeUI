@@ -12,6 +12,7 @@ import { Trans, useTranslation } from 'react-i18next'
 import { ChatArea, Header, InputBox, PermissionDialog, QuestionDialog, type ChatAreaHandle } from '.'
 import { type ModelSelectorHandle } from './ModelSelector'
 import { OutlineIndex } from '../../components/OutlineIndex'
+import { LoadingState } from '../../components/ui/LoadingState'
 import { PaneHeader } from './PaneHeader'
 import { PaneDropOverlay, resolveDropZone, type DropZone, type PaneDropOverlayHandle } from './PaneDropOverlay'
 import { useFolderProjectDrop } from './useFolderProjectDrop'
@@ -26,12 +27,16 @@ import { ChatViewportProvider, canUseSplitPane, useChatViewportMaybe, type ChatV
 import { useChatPageViewModel } from './useChatPageViewModel'
 import { SessionNavigationContext } from '../../contexts/SessionNavigationContext'
 import { useDirectory } from '../../contexts/useDirectory'
+import { usesCustomDesktopTitlebar } from '../../utils/tauri'
 import { paneLayoutStore } from '../../store/paneLayoutStore'
 import { autoApproveStore } from '../../store/autoApproveStore'
 import { messageStore, paneControllerStore, useHiddenModelKeys } from '../../store'
 import { restoreModelSelection } from '../../utils/sessionHelpers'
 import { findModelByKey, getModelKey } from '../../utils/modelUtils'
 import { useTheme } from '../../hooks/useTheme'
+import { useWorkStatus } from '../../store/workStatusStore'
+import { WorkStatusPanel } from '../workStatus/WorkStatusPanel'
+import { useWorkStatusVisibility } from '../workStatus/useWorkStatusVisibility'
 import type { Attachment } from '../../api'
 import type { MessageError } from '../../types/message'
 import { getInternalDragSnapshot, subscribeInternalDrag, subscribeInternalDrop } from '../../lib/internalDragCore'
@@ -105,9 +110,6 @@ const PANE_VIEWPORT: ChatViewportValue = {
     setSidebarRequestedWidth: () => {},
   },
 }
-
-/** 子任务分屏叠加的上限，超出后改为替换当前 pane */
-const MAX_SUBTASK_SPLIT_PANES = 3
 
 let splitSessionNavigationToken = 0
 
@@ -235,9 +237,10 @@ export const ChatPane = memo(function ChatPane({
   /**
    * 子任务「在分屏中打开」：
    * 1. 若已有 pane 正在展示该子会话，直接聚焦它，避免同一子会话重复出现；
-   * 2. 未分屏且视口支持分屏时，向右侧新开 pane 打开子会话（父会话保留）；
-   * 3. 已分屏时继续向右侧叠加，达到上限则替换当前 pane；
-   * 4. 不支持分屏 / 无 session 时返回 false，调用方回退到 navigateToSession。
+   * 2. 已经存在一个子代理 pane 时，复用它（替换内容），不再新开——
+   *    子代理是「辅助查看」，点多个时应该互相覆盖，而不是堆满屏幕；
+   * 3. 没有子代理 pane 且视口支持分屏时，向右侧新开一个；
+   * 4. 不支持分屏 / 无 pane 时返回 false，调用方回退到 navigateToSession。
    */
   const openSessionInSplit = useCallback(
     (sid: string, directory?: string): boolean => {
@@ -253,25 +256,27 @@ export const ChatPane = memo(function ChatPane({
         return true
       }
 
-      const previousFocusedPaneId = paneLayoutStore.getFocusedPaneId()
-      const isSplit = paneLayoutStore.getSnapshot().isSplit
-
-      // 已分屏且 pane 数达上限时，替换一个已有的子任务 pane 而不是继续叠加；
-      // 优先替换非当前 pane，避免把用户正在看的主会话顶掉
-      if (isSplit && paneLayoutStore.getSnapshot().paneCount >= MAX_SUBTASK_SPLIT_PANES) {
-        const subtaskLeaf = paneLayoutStore
-          .allLeaves()
-          .find(leaf => leaf.id !== paneId && leaf.sessionId && paneLayoutStore.isSubtaskSession(leaf.sessionId))
-        const targetPaneId = subtaskLeaf?.id ?? paneId
-        if (!paneLayoutStore.findLeaf(targetPaneId)) return false
+      // 已有子代理 pane → 复用最靠后的那个，替换其内容。
+      // 这样连续点击多个子代理只占一个 pane，后点到的覆盖先前的。
+      const reusablePane = paneLayoutStore
+        .allLeaves()
+        .filter(leaf => leaf.id !== paneId && leaf.sessionId && paneLayoutStore.isSubtaskSession(leaf.sessionId))
+        .pop()
+      if (reusablePane) {
         paneLayoutStore.markSubtaskSession(sessionKey)
-        navigatePaneToSession(targetPaneId, sessionKey, directory)
+        navigatePaneToSession(reusablePane.id, sessionKey, directory)
         return true
       }
 
+      const previousFocusedPaneId = paneLayoutStore.getFocusedPaneId()
       const newPaneId = paneLayoutStore.splitPaneToSide(paneId, 'right', null)
       if (!newPaneId) return false
       paneLayoutStore.markSubtaskSession(sessionKey)
+
+      // 三分屏（两个主对话 + 一个子代理）时，让三个 pane 尺寸一致
+      if (paneLayoutStore.getSnapshot().paneCount === 3) {
+        paneLayoutStore.equalizeSplits()
+      }
 
       // 焦点保持在原 pane（用户在主任务视图继续操作）；新 pane 只负责展示子会话
       if (previousFocusedPaneId && paneLayoutStore.findLeaf(previousFocusedPaneId)) {
@@ -398,6 +403,8 @@ export const ChatPane = memo(function ChatPane({
   const messagesReady = !routeSessionId || loadState === 'loaded' || loadState === 'error'
   const chatAreaMountKey = messagesReady ? (routeSessionId ?? 'home') : null
   const inputDisabled = !!routeSessionId && loadState === 'error' && messages.length === 0
+  // 子代理 pane：只读展示子代理会话，不提供输入框
+  const isSubtaskPane = !!routeSessionId && paneLayoutStore.isSubtaskSession(routeSessionId)
   const chatPageViewModel = useChatPageViewModel(renderedMessages)
 
   // 切 session remount 时默认视为贴底，避免回底按钮闪一下
@@ -853,6 +860,14 @@ export const ChatPane = memo(function ChatPane({
 
   const { inlineToolRequests, outlineCurrentHighlight } = useTheme()
 
+  // 工作状态面板：用户开关 + 视口宽度共同决定是否占位。
+  // 分屏 pane 不显示（宽度不够，且信息会和主视图重复）。
+  const workStatus = useWorkStatus()
+  const { rowRef: workStatusRowRef, visible: workStatusVisible } = useWorkStatusVisibility({
+    disabled: showCompactShell,
+    enabled: workStatus.enabled,
+  })
+
   const inlineToolRequestCtx = useMemo<InlineToolRequestContextValue>(
     () => ({
       pendingPermissions: pendingPermissionRequests,
@@ -901,29 +916,40 @@ export const ChatPane = memo(function ChatPane({
   // ============================================
   // Render
   // ============================================
+  // 顶栏横跨整个 pane 宽度（含工作状态卡片上方），与参考布局一致：
+  // 卡片在顶栏下方，而不是和顶栏并排。
+  // 桌面端（Windows/macOS）single 模式：Header 已并入窗口标题栏，这里只留锚点占位，
+  // 供斜杠/提及菜单按 pane root 查找 data-chat-header-shadow 计算上边界。
+  const desktopMergedTitlebar = displayMode === 'single' && usesCustomDesktopTitlebar()
+  const header =
+    displayMode === 'single' &&
+    (desktopMergedTitlebar ? (
+      <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
+        <div data-chat-header-shadow className="absolute top-0 left-0 right-0 h-8" />
+      </div>
+    ) : (
+      <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
+        <div className="pointer-events-auto">
+          <Header
+            onOpenSidebar={onOpenSidebar}
+            onToggleRightPanel={onToggleRightPanel}
+            onSplitPane={onSplitPane}
+            isPaneFullscreen={isPaneFullscreen}
+            onTogglePaneFullscreen={onTogglePaneFullscreen}
+          />
+        </div>
+      </div>
+    ))
+
   const chatContent = (
     <div className="flex-1 relative overflow-hidden flex flex-col min-h-0">
-      {displayMode === 'single' && (
-        <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
-          <div className="pointer-events-auto">
-            <Header
-              onOpenSidebar={onOpenSidebar}
-              onToggleRightPanel={onToggleRightPanel}
-              onSplitPane={onSplitPane}
-              isPaneFullscreen={isPaneFullscreen}
-              onTogglePaneFullscreen={onTogglePaneFullscreen}
-            />
-          </div>
-        </div>
-      )}
-
       <div className="absolute inset-0">
         <InlineToolRequestContext.Provider value={inlineToolRequestCtx}>
           <ErrorBoundary onOpenSettings={onOpenSettings}>
             {chatAreaMountKey == null ? (
               <div className="h-full flex items-center justify-center">
-                <div className="flex flex-col items-center gap-3 text-text-400 session-loading-indicator">
-                  <span className="w-5 h-5 border-2 border-text-400/30 border-t-text-400 rounded-full animate-spin" />
+                <div className="session-loading-indicator">
+                  <LoadingState />
                 </div>
               </div>
             ) : (
@@ -987,62 +1013,64 @@ export const ChatPane = memo(function ChatPane({
             </div>
           </div>
         )}
-        <InputBox
-          paneId={paneId}
-          onSend={handleSend}
-          onAbort={handleAbort}
-          onCommand={handleCommand}
-          disabled={inputDisabled}
-          isStreaming={isStreaming}
-          agents={agents}
-          selectedAgent={selectedAgent}
-          onAgentChange={handleAgentChange}
-          variants={currentModel?.variants ?? []}
-          selectedVariant={selectedVariant}
-          onVariantChange={handleVariantChange}
-          fileCapabilities={fileCapabilities}
-          models={visibleModels}
-          selectedModelKey={selectedModelKey}
-          onModelChange={handleModelChange}
-          modelsLoading={modelsLoading}
-          modelSelectorRef={modelSelectorRef}
-          rootPath={effectiveDirectory}
-          sessionId={routeSessionId}
-          revertedText={revertedMessage?.text}
-          revertedAttachments={revertedMessage?.attachments}
-          canRedo={canRedo}
-          revertSteps={redoSteps}
-          onRedo={handleRedoWithAnimation}
-          onRedoAll={handleRedoAll}
-          onClearRevert={clearRevert}
-          registerInputBox={registerInputBox}
-          isAtBottom={isAtBottom}
-          showScrollToBottom={!isAtBottom}
-          onScrollToBottom={handleScrollToBottom}
-          collapsedPermission={
-            !inlineToolRequests && pendingPermissionRequests.length > 0 && permissionCollapsed
-              ? {
-                  label: t('chat:permissionDialog.permission', {
-                    permission: pendingPermissionRequests[0].permission,
-                  }),
-                  queueLength: pendingPermissionRequests.length,
-                  onExpand: () => setPermissionCollapsed(false),
-                }
-              : undefined
-          }
-          collapsedQuestion={
-            !inlineToolRequests &&
-            pendingPermissionRequests.length === 0 &&
-            pendingQuestionRequests.length > 0 &&
-            questionCollapsed
-              ? {
-                  label: t('chat:questionDialog.title'),
-                  queueLength: pendingQuestionRequests.length,
-                  onExpand: () => setQuestionCollapsed(false),
-                }
-              : undefined
-          }
-        />
+        {!isSubtaskPane && (
+          <InputBox
+            paneId={paneId}
+            onSend={handleSend}
+            onAbort={handleAbort}
+            onCommand={handleCommand}
+            disabled={inputDisabled}
+            isStreaming={isStreaming}
+            agents={agents}
+            selectedAgent={selectedAgent}
+            onAgentChange={handleAgentChange}
+            variants={currentModel?.variants ?? []}
+            selectedVariant={selectedVariant}
+            onVariantChange={handleVariantChange}
+            fileCapabilities={fileCapabilities}
+            models={visibleModels}
+            selectedModelKey={selectedModelKey}
+            onModelChange={handleModelChange}
+            modelsLoading={modelsLoading}
+            modelSelectorRef={modelSelectorRef}
+            rootPath={effectiveDirectory}
+            sessionId={routeSessionId}
+            revertedText={revertedMessage?.text}
+            revertedAttachments={revertedMessage?.attachments}
+            canRedo={canRedo}
+            revertSteps={redoSteps}
+            onRedo={handleRedoWithAnimation}
+            onRedoAll={handleRedoAll}
+            onClearRevert={clearRevert}
+            registerInputBox={registerInputBox}
+            isAtBottom={isAtBottom}
+            showScrollToBottom={!isAtBottom}
+            onScrollToBottom={handleScrollToBottom}
+            collapsedPermission={
+              !inlineToolRequests && pendingPermissionRequests.length > 0 && permissionCollapsed
+                ? {
+                    label: t('chat:permissionDialog.permission', {
+                      permission: pendingPermissionRequests[0].permission,
+                    }),
+                    queueLength: pendingPermissionRequests.length,
+                    onExpand: () => setPermissionCollapsed(false),
+                  }
+                : undefined
+            }
+            collapsedQuestion={
+              !inlineToolRequests &&
+              pendingPermissionRequests.length === 0 &&
+              pendingQuestionRequests.length > 0 &&
+              questionCollapsed
+                ? {
+                    label: t('chat:questionDialog.title'),
+                    queueLength: pendingQuestionRequests.length,
+                    onExpand: () => setQuestionCollapsed(false),
+                  }
+                : undefined
+            }
+          />
+        )}
       </div>
 
       {!inlineToolRequests && pendingPermissionRequests.length > 0 && (
@@ -1085,10 +1113,8 @@ export const ChatPane = memo(function ChatPane({
         data-chat-pane-root="true"
         className={
           showCompactShell
-            ? `relative h-full flex flex-col overflow-hidden rounded-lg transition-colors duration-200 ${
-                isFocused
-                  ? 'ring-1 ring-accent-main-100/60 bg-bg-000'
-                  : 'ring-1 ring-border-200/30 bg-bg-000 hover:ring-border-200/50'
+            ? `relative h-full flex flex-col overflow-hidden transition-colors duration-200 ${
+                isFocused ? 'bg-bg-000' : 'bg-bg-000'
               }`
             : 'relative h-full flex flex-col overflow-hidden bg-bg-000'
         }
@@ -1109,7 +1135,32 @@ export const ChatPane = memo(function ChatPane({
             onFocus={handlePaneFocus}
           />
         )}
-        {chatContent}
+        {/* 顶栏横跨整个 pane 宽度（含工作状态卡片上方），卡片因此落在顶栏下方，
+            而不是与顶栏并排。Header 自身是 absolute 覆盖式布局，所以这里只作占位锚点。 */}
+        {header}
+        {/* 工作状态卡片是对话列的兄弟节点，不是浮层：它占自己的宽度把对话挤窄。
+            data-chat-area 标记的这一层宽度不受卡片显隐影响，供可见性测量使用。
+            右侧浮层工具面板滑入时（--right-drawer-width），整行让出面板宽度：
+            对话与工作状态卡片都随之左移，既不盖住卡片，顶栏（absolute 覆盖式）
+            也保持全宽不动。 */}
+        <div
+          ref={workStatusRowRef}
+          data-chat-area="true"
+          className="flex flex-1 min-h-0 min-w-0 overflow-hidden transition-[padding] duration-300 ease-[cubic-bezier(0.25,1,0.5,1)]"
+          style={{ paddingRight: 'var(--right-drawer-width, 0px)' }}
+        >
+          {chatContent}
+          {!showCompactShell && (
+            <WorkStatusPanel
+              sessionId={routeSessionId}
+              directory={effectiveDirectory}
+              serverId={paneServerId}
+              contextLimit={contextLimit ?? 0}
+              visible={workStatusVisible}
+              onScrollToMessage={handleOutlineScrollToMessage}
+            />
+          )}
+        </div>
         <PaneDropOverlay ref={overlayRef} />
         <FolderProjectDropOverlay active={isFolderDropActive} />
       </div>

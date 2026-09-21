@@ -106,7 +106,9 @@ export function SessionChildrenSlot({
   if (!list?.length && !loading) return null
 
   return (
-    <div className="ml-3">
+    // 不再用 ml-3 整体缩进：子行的悬停高亮要和父行左右对齐，
+    // 缩进会把高亮框一起推右。层级改由子行自身的 padding 表达。
+    <div>
       {loading ? (
         <div className="flex items-center py-1.5 px-2">
           <SpinnerIcon size={10} className="animate-spin text-accent-main-100" />

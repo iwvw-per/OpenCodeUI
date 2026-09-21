@@ -551,8 +551,8 @@ function MultiToggle({ options, value, onChange }: { options: string[]; value: s
             onClick={() => onChange(active ? value.filter(v => v !== option) : [...value, option])}
             className={`rounded-md border px-2.5 py-1 text-[length:var(--fs-xs)] transition-colors duration-150 ${
               active
-                ? 'border-accent-main-100/20 bg-accent-main-100/10 text-accent-main-100 font-medium'
-                : 'border-border-200/60 text-text-400 hover:bg-bg-200 hover:text-text-200'
+                ? 'border-accent-main-100/20 bg-accent-main-100/10 text-accent-main-100'
+                : 'border-border-200/60 text-text-400 hover:bg-bg-200'
             }`}
           >
             {option}

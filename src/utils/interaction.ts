@@ -23,7 +23,7 @@
  * 每档都包含完整的 hover / 按下反馈，`focusRing` 单独提供以便组合到
  * 已经自带 hover 的控件上。
  *
- * 两条硬性约定（全站统一，不要在各调用点覆盖）：
+ * 三条硬性约定（全站统一，不要在各调用点覆盖）：
  *
  * 1. **按下反馈只用颜色/透明度，不用几何变换。**
  *    禁止 `active:scale-*` / `active:translate-*` / `active:rotate-*`。
@@ -34,6 +34,13 @@
  *    hover = `bg-bg-200`，选中 = `bg-bg-200 text-text-100`（同底色，靠文字色区分）。
  *    加边框会撑开 1~2px 推动相邻元素；改用 ring 则会与键盘焦点环撞车，
  *    使"焦点环只在键盘导航时出现"这条约定失效。
+ *
+ * 3. **交互态不得改变文字样式（含颜色）。**
+ *    禁止 `hover:text-*` / `active:text-*` / `group-hover:text-*` /
+ *    `focus:text-*` / `focus-visible:text-*` 让文字加粗、缩放或改色的写法，
+ *    交互反馈只由底色承担。例外：**纯图标按钮**（子元素只有图标、无文字）
+ *    与正文链接可以用文字色表达 hover。选中/激活等持久态的"选中指示色"
+ *    （如 `bg-bg-200 text-text-100`）不属于交互反馈，保留。
  */
 export const interactive = {
   /**
@@ -81,7 +88,7 @@ export const interactive = {
 
   /**
    * 危险操作（删除、断开、清空）：悬停转为危险色浅底。
-   * 注意文字色变化由调用方决定，通常配 `hover:text-danger-100`。
+   * 文字色保持中性（交互态不得改文字色，见文件头部约定 3）。
    */
   danger: [
     'cursor-pointer select-none',
@@ -92,7 +99,7 @@ export const interactive = {
 
   /**
    * 警示操作（重置、覆盖、还原）：语义弱于 danger，用于"可恢复但有损失"的操作。
-   * 同 danger，文字色通常配 `hover:text-warning-100`。
+   * 文字色保持中性（交互态不得改文字色，见文件头部约定 3）。
    */
   warning: [
     'cursor-pointer select-none',
@@ -102,8 +109,8 @@ export const interactive = {
   ].join(' '),
 
   /**
-   * 强调操作（打开、跳转、新增）：悬停转为 accent 浅底，
-   * 通常配 `hover:text-accent-main-100`。
+   * 强调操作（打开、跳转、新增）：悬停转为 accent 浅底。
+   * 文字色保持中性（交互态不得改文字色，见文件头部约定 3）。
    */
   accent: [
     'cursor-pointer select-none',
@@ -144,15 +151,28 @@ export const interactive = {
    * 禁用态统一写法。放在交互态之后，用 `disabled:` 保证优先级不依赖顺序。
    */
   disabled: 'disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none',
+
+  /**
+   * 工具栏切换按钮的「开」态：底色 + 主色文字，再叠加一圈淡边框，
+   * 让已激活的开关按钮一眼可辨。需与关闭态基类 `border border-transparent`
+   * 组合使用，保证两种状态边框宽度一致、内容不位移。
+   */
+  toggleActive: 'bg-bg-200 text-accent-main-100 border border-border-200',
+
+  /**
+   * 中性激活态（菜单打开 / 开关开启）：与 `toggleActive` 同边框约定，
+   * 但文字保持中性主色而非强调色，用于菜单触发器等不需要强调色的场景。
+   */
+  toggleActiveNeutral: 'bg-bg-200 text-text-100 border border-border-200',
 } as const
 
 /**
- * 需要「选中即 accent 浅底」时使用的强调态。
- *
- * 仅用于**小型强调控件**（标签页、筛选 chip）——这类元素面积小，
- * accent 浅底能提供明确的"当前项"识别。列表行、文件树等大面积区域
- * 请用 `interactive.rowSelected`（中性底），否则大面积 accent 会压过内容。
- */
+   * 需要「选中即 accent 浅底」时使用的强调态。
+   *
+   * 仅用于**小型强调控件**（标签页、筛选 chip）——这类元素面积小，
+   * accent 浅底能提供明确的"当前项"识别。列表行、文件树等大面积区域
+   * 请用 `interactive.rowSelected`（中性底），否则大面积 accent 会压过内容。
+   */
 export const selectedAccent = 'bg-accent-main-100/15 text-text-100'
 
 export type InteractiveTone = keyof typeof interactive

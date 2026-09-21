@@ -177,7 +177,7 @@ export function ProjectSelector({
                 onAddProject()
                 setIsOpen(false)
               }}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[length:var(--fs-sm)] text-text-300 hover:text-text-100 hover:bg-bg-200 active:bg-bg-300 transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[length:var(--fs-sm)] text-text-300 hover:bg-bg-200 active:bg-bg-300 transition-colors"
             >
               <PlusIcon className="w-3.5 h-3.5" />
               {t('sessions.addProject')}

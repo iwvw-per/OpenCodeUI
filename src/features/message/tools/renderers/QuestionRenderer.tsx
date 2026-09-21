@@ -93,8 +93,8 @@ function AnsweredQuestion({ qa }: { qa: QAPair }) {
             <span
               key={idx}
               title={option.description}
-              className={`inline-flex min-h-7 items-start gap-1.5 px-2.5 py-1 text-[length:var(--fs-sm)] leading-5 rounded-md border ${
-                isSelected ? 'border-text-100 text-text-100 bg-bg-300/40' : 'border-border-200/60 text-text-500'
+              className={`inline-flex min-h-7 items-start gap-1.5 px-2.5 py-1 text-[length:var(--fs-sm)] leading-5 rounded-md ${
+                isSelected ? 'bg-bg-200 text-text-100' : 'text-text-500'
               }`}
             >
               {qa.multiple && (
@@ -119,7 +119,7 @@ function AnsweredQuestion({ qa }: { qa: QAPair }) {
           .map((customAnswer, idx) => (
             <span
               key={`custom-${idx}`}
-              className="inline-flex min-h-7 items-start gap-1.5 px-2.5 py-1 text-[length:var(--fs-sm)] leading-5 rounded-md border border-text-100 text-text-100 bg-bg-300/40"
+              className="inline-flex min-h-7 items-start gap-1.5 px-2.5 py-1 text-[length:var(--fs-sm)] leading-5 rounded-md bg-bg-200 text-text-100"
             >
               {qa.multiple && (
                 <span className="inline-flex h-5 w-3.5 shrink-0 items-center justify-center">

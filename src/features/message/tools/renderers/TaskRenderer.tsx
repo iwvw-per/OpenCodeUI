@@ -1,19 +1,20 @@
-import { memo, useState, useCallback, useRef, useEffect, type RefCallback } from 'react'
+import { memo, useCallback, useRef, useEffect, type RefCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ContentBlock } from '../../../../components'
-import { ChevronRightIcon, ExternalLinkIcon, StopIcon } from '../../../../components/Icons'
-import { useDisclosureScrollLock, useResponsiveMaxHeight } from '../../../../hooks'
+import { ExternalLinkIcon, StopIcon, UsersIcon } from '../../../../components/Icons'
+import { Chip } from '../../../../components/ui/Chip'
+import { DisclosureRow } from '../../../../components/ui/DisclosureRow'
+import { Spinner } from '../../../../components/ui/Spinner'
+import { StatusDot } from '../../../../components/ui/StatusDot'
+import { useResponsiveMaxHeight } from '../../../../hooks'
 import { useSessionState, messageStore, childSessionStore } from '../../../../store'
 import { useSessionNavigation } from '../../../../contexts/SessionNavigationContext'
-import { abortSession, getSessionMessages } from '../../../../api'
+import { getSessionMessages } from '../../../../api'
 import { makeSessionKey, splitSessionKey } from '../../../../utils/sessionKey'
 import { serverStore } from '../../../../store/serverStore'
 import { sessionErrorHandler } from '../../../../utils'
 import { formatToolName } from '../../../../utils/formatUtils'
-import { useUiDisclosureState } from '../../../../utils/uiDisclosureState'
 import type { ToolRendererProps } from '../types'
-import { MessageExpandPanel } from '../../messageExpand'
-import { useMessageExpandRender } from '../../messageExpandShared'
 import type { Message, TextPart, ToolPart } from '../../../../types/message'
 import { isVisibleTextPart } from '../../../../types/message'
 
@@ -29,32 +30,42 @@ const EMPTY_MESSAGES: Message[] = []
 // 4. 按需交互 - 输入框只在需要时显示
 // ============================================
 
+/**
+ * 子代理任务渲染器 —— 只负责「内容」，不再渲染表头。
+ *
+ * task 工具本身就是派生子代理的入口，两者是「调用手段」与「被调起的执行体」，
+ * 不是并列关系。此前它自己又画一行表头，导致同一个 task 出现
+ * 「Task 描述」+「explore 描述」两行重复、描述文字出现两次。
+ * 表头统一由 ToolPartView 的 task 行提供（图标 + 子代理徽标 + 描述）。
+ */
 export const TaskRenderer = memo(function TaskRenderer({ part, onFullscreenChange }: ToolRendererProps) {
+  return <TaskBody part={part} onFullscreenChange={onFullscreenChange} />
+})
+
+/**
+ * 子代理任务的「内容部分」：prompt、子会话消息、结果、错误。
+ *
+ * 不含表头——表头已由调用方（ToolPartView 的 task 行）提供。
+ * 这样 task 工具只渲染一行「[子代理徽标] 描述」，不再出现
+ * 「Task 描述」+「explore 描述」两行重复。
+ */
+export const TaskBody = memo(function TaskBody({
+  part,
+  onFullscreenChange,
+}: {
+  part: ToolPart
+  onFullscreenChange?: (isFullscreen: boolean) => void
+}) {
   const { t } = useTranslation('message')
-  const { currentSessionId, currentDirectory } = useSessionNavigation()
+  const { currentSessionId } = useSessionNavigation()
   const { state } = part
-  const [expanded, setExpanded] = useUiDisclosureState(
-    `message:${part.messageID}:tool:${part.id}:task-body`,
-    state.status === 'running' || state.status === 'pending',
-  )
-  const [isContentFullscreen, setIsContentFullscreen] = useState(false)
-  const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
-  const effectiveExpanded = expanded || isContentFullscreen
-  const shouldRenderBody = useMessageExpandRender(effectiveExpanded)
 
-  // 从 input 中提取任务信息
   const input = state.input as Record<string, unknown> | undefined
-  const description = (input?.description as string) || t('task.subtask')
   const prompt = (input?.prompt as string) || ''
-  const agentType = (input?.subagent_type as string) || 'general'
 
-  // 获取子 session ID —— 只信任 metadata.sessionId，它是后端为这个 tool call 精确设置的
-  // 不再用 useChildSessions fallback 取"最新子 session"，因为同一父 session 下多个 task
-  // 同时运行时，fallback 会导致所有 task 都渲染最新的那个子 session
   const metadata = state.metadata as Record<string, unknown> | undefined
   const targetSessionId = metadata?.sessionId as string | undefined
 
-  const isRunning = state.status === 'running' || state.status === 'pending'
   const isCompleted = state.status === 'completed'
   const isError = state.status === 'error'
 
@@ -63,108 +74,51 @@ export const TaskRenderer = memo(function TaskRenderer({ part, onFullscreenChang
 
   const handleContentFullscreenChange = useCallback(
     (isFullscreen: boolean) => {
-      setIsContentFullscreen(isFullscreen)
       onFullscreenChange?.(isFullscreen)
     },
     [onFullscreenChange],
   )
 
-  // Stop handler
-  const handleStop = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation()
-      if (!targetSessionId) return
-      // 子 session 属于当前消息所属 session（父 session）的服务器；
-      // metadata.sessionId 是原始 id，childSessionStore 存复合 key
-      const serverId = currentSessionId ? splitSessionKey(currentSessionId).serverId : undefined
-      const childScoped = targetSessionId.includes('::')
-        ? targetSessionId
-        : makeSessionKey(serverId ?? serverStore.getActiveServerId(), targetSessionId)
-      const childInfo = childSessionStore.getSessionInfo(childScoped)
-      const parentSessionId = childInfo?.parentID || currentSessionId || null
-      const parentState = parentSessionId ? messageStore.getSessionState(parentSessionId) : null
-      const directory = parentState?.directory || currentDirectory || ''
-      abortSession(targetSessionId, directory, serverId)
-    },
-    [targetSessionId, currentSessionId, currentDirectory],
-  )
-
-  // 运行时自动展开
-  useEffect(() => {
-    let frameId: number | null = null
-
-    if (isRunning) {
-      frameId = requestAnimationFrame(() => {
-        setExpanded(true, { touched: false, respectUser: true })
-      })
-    }
-
-    return () => {
-      if (frameId !== null) cancelAnimationFrame(frameId)
-    }
-  }, [isRunning, setExpanded])
-
   return (
-    <div ref={rootRef} className="min-w-0">
-      <div>
-        {/* Header */}
-        <TaskHeader
-          agentType={agentType}
-          description={description}
-          status={state.status}
-          expanded={expanded}
-          headerRef={headerRef}
-          onToggle={() => withScrollLock(() => setExpanded(!expanded))}
-          sessionId={targetSessionId}
-          onStop={isRunning ? handleStop : undefined}
+    <div className="pt-2 space-y-3">
+      {/* Prompt */}
+      {prompt && (
+        <div className="text-[length:var(--fs-xs)] text-text-500 leading-relaxed whitespace-nowrap overflow-hidden text-ellipsis">
+          {prompt}
+        </div>
+      )}
+
+      {/* 子会话内容 */}
+      {targetSessionId && (
+        <>
+          {prompt && <hr className="border-border-200/30" />}
+          <SubSessionView sessionId={targetSessionId} serverId={taskServerId} isParentRunning={state.status === 'running' || state.status === 'pending'} />
+        </>
+      )}
+
+      {/* 完成时的输出 */}
+      {isCompleted && state.output !== undefined && state.output !== null && (
+        <ContentBlock
+          label={t('task.result')}
+          stateKey={`message:${part.messageID}:tool:${part.id}:task-result`}
+          content={typeof state.output === 'string' ? state.output : JSON.stringify(state.output, null, 2)}
+          defaultCollapsed={true}
+          onFullscreenChange={handleContentFullscreenChange}
+          fullscreenId={`task:${part.sessionID}:${part.messageID}:${part.id}:result`}
         />
+      )}
 
-        {/* Body */}
-        <MessageExpandPanel open={effectiveExpanded} innerClassName="overflow-hidden">
-          {shouldRenderBody && (
-            <div className="pt-2 space-y-3">
-              {/* Prompt */}
-              {prompt && (
-                <div className="text-[length:var(--fs-xs)] text-text-500 leading-relaxed whitespace-nowrap overflow-hidden text-ellipsis">
-                  {prompt}
-                </div>
-              )}
-
-              {/* 子会话内容 */}
-              {targetSessionId && (
-                <>
-                  {prompt && <hr className="border-border-200/30" />}
-                  <SubSessionView sessionId={targetSessionId} serverId={taskServerId} isParentRunning={isRunning} />
-                </>
-              )}
-
-              {/* 完成时的输出 */}
-              {isCompleted && state.output !== undefined && state.output !== null && (
-                <ContentBlock
-                  label={t('task.result')}
-                  stateKey={`message:${part.messageID}:tool:${part.id}:task-result`}
-                  content={typeof state.output === 'string' ? state.output : JSON.stringify(state.output, null, 2)}
-                  defaultCollapsed={true}
-                  onFullscreenChange={handleContentFullscreenChange}
-                  fullscreenId={`task:${part.sessionID}:${part.messageID}:${part.id}:result`}
-                />
-              )}
-
-              {/* 错误信息 */}
-              {isError && state.error !== undefined && (
-                <ContentBlock
-                  label={t('task.error')}
-                  stateKey={`message:${part.messageID}:tool:${part.id}:task-error`}
-                  content={typeof state.error === 'string' ? state.error : JSON.stringify(state.error)}
-                  variant="error"
-                  onFullscreenChange={handleContentFullscreenChange}
-                  fullscreenId={`task:${part.sessionID}:${part.messageID}:${part.id}:error`}
-                />
-              )}
-            </div>
-          )}
-        </MessageExpandPanel>
-      </div>
+      {/* 错误信息 */}
+      {isError && state.error !== undefined && (
+        <ContentBlock
+          label={t('task.error')}
+          stateKey={`message:${part.messageID}:tool:${part.id}:task-error`}
+          content={typeof state.error === 'string' ? state.error : JSON.stringify(state.error)}
+          variant="error"
+          onFullscreenChange={handleContentFullscreenChange}
+          fullscreenId={`task:${part.sessionID}:${part.messageID}:${part.id}:error`}
+        />
+      )}
     </div>
   )
 })
@@ -172,6 +126,37 @@ export const TaskRenderer = memo(function TaskRenderer({ part, onFullscreenChang
 // ============================================
 // Task Header
 // ============================================
+
+/**
+ * 打开某个子会话：未分屏时优先在分屏视图中打开（父会话保留在当前 pane），
+ * 否则在当前 pane 内导航过去。
+ *
+ * 抽成 hook 是因为「task 工具行」和「子代理表头」现在是同一行（见 ToolPartView），
+ * 两处都要这个跳转，逻辑只能有一份。
+ */
+function useOpenTaskSession(sessionId?: string) {
+  const { navigateToSession, openSessionInSplit, currentSessionId, currentDirectory } = useSessionNavigation()
+
+  return useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (!sessionId) return
+
+      const serverId = currentSessionId ? splitSessionKey(currentSessionId).serverId : undefined
+      const scoped = sessionId.includes('::')
+        ? sessionId
+        : makeSessionKey(serverId ?? serverStore.getActiveServerId(), sessionId)
+      const childInfo = childSessionStore.getSessionInfo(scoped)
+      const parentSessionId = childInfo?.parentID || currentSessionId || null
+      const parentState = parentSessionId ? messageStore.getSessionState(parentSessionId) : null
+      const directory = parentState?.directory || currentDirectory || ''
+
+      if (openSessionInSplit?.(sessionId, directory || undefined)) return
+      navigateToSession(sessionId, directory || undefined)
+    },
+    [sessionId, navigateToSession, openSessionInSplit, currentSessionId, currentDirectory],
+  )
+}
 
 interface TaskHeaderProps {
   agentType: string
@@ -195,109 +180,93 @@ export const TaskHeader = memo(function TaskHeader({
   onStop,
 }: TaskHeaderProps) {
   const { t } = useTranslation('message')
-  const { navigateToSession, openSessionInSplit, currentSessionId, currentDirectory } = useSessionNavigation()
-  const handleOpenSession = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation()
-      if (!sessionId) return
-
-      const serverId = currentSessionId ? splitSessionKey(currentSessionId).serverId : undefined
-      const scoped = sessionId.includes('::')
-        ? sessionId
-        : makeSessionKey(serverId ?? serverStore.getActiveServerId(), sessionId)
-      const childInfo = childSessionStore.getSessionInfo(scoped)
-      const parentSessionId = childInfo?.parentID || currentSessionId || null
-      const parentState = parentSessionId ? messageStore.getSessionState(parentSessionId) : null
-      const directory = parentState?.directory || currentDirectory || ''
-
-      // 未分屏时优先在分屏视图中打开子会话（父会话保留在当前 pane）
-      if (openSessionInSplit?.(sessionId, directory || undefined)) return
-      navigateToSession(sessionId, directory || undefined)
-    },
-    [sessionId, navigateToSession, openSessionInSplit, currentSessionId, currentDirectory],
-  )
+  const handleOpenSession = useOpenTaskSession(sessionId)
 
   const isRunning = status === 'running' || status === 'pending'
   const isError = status === 'error'
   const isCompleted = status === 'completed'
 
-  const agentBadgeClass = `shrink-0 px-1.5 py-0.5 text-[length:var(--fs-xxs)] font-medium rounded-xs ${
-    isRunning
-      ? 'bg-accent-main-100/20 text-accent-main-100'
-      : isError
-        ? 'bg-danger-100/20 text-danger-100'
-        : isCompleted
-          ? 'bg-accent-secondary-100/20 text-accent-secondary-100'
-          : 'bg-bg-300 text-text-300'
-  }`
+  const agentBadgeTone = isRunning ? 'accent' : isError ? 'danger' : isCompleted ? 'success' : 'neutral'
 
   return (
-    <div ref={headerRef} className="flex items-center gap-2 py-1 group">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        aria-label={expanded ? t('showLess') : t('showMore')}
-        title={expanded ? t('showLess') : t('showMore')}
-        className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-sm text-text-400 transition-colors hover:bg-bg-200 hover:text-text-100 bg-transparent border-none p-0"
-      >
-        {/* Expand icon */}
-        <span className={`text-text-400 transition-transform ${expanded ? 'rotate-90' : ''}`}>
-          <ChevronRightIcon size={12} />
+    <DisclosureRow
+      ref={headerRef}
+      expanded={expanded}
+      onClick={onToggle}
+      // 与 ToolPartView 的工具行用同一套几何（inset={false} + pl-2 pr-0）。
+      // 此前用默认 inset（contentRow 的 -mx-1.5 rounded-md），
+      // 悬停高亮框的圆角和左右宽度都和上下相邻的工具行对不齐。
+      size="lg"
+      inset={false}
+      className="group/header gap-2.5 pl-2 pr-0"
+      truncateLabel={false}
+      labelTone={isRunning ? 'active' : isError ? 'error' : 'idle'}
+      icon={isRunning ? <Spinner size="sm" tone="muted" /> : <UsersIcon size={13} className="text-text-500" />}
+      label={
+        <span className="flex items-center gap-2">
+          <TaskAgentBadge agentType={agentType} tone={agentBadgeTone} sessionId={sessionId} />
+          <span className="min-w-0 truncate text-[length:var(--fs-sm)]">{description}</span>
         </span>
-      </button>
+      }
+      meta={
+        <>
+          {onStop && (
+            <button
+              type="button"
+              onClick={onStop}
+              aria-label={t('task.stop')}
+              className="w-[18px] h-[18px] p-0 flex items-center justify-center text-text-400 hover:text-danger-100 hover:bg-danger-100/10 active:bg-danger-100/20 rounded-sm transition-colors bg-transparent border-none"
+              title={t('task.stop')}
+            >
+              <StopIcon size={10} />
+            </button>
+          )}
+          {sessionId && (
+            <button
+              type="button"
+              onClick={handleOpenSession}
+              aria-label={t('task.openSession')}
+              className="p-1 text-text-500 hover:text-accent-main-100 transition-all bg-transparent border-none"
+              title={t('task.openSession')}
+            >
+              <ExternalLinkIcon size={12} />
+            </button>
+          )}
+        </>
+      }
+    />
+  )
+})
 
-      {sessionId ? (
-        <button
-          type="button"
-          onClick={handleOpenSession}
-          className={`${agentBadgeClass} border-none transition-opacity hover:opacity-80`}
-          title={t('task.openSession')}
-        >
-          {agentType}
-        </button>
-      ) : (
-        <span className={agentBadgeClass}>{agentType}</span>
-      )}
+/**
+ * 子代理徽标。有子会话时点它直接跳过去，否则就是个静态标签。
+ * 被「合并后的 task 行」和独立表头共用，保证同一语义只有一种外观。
+ */
+export const TaskAgentBadge = memo(function TaskAgentBadge({
+  agentType,
+  tone,
+  sessionId,
+}: {
+  agentType: string
+  tone: 'accent' | 'danger' | 'success' | 'neutral'
+  sessionId?: string
+}) {
+  const { t } = useTranslation('message')
+  const openSession = useOpenTaskSession(sessionId)
 
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="group/title flex min-w-0 flex-1 self-stretch items-center text-left bg-transparent border-none p-0"
-        title={expanded ? t('showLess') : t('showMore')}
-      >
-        <span className="min-w-0 truncate text-[length:var(--fs-sm)] text-text-300 group-hover/title:text-text-100">
-          {description}
-        </span>
-      </button>
+  if (!sessionId) return <Chip tone={tone}>{agentType}</Chip>
 
-      {/* Stop button (running) */}
-      {onStop && (
-        <button
-          type="button"
-          onClick={onStop}
-          aria-label={t('task.stop')}
-          className="flex-shrink-0 w-[18px] h-[18px] p-0 flex items-center justify-center text-text-400 hover:text-danger-100 hover:bg-danger-100/10 active:bg-danger-100/20 rounded-sm transition-colors bg-transparent border-none"
-          title={t('task.stop')}
-        >
-          <StopIcon size={10} />
-        </button>
-      )}
-
-      {/* Open session */}
-      {sessionId && (
-        <button
-          type="button"
-          onClick={handleOpenSession}
-          aria-label={t('task.openSession')}
-          className="flex-shrink-0 p-1 text-text-500 hover:text-accent-main-100 transition-all bg-transparent border-none"
-          title={t('task.openSession')}
-        >
-          <ExternalLinkIcon size={12} />
-        </button>
-      )}
-    </div>
+  return (
+    <button
+      type="button"
+      onClick={openSession}
+      // 整行 hover 已经给底色，内层徽标按钮不再叠加自己的底色，
+      // 否则一行里出现两层高亮。只补 cursor 与轻微透明度表达可点。
+      className="inline-flex cursor-pointer rounded-sm transition-opacity hover:opacity-80"
+      title={t('task.openSession')}
+    >
+      <Chip tone={tone}>{agentType}</Chip>
+    </button>
   )
 })
 
@@ -474,18 +443,10 @@ const ToolBadge = memo(function ToolBadge({ tool }: { tool: ToolPart }) {
   const displayTitle = title.length > 30 ? title.slice(0, 30) + '...' : title
 
   return (
-    <span
-      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-xs text-[length:var(--fs-xxs)] font-mono ${
-        isRunning
-          ? 'bg-accent-main-100/15 text-accent-main-100'
-          : isError
-            ? 'bg-danger-100/10 text-danger-100'
-            : 'bg-bg-200 text-text-400'
-      }`}
-    >
-      {isRunning && <span className="w-1 h-1 rounded-full bg-current animate-pulse" />}
+    <Chip tone={isRunning ? 'accent' : isError ? 'danger' : 'neutral'} className="font-mono" title={title}>
+      {isRunning && <StatusDot tone="running" size="xs" />}
       {displayTitle}
-    </span>
+    </Chip>
   )
 })
 

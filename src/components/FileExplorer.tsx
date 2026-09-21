@@ -22,6 +22,7 @@ import {
 } from './Icons'
 import { CodePreview } from './CodePreview'
 import { IconButton } from './ui/IconButton'
+import { Spinner } from './ui/Spinner'
 import { ContextMenuItem } from './ui/ContextMenuItem'
 import { HtmlFilePreviewFrame } from './HtmlFilePreviewFrame'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
@@ -805,9 +806,7 @@ const FileTreeItem = memo(function FileTreeItem({
         <span className={`truncate flex-1 ${statusColor || ''}`}>{node.name}</span>
 
         {/* Loading Indicator */}
-        {node.isLoading && (
-          <span className="w-3 h-3 border border-text-400 border-t-transparent rounded-full animate-spin shrink-0" />
-        )}
+        {node.isLoading && <Spinner size="sm" tone="muted" className="shrink-0" />}
       </button>
 
       {/* Children */}
@@ -1351,27 +1350,27 @@ function ImagePreview({ dataUrl, fileName }: ImagePreviewProps) {
       <div className="shrink-0 flex items-center justify-center gap-1.5 px-2 py-1 border-b border-border-100/30 bg-bg-100/50 text-[length:var(--fs-xxs)]">
         <button
           onClick={zoomOut}
-          className="px-1.5 py-0.5 rounded hover:bg-bg-200 text-text-300 hover:text-text-100 transition-colors"
+          className="px-1.5 py-0.5 rounded hover:bg-bg-200 text-text-300 transition-colors"
         >
           −
         </button>
         <span className="w-10 text-center text-text-400 tabular-nums">{Math.round(scale * 100)}%</span>
         <button
           onClick={zoomIn}
-          className="px-1.5 py-0.5 rounded hover:bg-bg-200 text-text-300 hover:text-text-100 transition-colors"
+          className="px-1.5 py-0.5 rounded hover:bg-bg-200 text-text-300 transition-colors"
         >
           +
         </button>
         <span className="w-px h-3 bg-border-200 mx-1" />
         <button
           onClick={zoomFit}
-          className={`px-1.5 py-0.5 rounded transition-colors ${isFit ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+          className={`px-1.5 py-0.5 rounded transition-colors border ${isFit ? 'bg-bg-200 text-text-100 border-border-200' : 'text-text-400 hover:bg-bg-200 border-transparent'}`}
         >
           {t('fileExplorer.fit')}
         </button>
         <button
           onClick={zoomActual}
-          className={`px-1.5 py-0.5 rounded transition-colors ${isActual ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+          className={`px-1.5 py-0.5 rounded transition-colors border ${isActual ? 'bg-bg-200 text-text-100 border-border-200' : 'text-text-400 hover:bg-bg-200 border-transparent'}`}
         >
           {t('fileExplorer.oneToOne')}
         </button>
@@ -1435,13 +1434,13 @@ function TextMediaPreview({
       <div className="shrink-0 flex items-center gap-0.5 px-2 py-1 border-b border-border-100/30 bg-bg-100/50 text-[length:var(--fs-xxs)]">
         <button
           onClick={() => setMode('preview')}
-          className={`px-2 py-0.5 rounded transition-colors ${mode === 'preview' ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+          className={`px-2 py-0.5 rounded transition-colors ${mode === 'preview' ? 'bg-bg-200 text-text-100 border border-border-200' : 'text-text-400 hover:bg-bg-200 border border-transparent'}`}
         >
           {t('common:preview')}
         </button>
         <button
           onClick={() => setMode('code')}
-          className={`px-2 py-0.5 rounded transition-colors ${mode === 'code' ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+          className={`px-2 py-0.5 rounded transition-colors ${mode === 'code' ? 'bg-bg-200 text-text-100 border border-border-200' : 'text-text-400 hover:bg-bg-200 border border-transparent'}`}
         >
           {t('common:code')}
         </button>
@@ -1495,14 +1494,14 @@ function HtmlFilePreview({
         <button
           type="button"
           onClick={() => setMode('preview')}
-          className={`rounded px-2 py-0.5 transition-colors ${mode === 'preview' ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+          className={`rounded px-2 py-0.5 transition-colors ${mode === 'preview' ? 'bg-bg-200 text-text-100 border border-border-200' : 'text-text-400 hover:bg-bg-200 border border-transparent'}`}
         >
           {t('common:preview')}
         </button>
         <button
           type="button"
           onClick={() => setMode('code')}
-          className={`rounded px-2 py-0.5 transition-colors ${mode === 'code' ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+          className={`rounded px-2 py-0.5 transition-colors ${mode === 'code' ? 'bg-bg-200 text-text-100 border border-border-200' : 'text-text-400 hover:bg-bg-200 border border-transparent'}`}
         >
           {t('common:code')}
         </button>
@@ -1550,13 +1549,13 @@ function MarkdownFilePreview({ text, isResizing = false, targetLine, targetKey, 
       <div className="shrink-0 flex items-center gap-0.5 px-2 py-1 border-b border-border-100/30 bg-bg-100/50 text-[length:var(--fs-xxs)]">
         <button
           onClick={() => setMode('preview')}
-          className={`px-2 py-0.5 rounded transition-colors ${mode === 'preview' ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+          className={`px-2 py-0.5 rounded transition-colors ${mode === 'preview' ? 'bg-bg-200 text-text-100 border border-border-200' : 'text-text-400 hover:bg-bg-200 border border-transparent'}`}
         >
           {t('common:preview')}
         </button>
         <button
           onClick={() => setMode('code')}
-          className={`px-2 py-0.5 rounded transition-colors ${mode === 'code' ? 'bg-bg-200 text-text-100' : 'text-text-400 hover:bg-bg-200 hover:text-text-100'}`}
+          className={`px-2 py-0.5 rounded transition-colors ${mode === 'code' ? 'bg-bg-200 text-text-100 border border-border-200' : 'text-text-400 hover:bg-bg-200 border border-transparent'}`}
         >
           {t('common:code')}
         </button>

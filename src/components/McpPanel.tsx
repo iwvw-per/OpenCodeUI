@@ -512,7 +512,7 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
               e.stopPropagation()
               onDisconnect(name)
             }}
-            className="px-2 py-0.5 text-[length:var(--fs-sm)] bg-bg-300/50 hover:bg-danger-bg hover:text-danger-100 text-text-300 rounded-md transition-colors"
+            className="px-2 py-0.5 text-[length:var(--fs-sm)] bg-bg-300/50 hover:bg-danger-bg text-text-300 rounded-md transition-colors"
           >
             {t('mcpPanel.disconnect')}
           </button>
@@ -525,7 +525,7 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
               e.stopPropagation()
               onConnect(name)
             }}
-            className="px-2 py-0.5 text-[length:var(--fs-sm)] bg-bg-300/50 hover:bg-success-bg hover:text-success-100 text-text-300 rounded-md transition-colors"
+            className="px-2 py-0.5 text-[length:var(--fs-sm)] bg-bg-300/50 hover:bg-success-bg text-text-300 rounded-md transition-colors"
           >
             {t('mcpPanel.connect')}
           </button>

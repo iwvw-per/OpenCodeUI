@@ -15,11 +15,12 @@ import { notificationStore } from '../store/notificationStore'
 import { soundStore } from '../store/soundStore'
 import { playNotificationSoundDeduped } from '../utils/notificationSoundBridge'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
-import { makeSessionKey, sessionKeyToServerId } from '../utils/sessionKey'
+import { makeSessionKey, sessionKeyToServerId, sessionKeyToSessionId } from '../utils/sessionKey'
 import { subscribeToServerEvents, getSessionStatus, getPendingPermissions, getPendingQuestions } from '../api'
 import { invalidateSessionListCache } from '../api/sessionListCache'
 import type { EventCallbacks } from '../types/api/event'
 import { replyPermission } from '../api/permission'
+import { stripMessageSummaryDiffs, stripPartAttachments } from '../api/sanitize'
 import { autoApproveStore } from '../store/autoApproveStore'
 import type { ApiMessage, ApiPart, ApiPermissionRequest, ApiQuestionRequest } from '../api/types'
 import type { SessionStatusMap } from '../types/api/session'
@@ -274,6 +275,11 @@ async function fetchActiveScopeData(directories: string[] | undefined, serverId:
  * 依次检查：
  *   1. focused pane 的 session family
  *   2. pub/sub 消费者注册表（其他 pane）
+ *
+ * 比较时同时认「裸 sessionId」：两台已连接服务器指向同一后端时，同一个会话
+ * 会被两条 SSE 以不同前缀推事件（`local::ses_x` 与 `aiagent:...::ses_x`）。
+ * 只比复合 key 会把另一个前缀的事件误判为「不在看」，从而推送一条永远点不掉的
+ * 未读通知。
  */
 function belongsToCurrentSession(sessionId: string): boolean {
   const focusedSessionId = paneLayoutStore.getFocusedSessionId()
@@ -281,6 +287,7 @@ function belongsToCurrentSession(sessionId: string): boolean {
   // 检查当前 focused pane 的 session family
   if (focusedSessionId) {
     if (sessionId === focusedSessionId) return true
+    if (isSameSessionKey(sessionId, focusedSessionId)) return true
     if (childSessionStore.belongsToSession(sessionId, focusedSessionId)) return true
   }
 
@@ -288,6 +295,22 @@ function belongsToCurrentSession(sessionId: string): boolean {
   if (hasConsumerForSession(sessionId)) return true
 
   return false
+}
+
+/** 两个复合 key 是否指向同一个会话（忽略服务器前缀差异） */
+function isSameSessionKey(left: string, right: string): boolean {
+  const leftId = sessionKeyToSessionId(left)
+  return !!leftId && leftId === sessionKeyToSessionId(right)
+}
+
+/**
+ * 是否是子 agent 会话。
+ *
+ * 子会话默认不在侧栏出现，对它的完成/错误事件推通知只会留下点不到也清不掉的
+ * 孤儿未读点（项目行常亮）。以 childSessionStore 的注册记录为准。
+ */
+function isChildSession(sessionId: string): boolean {
+  return !!childSessionStore.getSessionInfo(sessionId)
 }
 
 /**
@@ -303,9 +326,11 @@ function belongsToCurrentSession(sessionId: string): boolean {
 function isSessionDirectlyOpen(sessionId: string): boolean {
   const focusedSessionId = paneLayoutStore.getFocusedSessionId()
   if (focusedSessionId === sessionId) return true
+  if (focusedSessionId && isSameSessionKey(sessionId, focusedSessionId)) return true
 
   for (const consumer of sessionConsumers.values()) {
     if (consumer.sessionId === sessionId) return true
+    if (consumer.sessionId && isSameSessionKey(sessionId, consumer.sessionId)) return true
   }
 
   return false
@@ -535,16 +560,22 @@ export function useGlobalEvents(directories?: string[]) {
         // ============================================
 
         onMessageUpdated: (apiMsg: ApiMessage) => {
-          messageStore.handleMessageUpdated({ ...apiMsg, sessionID: scope(apiMsg.sessionID) })
+          // SSE 的 message.updated 会携带 summary.diffs 全文（整轮 patch），
+          // 不去掉就会随每个事件进入 store 并参与不可变拷贝。
+          // 与分页拉取共用同一份裁剪，保证两条路径的数据形态一致。
+          const info = stripMessageSummaryDiffs(apiMsg)
+          messageStore.handleMessageUpdated({ ...info, sessionID: scope(apiMsg.sessionID) })
         },
 
         onPartUpdated: (apiPart: ApiPart) => {
           if ('sessionID' in apiPart && 'messageID' in apiPart) {
             const scopedId = scope(apiPart.sessionID)
-            messageStore.handlePartUpdated({
-              ...(apiPart as ApiPart & { sessionID: string; messageID: string }),
-              sessionID: scopedId,
-            })
+            messageStore.handlePartUpdated(
+              stripPartAttachments({
+                ...(apiPart as ApiPart & { sessionID: string; messageID: string }),
+                sessionID: scopedId,
+              }),
+            )
             scheduleScroll(scopedId)
           }
         },
@@ -619,11 +650,13 @@ export function useGlobalEvents(directories?: string[]) {
           if (!isAbort) {
             // 从 Working 列表移除
             activeSessionStore.updateStatus(scopedId, { type: 'idle' })
-            // 通知（跳过当前 session family）
+            // 通知（跳过当前 session family；子会话不在列表，推了会变成孤儿未读点）
             if (!belongsToCurrentSession(scopedId)) {
-              const meta = activeSessionStore.getSessionMeta(scopedId)
-              const sessionLabel = meta?.title || error.sessionID.slice(0, 8)
-              notificationStore.push('error', sessionLabel, 'Session error', scopedId, meta?.directory)
+              if (!isChildSession(scopedId)) {
+                const meta = activeSessionStore.getSessionMeta(scopedId)
+                const sessionLabel = meta?.title || error.sessionID.slice(0, 8)
+                notificationStore.push('error', sessionLabel, 'Session error', scopedId, meta?.directory)
+              }
             } else if (isSessionDirectlyOpen(scopedId) && soundStore.getSnapshot().currentSessionEnabled) {
               playNotificationSoundDeduped('error')
             }
@@ -636,6 +669,12 @@ export function useGlobalEvents(directories?: string[]) {
           // 注意：此处不对归档做缓存失效。恢复后的会话 time.archived 恒为 0，
           // 用「字段存在」判断会让每次标题更新都冲掉列表缓存（流式期间高频）。
           // 本端归档/恢复已在 updateSession 中失效；跨客户端的归档由 30s TTL 兜底。
+          //
+          // 但归档要清通知：归档后会话不再出现在列表，通知留着会让项目行因孤儿
+          // 通知一直亮未读点（本端归档入口已清，这里覆盖其他客户端归档）。
+          if (session.time?.archived) {
+            notificationStore.removeSessionNotifications(scopedId)
+          }
           // 更新 session meta 供 active tab 使用
           activeSessionStore.setSessionMeta(scopedId, session.title, session.directory)
           if (session.parentID) {
@@ -653,6 +692,8 @@ export function useGlobalEvents(directories?: string[]) {
           // 删除改变列表成员，失效缓存避免切回时复活已删除项
           invalidateSessionListCache(serverId)
           const removedSessionIds = childSessionStore.getSessionAndDescendants(scopedId)
+          // 清通知：会话已不在列表，通知留着会让项目行永久亮未读点
+          for (const id of removedSessionIds) notificationStore.removeSessionNotifications(id)
           clearSessionRuntimeState(scopedId)
           for (const id of removedSessionIds) paneLayoutStore.clearSession(id)
         },
@@ -798,17 +839,23 @@ export function useGlobalEvents(directories?: string[]) {
           activeSessionStore.updateStatus(scopedId, data.status)
 
           // Toast — session 从 busy/retry 变成 idle 时弹 completed 通知
-          if (wasBusy && data.status.type === 'idle' && !belongsToCurrentSession(scopedId)) {
-            const meta = activeSessionStore.getSessionMeta(scopedId)
-            const sessionLabel = meta?.title || data.sessionID.slice(0, 8)
-            notificationStore.push('completed', sessionLabel, 'Session completed', scopedId, meta?.directory)
-          } else if (
-            wasBusy &&
-            data.status.type === 'idle' &&
-            isSessionDirectlyOpen(scopedId) &&
-            soundStore.getSnapshot().currentSessionEnabled
-          ) {
-            playNotificationSoundDeduped('completed')
+          if (wasBusy && data.status.type === 'idle') {
+            if (belongsToCurrentSession(scopedId)) {
+              // 正在看的会话：补一次标记已读。
+              // 推送条件读的 focusedSessionId 更新是异步的，点开会话瞬间若会话
+              // 刚好完成，会被误判为「不在看」而推一条通知，之后没人再触发标记，
+              // 小点就永久留在项目行上。这里在状态落定时兜底清一次。
+              notificationStore.markSessionNotificationsRead(scopedId, 'completed')
+              if (isSessionDirectlyOpen(scopedId) && soundStore.getSnapshot().currentSessionEnabled) {
+                playNotificationSoundDeduped('completed')
+              }
+            } else if (!isChildSession(scopedId)) {
+              // 子 agent 会话：不在侧栏出现（除非用户显式打开子会话开关），
+              // 推通知只会产生点不到也清不掉的孤儿未读点。跳过。
+              const meta = activeSessionStore.getSessionMeta(scopedId)
+              const sessionLabel = meta?.title || data.sessionID.slice(0, 8)
+              notificationStore.push('completed', sessionLabel, 'Session completed', scopedId, meta?.directory)
+            }
           }
         },
 
@@ -853,9 +900,19 @@ export function useGlobalEvents(directories?: string[]) {
     })
     approveGlobalPendingPermissions()
 
+    // 健康轮询：SSE 长连接在进程死后可能长时间挂着（心跳超时才判死），
+    // 而 health 探测是真的 HTTP 请求（5s 超时即判离线）。定期刷新 health，
+    // 让主机列表的状态点及时反映真实可达性，而不是跟着 SSE 连接态停留绿色。
+    const healthPollTimer = window.setInterval(() => {
+      for (const serverId of activeServerIdsRef.current) {
+        void serverStore.checkHealth(serverId).catch(() => {})
+      }
+    }, 15000)
+
     return () => {
       disposed = true
       refreshRef.current = null
+      window.clearInterval(healthPollTimer)
       unsubscribes.forEach(unsubscribe => unsubscribe())
       unsubscribeAutoApprove()
       unsubscribeServerChange()

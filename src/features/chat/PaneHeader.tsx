@@ -166,7 +166,7 @@ export function PaneHeader({
   return (
     <div
       ref={headerRef}
-      className={`relative mobile-safe-topbar-10 flex items-center justify-between px-2 select-none transition-colors duration-200 shrink-0 z-20 ${
+      className={`relative mobile-safe-topbar-10 flex items-center justify-between px-2 select-none transition-colors duration-200 shrink-0 z-20 border-b border-border-200/50 ${
         isDragOver ? 'bg-accent-main-100/10' : 'bg-bg-100'
       }`}
       onClick={onFocus}
@@ -190,7 +190,7 @@ export function PaneHeader({
         ) : (
           <button
             onClick={handleStartEdit}
-            className="px-1.5 py-0.5 text-[length:var(--fs-sm)] font-medium text-text-200 hover:text-text-100 transition-colors truncate max-w-[200px] cursor-text select-none"
+            className="px-1.5 py-0.5 text-[length:var(--fs-sm)] font-medium text-text-200 hover:bg-bg-200 hover:border-border-200 border border-transparent rounded transition-colors truncate max-w-[200px] cursor-text select-none"
             title={t('header.clickToRename')}
           >
             {title}
@@ -224,7 +224,7 @@ export function PaneHeader({
                 onTogglePaneFullscreen()
               }}
               className={cn(
-                isPaneFullscreen ? 'text-accent-main-100 bg-bg-200' : 'text-text-300 hover:text-text-100',
+                isPaneFullscreen ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
                 interactive.subtle,
               )}
             >
@@ -285,7 +285,7 @@ export function PaneHeader({
                 layoutStore.toggleBottomPanel()
               }}
               className={cn(
-                bottomPanelOpen ? 'text-accent-main-100 bg-bg-200' : 'text-text-300 hover:text-text-100',
+                bottomPanelOpen ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
                 interactive.subtle,
               )}
             >
@@ -304,7 +304,7 @@ export function PaneHeader({
                 }
               }}
               className={cn(
-                rightPanelOpen ? 'text-accent-main-100 bg-bg-200' : 'text-text-300 hover:text-text-100',
+                rightPanelOpen ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
                 interactive.subtle,
               )}
             >
@@ -314,7 +314,7 @@ export function PaneHeader({
         )}
       </div>
 
-      <div data-chat-header-shadow className="absolute top-full left-0 right-0 h-8 bg-gradient-to-b from-bg-100 via-bg-000/60 to-transparent pointer-events-none z-10" />
+      <div data-chat-header-shadow className="absolute top-full left-0 right-0 h-8 pointer-events-none" />
     </div>
   )
 }

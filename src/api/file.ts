@@ -4,7 +4,7 @@
 // ============================================
 
 import { getSDKClient, unwrap } from './sdk'
-import { formatPathForApi } from '../utils/directoryUtils'
+import { formatPathForApi, directoryCacheKey } from '../utils/directoryUtils'
 import type { FileNode, FileContent, FileStatusItem, SymbolInfo, TextSearchMatch } from './types'
 import { serverStore } from '../store/serverStore'
 
@@ -18,7 +18,9 @@ function isRootDirectoryPath(path: string): boolean {
 }
 
 function getRootDirectoryCacheKey(directory?: string, serverId?: string): string {
-  return `${serverId ?? serverStore.getActiveServerId()}::${formatPathForApi(directory, serverId) ?? ''}`
+  // 与传输格式无关的目录键：pathMode 在 auto 检测期间可能切换，
+  // 直接拼 formatPathForApi 会让同一目录算出两个 key，缓存与在途合并同时失效。
+  return `${serverId ?? serverStore.getActiveServerId()}::${directoryCacheKey(directory)}`
 }
 
 async function fetchDirectory(path: string, directory?: string, serverId?: string): Promise<FileNode[]> {

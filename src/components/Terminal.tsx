@@ -10,7 +10,7 @@ import { SerializeAddon } from '@xterm/addon-serialize'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
-import { getPtyConnectUrl, updatePtySession } from '../api/pty'
+import { getPtyConnectUrlAsync, updatePtySession } from '../api/pty'
 import { useTheme } from '../hooks'
 import { layoutStore, useLayoutStore } from '../store/layoutStore'
 import { useInputCapabilities } from '../hooks/useInputCapabilities'
@@ -707,39 +707,49 @@ export const Terminal = memo(function Terminal({ ptyId, directory, serverId, isA
             handleDisconnected({ reason: message })
           })
       } else {
-        const wsUrl = getPtyConnectUrl(ptyId, terminalDirectory, { cursor }, serverId)
-        logger.log('[Terminal] Connecting to:', wsUrl, reconnectAttempt > 0 ? `(reconnect #${reconnectAttempt})` : '')
-        ws = new WebSocket(wsUrl)
-        ws.binaryType = 'arraybuffer'
-        transportSendRef.current = data => {
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(data)
-          }
-        }
-        transportDisconnectRef.current = () => ws?.close()
+        // 浏览器原生 WebSocket：远程服务器需要一次性短令牌完成握手鉴权，
+        // URL 需异步获取（先经 fetch 换 stream-token，浏览器 WebSocket 无法带 header）。
+        void getPtyConnectUrlAsync(ptyId, terminalDirectory, { cursor }, serverId)
+          .then(wsUrl => {
+            if (!mountedRef.current) return
+            logger.log('[Terminal] Connecting to:', wsUrl, reconnectAttempt > 0 ? `(reconnect #${reconnectAttempt})` : '')
+            ws = new WebSocket(wsUrl)
+            ws.binaryType = 'arraybuffer'
+            transportSendRef.current = data => {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(data)
+              }
+            }
+            transportDisconnectRef.current = () => ws?.close()
 
-        ws.onopen = handleConnected
+            ws.onopen = handleConnected
 
-        ws.onmessage = event => {
-          if (!mountedRef.current) return
-          const frame = parsePtyFrame(event.data as string | ArrayBuffer)
-          if (!frame) return
-          if (frame.kind === 'control') {
-            cursorRef.current = frame.cursor
-            return
-          }
-          terminal.write(frame.data)
-          cursorRef.current += frame.data.length
-        }
+            ws.onmessage = event => {
+              if (!mountedRef.current) return
+              const frame = parsePtyFrame(event.data as string | ArrayBuffer)
+              if (!frame) return
+              if (frame.kind === 'control') {
+                cursorRef.current = frame.cursor
+                return
+              }
+              terminal.write(frame.data)
+              cursorRef.current += frame.data.length
+            }
 
-        ws.onclose = e => {
-          handleDisconnected({ code: e.code, reason: e.reason })
-        }
+            ws.onclose = e => {
+              handleDisconnected({ code: e.code, reason: e.reason })
+            }
 
-        ws.onerror = e => {
-          logger.log('[Terminal] WebSocket error:', ptyId, e)
-          // onclose 会在 onerror 之后触发，重连逻辑交给 onclose
-        }
+            ws.onerror = e => {
+              logger.log('[Terminal] WebSocket error:', ptyId, e)
+              // onclose 会在 onerror 之后触发，重连逻辑交给 onclose
+            }
+          })
+          .catch(error => {
+            const message = error instanceof Error ? error.message : String(error)
+            logger.log('[Terminal] Failed to resolve connect URL:', ptyId, message)
+            handleDisconnected({ reason: message })
+          })
       }
 
       disposeData?.dispose()

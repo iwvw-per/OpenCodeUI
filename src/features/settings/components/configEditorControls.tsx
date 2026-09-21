@@ -443,10 +443,10 @@ export function Select({
                   onChange(option.value)
                   setOpen(false)
                 }}
-                className={`flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors disabled:opacity-40 ${
+                className={`flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors disabled:opacity-40 border ${
                   option.value === current
-                    ? 'bg-bg-200 text-text-100'
-                    : 'text-text-100 hover:bg-bg-100'
+                    ? 'bg-bg-200 text-text-100 border-border-200'
+                    : 'text-text-100 hover:bg-bg-100 border-transparent'
                 }`}
               >
                 <span className="min-w-0">

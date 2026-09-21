@@ -25,36 +25,42 @@ export function useVcsInfo(directory?: string, serverId?: string): UseVcsInfoRes
   // 旧序号请求（切换目录/服务器前发出的）天然被丢弃，且不会误伤当前请求。
   const requestIdRef = useRef(0)
 
-  const fetchVcs = useCallback(async () => {
-    const requestId = ++requestIdRef.current
+  const fetchVcs = useCallback(
+    async (silent = false) => {
+      const requestId = ++requestIdRef.current
 
-    if (!directory) {
-      if (requestId === requestIdRef.current) {
-        setVcsInfo(null)
-        setError(null)
-        setIsLoading(false)
+      if (!directory) {
+        if (requestId === requestIdRef.current) {
+          setVcsInfo(null)
+          setError(null)
+          setIsLoading(false)
+        }
+        return
       }
-      return
-    }
 
-    setIsLoading(true)
-    try {
-      const info = await getVcsInfo(directory, serverId)
-      if (requestId === requestIdRef.current) {
-        setVcsInfo(info)
-        setError(null)
+      // 后台轮询/可见性刷新一律静默：只有首次加载才点亮 loading。
+      // 否则每 15s 轮询都会把 isLoading 置 true，分支名位置就闪一次转圈，
+      // 看起来像「git 一直在重载」。
+      if (!silent) setIsLoading(true)
+      try {
+        const info = await getVcsInfo(directory, serverId)
+        if (requestId === requestIdRef.current) {
+          setVcsInfo(info)
+          setError(null)
+        }
+      } catch (e) {
+        if (requestId === requestIdRef.current) {
+          setError(e instanceof Error ? e.message : 'Failed to fetch VCS info')
+          setVcsInfo(null)
+        }
+      } finally {
+        if (requestId === requestIdRef.current) {
+          setIsLoading(false)
+        }
       }
-    } catch (e) {
-      if (requestId === requestIdRef.current) {
-        setError(e instanceof Error ? e.message : 'Failed to fetch VCS info')
-        setVcsInfo(null)
-      }
-    } finally {
-      if (requestId === requestIdRef.current) {
-        setIsLoading(false)
-      }
-    }
-  }, [directory, serverId])
+    },
+    [directory, serverId],
+  )
 
   // 初始加载 + 目录/服务器变化时重新获取
   useEffect(() => {
@@ -71,12 +77,36 @@ export function useVcsInfo(directory?: string, serverId?: string): UseVcsInfoRes
     }
   }, [directory, serverId, fetchVcs])
 
-  // 轮询
+  // 轮询：仅在页面可见时进行。隐藏标签页里的分支信息没人看，
+  // 继续每 15s 打后端只是白白占用本就紧张的事件循环。
   useEffect(() => {
     if (!directory) return
 
-    const timer = setInterval(fetchVcs, POLL_INTERVAL)
-    return () => clearInterval(timer)
+    let timer: ReturnType<typeof setInterval> | null = null
+    const start = () => {
+      if (timer !== null) return
+      timer = setInterval(() => void fetchVcs(true), POLL_INTERVAL)
+    }
+    const stop = () => {
+      if (timer === null) return
+      clearInterval(timer)
+      timer = null
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchVcs(true)
+        start()
+      } else {
+        stop()
+      }
+    }
+
+    if (document.visibilityState === 'visible') start()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [directory, serverId, fetchVcs])
 
   useEffect(() => {
@@ -85,9 +115,10 @@ export function useVcsInfo(directory?: string, serverId?: string): UseVcsInfoRes
     return serverStore.onServerChange(() => {
       setVcsInfo(null)
       setError(null)
-      void fetchVcs()
+      // 切服务器/运行时地址变化属于被动刷新，同样静默，避免面板闪 loading
+      void fetchVcs(true)
     })
   }, [directory, serverId, fetchVcs])
 
-  return { vcsInfo, isLoading, error, refresh: fetchVcs }
+  return { vcsInfo, isLoading, error, refresh: () => fetchVcs(false) }
 }

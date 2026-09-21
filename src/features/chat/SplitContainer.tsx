@@ -30,8 +30,8 @@ function containsLeaf(node: PaneNode, leafId: string): boolean {
   return containsLeaf(node.first, leafId) || containsLeaf(node.second, leafId)
 }
 
-/** Visual gap between panes in px */
-const SPLIT_GAP = 6
+/** Visual gap between panes in px — 1px 细线分割，不保留空白带 */
+const SPLIT_GAP = 1
 /** Extra invisible hit area on each side of the divider for easier grabbing.
  *  Vertical splits keep a generous 4px extension; horizontal splits use 1px
  *  so the divider's hit area (8px total) does not overlap the OutlineIndex
@@ -191,7 +191,7 @@ function SplitNode({ split, renderLeaf, fullscreenPaneId }: SplitNodeProps) {
         <SplitContainer node={split.first} renderLeaf={renderLeaf} />
       </div>
 
-      {/* Divider — invisible hit area overlapping the grid gap */}
+      {/* Divider — invisible hit area overlapping the grid gap, with a 1px visible line */}
       <div
         className={`relative z-10 ${isHorizontal ? 'cursor-col-resize' : 'cursor-row-resize'}`}
         style={{
@@ -200,7 +200,15 @@ function SplitNode({ split, renderLeaf, fullscreenPaneId }: SplitNodeProps) {
           [isHorizontal ? 'marginRight' : 'marginBottom']: negMargin,
         }}
         onPointerDown={handleDrag}
-      />
+      >
+        {/* 细线：1px 分割线，视觉上是 pane 之间的线条而非空白带 */}
+        <div
+          className="absolute inset-0 flex items-center justify-center"
+          style={{ pointerEvents: 'none' }}
+        >
+          <div className={isHorizontal ? 'w-px h-full bg-border-200/60' : 'h-px w-full bg-border-200/60'} />
+        </div>
+      </div>
 
       {/* Second child */}
       <div className="min-w-0 min-h-0 relative" style={{ contain: 'layout style' }}>

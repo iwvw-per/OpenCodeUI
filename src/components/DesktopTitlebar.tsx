@@ -1,33 +1,17 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { DESKTOP_MACOS_TRAFFIC_LIGHTS_WIDTH, DESKTOP_TITLEBAR_HEIGHT, DESKTOP_TITLEBAR_Z_INDEX } from '../constants'
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  FolderOpenIcon,
-  SettingsIcon,
-  AppWindowIcon,
-  MinusIcon,
-  SquareIcon,
-  CopyIcon,
-  CloseIcon,
-} from './Icons'
+import { MinusIcon, SquareIcon, CopyIcon, CloseIcon } from './Icons'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../hooks/useTheme'
-import { getDesktopPlatform, isTauri, usesCustomDesktopTitlebar } from '../utils/tauri'
+import { getDesktopPlatform, usesCustomDesktopTitlebar } from '../utils/tauri'
 import { useUpdateStore, hasUpdateAvailable } from '../store/updateStore'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { cn } from '../utils/cn'
-import { interactive } from '../utils/interaction'
+import { Header } from '../features/chat/Header'
+import { DesktopNavControls } from './DesktopNavControls'
 
-/* 标题栏图标按钮通用样式 — Windows 和 macOS 视觉节奏不同，按钮尺寸分开控制 */
-const TB_BTN =
-  'inline-flex h-full w-8 items-center justify-center text-text-300 transition-colors hover:bg-bg-200 hover:text-text-100'
-const TB_BTN_MAC =
-  'inline-flex h-7 w-7 items-center justify-center rounded-md text-text-300 transition-colors hover:bg-bg-200 hover:text-text-100'
-const TB_BTN_MAC_UPDATE = cn(
-  'inline-flex h-7 w-7 items-center justify-center rounded-md text-accent-main-100',
-  interactive.accent,
-)
+/* 右上角窗口控制按钮专属样式：贴右边缘，无圆角，近似正方形（与其余统一样式区分） */
+export const DESKTOP_TITLEBAR_BUTTON =
+  'inline-flex h-full w-11 items-center justify-center text-text-300 transition-colors hover:bg-bg-200 hover:text-text-100'
 
 const WindowsControls = memo(function WindowsControls() {
   const { t } = useTranslation('components')
@@ -83,7 +67,7 @@ const WindowsControls = memo(function WindowsControls() {
       <button
         type="button"
         onClick={handleMinimize}
-        className={TB_BTN}
+        className={DESKTOP_TITLEBAR_BUTTON}
         title={t('desktopTitlebar.minimize')}
         aria-label={t('desktopTitlebar.minimize')}
       >
@@ -92,7 +76,7 @@ const WindowsControls = memo(function WindowsControls() {
       <button
         type="button"
         onClick={handleToggleMaximize}
-        className={TB_BTN}
+        className={DESKTOP_TITLEBAR_BUTTON}
         title={maximized ? t('desktopTitlebar.restore') : t('desktopTitlebar.maximize')}
         aria-label={maximized ? t('desktopTitlebar.restore') : t('desktopTitlebar.maximize')}
       >
@@ -101,7 +85,7 @@ const WindowsControls = memo(function WindowsControls() {
       <button
         type="button"
         onClick={handleClose}
-        className={`${TB_BTN} hover:bg-danger-100 hover:text-white`}
+        className={`${DESKTOP_TITLEBAR_BUTTON} hover:bg-danger-100 hover:text-white`}
         title={t('desktopTitlebar.close')}
         aria-label={t('desktopTitlebar.close')}
       >
@@ -111,24 +95,36 @@ const WindowsControls = memo(function WindowsControls() {
   )
 })
 
-export function DesktopTitlebar() {
-  const { t } = useTranslation('components')
+export function DesktopTitlebar({
+  headerProps,
+  showNav = true,
+}: {
+  headerProps?: React.ComponentProps<typeof Header>
+  /** 导航控件是否显示在标题栏。Windows 全高侧栏模式下导航移到侧边栏顶部工具栏，此处隐藏 */
+  showNav?: boolean
+}) {
   const { mode, resolvedTheme } = useTheme()
   const updateState = useUpdateStore()
   const hasUpdate = hasUpdateAvailable(updateState)
   const platform = useMemo(() => getDesktopPlatform(), [])
   const isDesktopChrome = useMemo(() => usesCustomDesktopTitlebar(), [])
-  const titlebarButtonClass = platform === 'macos' ? TB_BTN_MAC : TB_BTN
 
   /* ---- 原生主题同步 ---- */
   useEffect(() => {
     if (!isDesktopChrome) return
     // 让 overlay 侧边栏知道标题栏高度
     document.documentElement.style.setProperty('--desktop-titlebar-height', `${DESKTOP_TITLEBAR_HEIGHT}px`)
+    // 顶栏内容已并入标题栏：消息区/工作状态卡片不再需要为 Header 预留行高
+    if (headerProps) {
+      document.documentElement.style.setProperty('--chat-header-height', '0px')
+    }
     return () => {
       document.documentElement.style.removeProperty('--desktop-titlebar-height')
+      if (headerProps) {
+        document.documentElement.style.removeProperty('--chat-header-height')
+      }
     }
-  }, [isDesktopChrome])
+  }, [isDesktopChrome, headerProps])
 
   useEffect(() => {
     if (!isDesktopChrome) return
@@ -150,41 +146,15 @@ export function DesktopTitlebar() {
     }
   }, [isDesktopChrome, mode, resolvedTheme])
 
-  /* ---- 导航 ---- */
-  const handleBack = useCallback(() => {
-    window.history.back()
-  }, [])
-
-  const handleForward = useCallback(() => {
-    window.history.forward()
-  }, [])
-
-  /* ---- 功能操作 ---- */
-  const handleOpenProject = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('titlebar:open-project'))
-  }, [])
-
-  const handleOpenSettings = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('titlebar:open-settings'))
-  }, [])
-
-  const handleNewWindow = useCallback(() => {
-    if (!isTauri()) return
-    void import('@tauri-apps/api/core').then(({ invoke }) => {
-      invoke('open_new_window', { directory: null }).catch(() => {
-        // 静默
-      })
-    })
-  }, [])
-
+  /* ---- 导航（已移至 DesktopNavControls） ---- */
   if (!isDesktopChrome) return null
 
   return (
     <header
-      className="desktop-titlebar relative grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center bg-bg-100"
+      className="desktop-titlebar relative grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center bg-bg-100 border-b border-border-200/50"
       style={{ height: DESKTOP_TITLEBAR_HEIGHT, zIndex: DESKTOP_TITLEBAR_Z_INDEX }}
     >
-      {/* ---- 左侧：平台占位 + 导航 + 分隔 + 功能按钮 ---- */}
+      {/* ---- 左侧：平台占位 + 导航（非 Windows 全高侧栏模式） ---- */}
       <div className={`flex h-full shrink-0 ${platform === 'macos' ? 'items-center gap-1' : 'items-stretch'}`}>
         {platform === 'macos' ? (
           <div className="h-full shrink-0" style={{ width: DESKTOP_MACOS_TRAFFIC_LIGHTS_WIDTH }} />
@@ -192,68 +162,17 @@ export function DesktopTitlebar() {
           <div className="h-full shrink-0 w-1" />
         )}
 
-        {/* 后退 / 前进 */}
-        <button
-          type="button"
-          onClick={handleBack}
-          className={titlebarButtonClass}
-          title={t('desktopTitlebar.goBack')}
-          aria-label={t('desktopTitlebar.goBack')}
-        >
-          <ChevronLeftIcon size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={handleForward}
-          className={titlebarButtonClass}
-          title={t('desktopTitlebar.goForward')}
-          aria-label={t('desktopTitlebar.goForward')}
-        >
-          <ChevronRightIcon size={14} />
-        </button>
-
-        {/* 打开项目 */}
-        <button
-          type="button"
-          onClick={handleOpenProject}
-          className={titlebarButtonClass}
-          title={t('desktopTitlebar.openProject')}
-          aria-label={t('desktopTitlebar.openProject')}
-        >
-          <FolderOpenIcon size={14} />
-        </button>
-
-        {/* 设置 */}
-        <button
-          type="button"
-          onClick={handleOpenSettings}
-          className={
-            hasUpdate
-              ? platform === 'macos'
-                ? TB_BTN_MAC_UPDATE
-                : cn('inline-flex h-full w-8 items-center justify-center text-accent-main-100', interactive.accent)
-              : titlebarButtonClass
-          }
-          title={hasUpdate ? t('desktopTitlebar.settingsUpdate') : t('desktopTitlebar.openSettings')}
-          aria-label={hasUpdate ? t('desktopTitlebar.settingsUpdate') : t('desktopTitlebar.openSettings')}
-        >
-          <SettingsIcon size={14} />
-        </button>
-
-        {/* 新建窗口 */}
-        <button
-          type="button"
-          onClick={handleNewWindow}
-          className={titlebarButtonClass}
-          title={t('desktopTitlebar.newWindow')}
-          aria-label={t('desktopTitlebar.newWindow')}
-        >
-          <AppWindowIcon size={14} />
-        </button>
+        {showNav && <DesktopNavControls accent={hasUpdate} />}
       </div>
 
-      {/* ---- 中间：拖拽区 ---- */}
-      <div data-tauri-drag-region className="h-full min-w-0" />
+      {/* ---- 中间：拖拽区 / 嵌入的应用顶栏 ---- */}
+      {headerProps ? (
+        <div className="h-full min-w-0">
+          <Header embedded {...headerProps} />
+        </div>
+      ) : (
+        <div data-tauri-drag-region className="h-full min-w-0" />
+      )}
 
       {/* ---- 右侧：Windows 控制按钮 / macOS 留白 ---- */}
       {platform === 'windows' ? <WindowsControls /> : <div data-tauri-drag-region className="h-full w-3 shrink-0" />}

@@ -1,10 +1,22 @@
 import { memo, useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { diffLines } from 'diff'
 import { animate } from 'motion/mini'
-import { ChevronDownIcon, ChevronRightIcon, SplitIcon, SpinnerIcon, UndoIcon } from '../../components/Icons'
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  LayersIcon,
+  LightbulbIcon,
+  PinIcon,
+  SplitIcon,
+  SpinnerIcon,
+  UndoIcon,
+} from '../../components/Icons'
+import { Spinner } from '../../components/ui/Spinner'
 import { CopyButton, SmoothHeight } from '../../components/ui'
+import { DisclosureRow } from '../../components/ui/DisclosureRow'
 import { MarkdownRenderer } from '../../components/MarkdownRenderer'
+import { pinnedMessagesStore, buildPinnedMessageExcerpt, usePinnedMessage } from '../../store/pinnedMessagesStore'
+import { getMessageText } from '../../types/message'
 import { useCompositorExpand, useDisclosureScrollLock } from '../../hooks'
 import { useInputCapabilities } from '../../hooks/useInputCapabilities'
 import { useNow } from '../../hooks/useNow'
@@ -27,10 +39,11 @@ import {
   CompactionPartView,
   MessageErrorView,
 } from './parts'
-import { extractToolData } from './tools'
+import { ToolIconStrip } from './parts/ToolIconStrip'
+import { DiffChips } from './parts/DiffChips'
+import { collectChangedFiles, sumChangedFiles } from './parts/changedFiles'
+import type { ChangedFile } from './parts/changedFiles'
 import { MSG_SPACING } from './messageSpacing'
-import { cn } from '../../utils/cn'
-import { interactive } from '../../utils/interaction'
 import { MessageExpandPanel } from './messageExpand'
 import { useMessageExpandRender } from './messageExpandShared'
 import {
@@ -75,6 +88,8 @@ const ProcessCollapseHeader = memo(function ProcessCollapseHeader({
   expanded,
   onToggle,
   headerRef,
+  stepCount = 0,
+  reasoningCount = 0,
 }: {
   isActive: boolean
   startedAt?: number
@@ -82,39 +97,48 @@ const ProcessCollapseHeader = memo(function ProcessCollapseHeader({
   expanded: boolean
   onToggle: () => void
   headerRef: React.RefObject<HTMLButtonElement | null>
+  stepCount?: number
+  reasoningCount?: number
 }) {
   const { t } = useTranslation('message')
   const now = useNow(1000, isActive && startedAt != null)
   const liveMs = isActive && startedAt != null ? Math.max(0, now - startedAt) : null
   const lastLiveMsRef = useRef(0)
   if (liveMs != null) lastLiveMsRef.current = liveMs
-  const displayMs =
-    liveMs != null
-      ? liveMs
-      : durationMs != null && durationMs > 0
-        ? durationMs
-        : lastLiveMsRef.current
+  const displayMs = liveMs != null ? liveMs : durationMs != null && durationMs > 0 ? durationMs : lastLiveMsRef.current
   // Working/Worked：整秒无小数；超过 1 分钟带 m（如 3m 12s）
   const durationLabel = formatProcessDuration(displayMs)
   const label = isActive
     ? t('processingWithDuration', { duration: durationLabel })
     : t('processedFor', { duration: durationLabel })
+  const hasBreakdown = !expanded && (stepCount > 0 || reasoningCount > 0)
 
   return (
-    <button
+    <DisclosureRow
       ref={headerRef}
-      type="button"
+      expanded={expanded}
       onClick={onToggle}
-      className={cn(
-        `flex w-full items-center gap-1.5 rounded-md ${MSG_SPACING.header} text-left text-[length:var(--fs-sm)] leading-5 text-text-400 hover:text-text-200`,
-        interactive.contentRow,
-      )}
-    >
-      <span className={isActive ? 'reasoning-shimmer-text' : 'text-text-400'}>{label}</span>
-      <span className="inline-flex items-center justify-center text-text-500">
-        {expanded ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
-      </span>
-    </button>
+      size="sm"
+      labelTone={isActive ? 'active' : 'idle'}
+      label={label}
+      growLabel={false}
+      showChevron={false}
+      reserveChevronSpace
+      icon={isActive ? <Spinner size="sm" tone="muted" variant="pixel" /> : <LayersIcon size={13} className="text-text-500" />}
+      meta={
+        hasBreakdown ? (
+          <span className="flex items-center gap-2 text-[length:var(--fs-xxs)] tabular-nums text-text-500">
+            {reasoningCount > 0 && (
+              <span className="flex items-center gap-1">
+                <LightbulbIcon size={10} />
+                {reasoningCount}
+              </span>
+            )}
+            {stepCount > 0 && <span>{t('thinkingStepCount', { count: stepCount })}</span>}
+          </span>
+        ) : undefined
+      }
+    />
   )
 })
 
@@ -125,12 +149,17 @@ export function ProcessCollapseBlock({
   startedAt,
   isActive,
   stateKey,
+  stepCount = 0,
+  reasoningCount = 0,
 }: {
   children: ReactNode
   durationMs?: number
   startedAt?: number
   isActive: boolean
   stateKey: string
+  /** 折叠时在 header 右侧显示的统计（工具调用数 / 思考段数） */
+  stepCount?: number
+  reasoningCount?: number
 }) {
   const [expanded, setExpanded] = useUiDisclosureState(stateKey, isActive)
   const shouldRenderBody = useMessageExpandRender(expanded)
@@ -171,6 +200,8 @@ export function ProcessCollapseBlock({
         expanded={expanded}
         onToggle={toggleExpanded}
         headerRef={headerRef}
+        stepCount={stepCount}
+        reasoningCount={reasoningCount}
       />
       <MessageExpandPanel
         open={expanded}
@@ -205,6 +236,10 @@ interface MessageRendererProps {
   onEnsureParts?: (messageId: string) => void
   /** 用户消息入场生长完成（供过程壳等待挂载） */
   onEntryGrowComplete?: (messageId: string) => void
+  /** 所属会话（复合 key）。固定消息需要它来确定归属。 */
+  sessionId?: string | null
+  /** 本回合聚合的改动文件，仅在最终回复（final）消息上渲染 */
+  turnFiles?: ChangedFile[]
 }
 
 export const MessageRenderer = memo(function MessageRenderer({
@@ -219,6 +254,8 @@ export const MessageRenderer = memo(function MessageRenderer({
   canUndo,
   onEnsureParts,
   onEntryGrowComplete,
+  sessionId,
+  turnFiles,
 }: MessageRendererProps) {
   const { info } = message
   const isUser = info.role === 'user'
@@ -232,6 +269,7 @@ export const MessageRenderer = memo(function MessageRenderer({
         forkMessageId={forkMessageId}
         canUndo={canUndo}
         onEntryGrowComplete={onEntryGrowComplete}
+        sessionId={sessionId}
       />
     )
   }
@@ -246,6 +284,8 @@ export const MessageRenderer = memo(function MessageRenderer({
       onFork={onFork}
       forkMessageId={forkMessageId}
       onEnsureParts={onEnsureParts}
+      sessionId={sessionId}
+      turnFiles={turnFiles}
     />
   )
 })
@@ -295,7 +335,11 @@ function useEntryGrowAnimation(
     const targetHeight = el.scrollHeight
     el.style.height = '0px'
     el.style.clipPath = 'inset(0 -100% 0 -100%)'
-    const controls = animate(el, { height: `${targetHeight}px` }, { duration: ENTRY_GROW_DURATION_MS / 1000, ease: 'easeOut' })
+    const controls = animate(
+      el,
+      { height: `${targetHeight}px` },
+      { duration: ENTRY_GROW_DURATION_MS / 1000, ease: 'easeOut' },
+    )
     controls.then(clear)
 
     return () => {
@@ -315,7 +359,8 @@ function useEntryGrowAnimation(
 /** 默认预览 8 行 */
 const COLLAPSE_PREVIEW_LINES = 8
 const LEADING_RELAXED = 1.625
-const USER_HTML_ARTIFACT_PATTERN = /(?:```(?:html|htm)\b|<!doctype\s+html\b|<html\b|<style\b|<script\b|<canvas\b|\son[a-z]+\s*=)/i
+const USER_HTML_ARTIFACT_PATTERN =
+  /(?:```(?:html|htm)\b|<!doctype\s+html\b|<html\b|<style\b|<script\b|<canvas\b|\son[a-z]+\s*=)/i
 
 // 折叠状态缓存：消息是否溢出
 const overflowStateCache = new Map<string, boolean>()
@@ -381,9 +426,7 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
           }}
           className={`m-0 break-words text-[length:var(--fs-base)] text-text-100 leading-relaxed${
             renderMarkdown ? '' : ' whitespace-pre-wrap'
-          }${
-            isCollapsed ? ' overflow-hidden' : ''
-          }`}
+          }${isCollapsed ? ' overflow-hidden' : ''}`}
           style={
             isCollapsed
               ? {
@@ -404,7 +447,7 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
         <button
           type="button"
           onClick={() => withScrollLock(() => setExpanded(prev => !prev))}
-          className="mt-1 text-[length:var(--fs-sm)] text-text-400 hover:text-text-200 transition-colors"
+          className="mt-1 text-[length:var(--fs-sm)] text-text-400 hover:bg-bg-200 hover:border-border-200 border border-transparent rounded px-1 transition-colors"
           aria-expanded={expanded}
         >
           {expanded ? t('showLess') : t('showMore')}
@@ -454,6 +497,51 @@ const ForkActionButton = memo(function ForkActionButton({ message, onFork, forkM
 })
 
 // ============================================
+// Pin Action — 固定消息到工作状态面板
+// ============================================
+
+interface PinActionButtonProps {
+  message: Message
+  sessionId?: string | null
+}
+
+/**
+ * 固定的是消息本身，面板里点击可跳回。
+ * 无 sessionId 时不渲染：固定项要挂在具体会话下才有意义。
+ */
+const PinActionButton = memo(function PinActionButton({ message, sessionId }: PinActionButtonProps) {
+  const { t } = useTranslation('message')
+  const pinned = usePinnedMessage(sessionId, message.info.id)
+
+  const handleToggle = useCallback(() => {
+    if (!sessionId) return
+    pinnedMessagesStore.toggle({
+      sessionId,
+      messageId: message.info.id,
+      role: message.info.role === 'user' ? 'user' : 'assistant',
+      excerpt: buildPinnedMessageExcerpt(getMessageText(message)),
+      createdAt: message.info.time.created,
+    })
+  }, [message, sessionId])
+
+  if (!sessionId) return null
+
+  return (
+    <button
+      onClick={handleToggle}
+      className={`p-1.5 rounded-md transition-colors duration-150 ${
+        pinned ? 'text-accent-main-100' : 'text-text-400 hover:text-text-200'
+      }`}
+      title={pinned ? t('workStatus.pinned.unpin') : t('workStatus.pinned.pin')}
+      aria-label={pinned ? t('workStatus.pinned.unpin') : t('workStatus.pinned.pin')}
+      aria-pressed={pinned}
+    >
+      <PinIcon />
+    </button>
+  )
+})
+
+// ============================================
 // User Message View
 // ============================================
 
@@ -464,6 +552,7 @@ interface UserMessageViewProps {
   forkMessageId?: string
   canUndo?: boolean
   onEntryGrowComplete?: (messageId: string) => void
+  sessionId?: string | null
 }
 
 /** PC 精细指针：默认隐藏，悬浮消息/聚焦时显示；触控优先设备始终显示 */
@@ -481,6 +570,7 @@ const UserMessageView = memo(function UserMessageView({
   forkMessageId,
   canUndo,
   onEntryGrowComplete,
+  sessionId,
 }: UserMessageViewProps) {
   const { t } = useTranslation('message')
   const { parts, info } = message
@@ -546,7 +636,7 @@ const UserMessageView = memo(function UserMessageView({
               type="button"
               ref={systemContextHeaderRef}
               onClick={() => withSystemContextScrollLock(() => setShowSystemContext(!showSystemContext))}
-              className="flex items-center gap-1 text-[length:var(--fs-sm)] text-text-400 hover:text-text-300 transition-colors py-1 px-2 rounded hover:bg-bg-200"
+              className="flex items-center gap-1 text-[length:var(--fs-sm)] text-text-400 transition-colors py-1 px-2 rounded hover:bg-bg-200 hover:border-border-200 border border-transparent"
             >
               <span>
                 {showSystemContext ? t('hideSystemContext') : t('showSystemContext', { count: syntheticParts.length })}
@@ -594,6 +684,7 @@ const UserMessageView = memo(function UserMessageView({
             </button>
           )}
           <ForkActionButton message={message} onFork={onFork} forkMessageId={forkMessageId} />
+          <PinActionButton message={message} sessionId={sessionId} />
           {/* Copy button */}
           {messageText && <CopyButton text={messageText} position="static" />}
         </div>
@@ -615,15 +706,19 @@ const AssistantMessageView = memo(function AssistantMessageView({
   onFork,
   forkMessageId,
   onEnsureParts,
+  sessionId,
+  turnFiles,
 }: {
   message: Message
   allowStreamingLayoutAnimation?: boolean
   turnDuration?: number
   isTurnLatestAssistant?: boolean
   processContentScope?: ProcessContentScope
-  onFork?: (message: Message, forkMessageId?: string) => Promise<void> | void
+  onFork?: (message: Message, forkMessageId?: string) => void | Promise<void>
   forkMessageId?: string
   onEnsureParts?: (messageId: string) => void
+  sessionId?: string | null
+  turnFiles?: ChangedFile[]
 }) {
   const { t } = useTranslation('message')
   const { parts, isStreaming, info } = message
@@ -713,11 +808,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
     turnDuration != null &&
     turnDuration > 0
   const showCompletedAtFooter =
-    allowStepFinishOnMessage &&
-    !isStreaming &&
-    !hasStepFinishPart &&
-    stepFinishDisplay.completedAt &&
-    completed != null
+    allowStepFinishOnMessage && !isStreaming && !hasStepFinishPart && stepFinishDisplay.completedAt && completed != null
 
   if (!isStreaming && parts.length === 0) {
     // process/final 空内容时不占位
@@ -754,8 +845,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
               )
             // latestOnly 开：整轮最后一条 assistant 的最后一个 step 才显示
             // latestOnly 关：本消息所有 step-finish 都显示（旧行为）
-            const showStepFinish =
-              allowStepFinishOnMessage && (!stepFinishDisplay.latestOnly || isLastStepFinish)
+            const showStepFinish = allowStepFinishOnMessage && (!stepFinishDisplay.latestOnly || isLastStepFinish)
             // duration / turnDuration / completedAt 始终只挂在本消息最后一个 step
             const showTiming = showStepFinish && isLastStepFinish
 
@@ -781,13 +871,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
                 return <TextPartView key={part.id} part={part} isStreaming={isStreaming} />
               case 'reasoning': {
                 const reasoningDone = endedReasoningIds.has(part.id)
-                return (
-                  <ReasoningPartView
-                    key={part.id}
-                    part={part}
-                    isStreaming={isStreaming && !reasoningDone}
-                  />
-                )
+                return <ReasoningPartView key={part.id} part={part} isStreaming={isStreaming && !reasoningDone} />
               }
               case 'step-finish':
                 if (!showStepFinish) return null
@@ -821,20 +905,33 @@ const AssistantMessageView = memo(function AssistantMessageView({
         <MessageErrorView error={messageError} stateKey={`message:${info.id}:error`} />
       )}
 
-      {processContentScope !== 'process' && processContentScope !== 'inline' && (showTurnDurationFooter || showCompletedAtFooter) && (
-        <div className="flex items-center gap-3 py-0.5 text-[length:var(--fs-xxs)] text-text-500">
-          {showTurnDurationFooter && (
-            <span>{t('stepFinish.totalDuration', { duration: formatDuration(turnDuration!) })}</span>
-          )}
-          {showCompletedAtFooter && (
-            <span title={formatDetailedDateTime(completed!)}>{formatCompletedAt(completed!, completedAtFormat)}</span>
-          )}
+      {/* 回合改动文件汇总：最终回复里也展示（工具步骤区已有各自概览） */}
+      {turnFiles && turnFiles.length > 0 && (
+        <div className={MSG_SPACING.finish}>
+          <span className="mb-1.5 block text-[length:var(--fs-xxs)] font-medium uppercase tracking-wider text-text-500">
+            {t('system.filesChanged', { count: turnFiles.length })}
+          </span>
+          <DiffChips files={turnFiles} />
         </div>
       )}
+
+      {processContentScope !== 'process' &&
+        processContentScope !== 'inline' &&
+        (showTurnDurationFooter || showCompletedAtFooter) && (
+          <div className="flex items-center gap-3 py-0.5 text-[length:var(--fs-xxs)] text-text-500">
+            {showTurnDurationFooter && (
+              <span>{t('stepFinish.totalDuration', { duration: formatDuration(turnDuration!) })}</span>
+            )}
+            {showCompletedAtFooter && (
+              <span title={formatDetailedDateTime(completed!)}>{formatCompletedAt(completed!, completedAtFormat)}</span>
+            )}
+          </div>
+        )}
 
       {showMessageActions && hasCopyableText && (
         <div className={actionBarClass}>
           <ForkActionButton message={message} onFork={onFork} forkMessageId={forkMessageId} />
+          <PinActionButton message={message} sessionId={sessionId} />
           <CopyButton text={fullText} position="static" />
         </div>
       )}
@@ -894,21 +991,11 @@ const ToolGroup = memo(function ToolGroup({
   const stepsSummary = descriptiveToolSteps ? buildDescriptiveToolStepsSummary(parts, t) : undefined
 
   // 汇总所有成功完成的工具的 diff stats（失败的不算）
-  const totalDiffStats = useMemo(() => {
-    if (!descriptiveToolSteps) return undefined
-    let additions = 0,
-      deletions = 0
-    for (const part of parts) {
-      if (part.state.status === 'error') continue
-      const data = extractToolData(part)
-      const stats = data.diffStats || computePartDiffStats(data)
-      if (stats) {
-        additions += stats.additions
-        deletions += stats.deletions
-      }
-    }
-    return additions || deletions ? { additions, deletions } : undefined
-  }, [descriptiveToolSteps, parts])
+  const changedFiles = useMemo(() => collectChangedFiles(parts), [parts])
+  const totalDiffStats = useMemo(
+    () => (descriptiveToolSteps ? sumChangedFiles(changedFiles) : undefined),
+    [descriptiveToolSteps, changedFiles],
+  )
 
   // 沉浸模式下：判断工具组是否包含需要用户阅读的工具
   const hasReadableTools = immersiveMode && parts.some(p => isReadableTool(p.tool))
@@ -926,8 +1013,11 @@ const ToolGroup = memo(function ToolGroup({
   const hasAutoExpandedReadableRef = useRef(
     !processCollapseEnabled && shouldStartExpanded && immersiveMode && hasReadableTools,
   )
-  const { rootRef: stepsRootRef, headerRef: stepsHeaderRef, withScrollLock: withStepsScrollLock } =
-    useDisclosureScrollLock()
+  const {
+    rootRef: stepsRootRef,
+    headerRef: stepsHeaderRef,
+    withScrollLock: withStepsScrollLock,
+  } = useDisclosureScrollLock()
 
   useEffect(() => {
     if (!descriptiveToolSteps) return
@@ -1009,66 +1099,73 @@ const ToolGroup = memo(function ToolGroup({
     <div ref={stepsRootRef} className="flex flex-col">
       {showStepsHeader &&
         (descriptiveToolSteps ? (
-          <button
-            type="button"
+          <DisclosureRow
             ref={stepsHeaderRef}
+            expanded={effectiveExpanded}
             onClick={() => withStepsScrollLock(() => setExpanded(!expanded))}
-            className={cn(
-              `flex w-full items-baseline rounded-md ${MSG_SPACING.header} text-left`,
-              interactive.contentRow,
-            )}
-          >
-            <span className="text-[length:var(--fs-sm)] leading-5">
-              {stepsSummary?.map((seg, i) => (
-                <span
-                  key={i}
-                  className={
-                    seg.type === 'error'
-                      ? 'text-danger-100'
-                      : seg.type === 'active'
-                        ? 'reasoning-shimmer-text'
-                        : 'text-text-300'
-                  }
-                >
-                  {seg.text}
+            size="sm"
+            className="items-center"
+            truncateLabel={false}
+            labelTone="idle"
+            growLabel={false}
+            label={
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                <span className="text-[length:var(--fs-sm)] leading-5">
+                  {stepsSummary?.map((seg, i) => (
+                    <span
+                      key={i}
+                      className={
+                        seg.type === 'error'
+                          ? 'text-danger-100'
+                          : seg.type === 'active'
+                            ? 'reasoning-shimmer-text'
+                            : 'text-text-300'
+                      }
+                    >
+                      {seg.text}
+                    </span>
+                  ))}
                 </span>
-              ))}
-            </span>
-            {totalDiffStats && !hasActiveTools && (
-              <span className="ml-1.5 inline-flex items-center gap-1 text-[length:var(--fs-xxs)] font-medium tabular-nums">
-                {totalDiffStats.additions > 0 && (
-                  <span className="text-success-100">+{totalDiffStats.additions}</span>
+                {!effectiveExpanded && <ToolIconStrip parts={parts} className="shrink-0" />}
+                {totalDiffStats && !hasActiveTools && (
+                  <span className="inline-flex items-center gap-1 text-[length:var(--fs-xxs)] font-medium tabular-nums">
+                    {totalDiffStats.additions > 0 && (
+                      <span className="text-success-100">+{totalDiffStats.additions}</span>
+                    )}
+                    {totalDiffStats.deletions > 0 && (
+                      <span className="text-danger-100">-{totalDiffStats.deletions}</span>
+                    )}
+                  </span>
                 )}
-                {totalDiffStats.deletions > 0 && <span className="text-danger-100">-{totalDiffStats.deletions}</span>}
               </span>
-            )}
-          </button>
+            }
+          />
         ) : (
-          <button
-            type="button"
+          <DisclosureRow
             ref={stepsHeaderRef}
+            expanded={effectiveExpanded}
             onClick={() => withStepsScrollLock(() => setExpanded(!expanded))}
-            className={cn(
-              `flex items-center gap-1.5 ${MSG_SPACING.header} text-text-400 text-[length:var(--fs-base)] hover:text-text-200 rounded-md`,
-              interactive.contentRow,
-            )}
-          >
-            <span className="inline-flex w-[14px] items-center justify-center shrink-0">
-              {effectiveExpanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
-            </span>
-            <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
-              <span className="text-[length:var(--fs-md)] font-medium leading-tight">
-                {isAllDone
-                  ? t('stepsCount', { done: totalCount, total: totalCount })
-                  : t('stepsCount', { done: doneCount, total: totalCount })}
-              </span>
-              {!effectiveExpanded && stepFinish && (
-                <span className="text-[length:var(--fs-sm)] text-text-500 font-mono opacity-70">
-                  {formatTokens(stepFinish.tokens, t)}
+            size="sm"
+            labelTone="idle"
+            growLabel={false}
+            icon={effectiveExpanded ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+            showChevron={false}
+            label={
+              <span className="inline-flex items-baseline gap-2 whitespace-nowrap">
+                <span className="text-[length:var(--fs-md)] font-medium leading-tight">
+                  {isAllDone
+                    ? t('stepsCount', { done: totalCount, total: totalCount })
+                    : t('stepsCount', { done: doneCount, total: totalCount })}
                 </span>
-              )}
-            </span>
-          </button>
+                {!effectiveExpanded && stepFinish && (
+                  <span className="text-[length:var(--fs-sm)] text-text-500 font-mono opacity-70">
+                    {formatTokens(stepFinish.tokens, t)}
+                  </span>
+                )}
+              </span>
+            }
+            meta={!effectiveExpanded ? <ToolIconStrip parts={parts} /> : undefined}
+          />
         ))}
 
       {showStepsHeader ? (
@@ -1083,6 +1180,13 @@ const ToolGroup = memo(function ToolGroup({
         </MessageExpandPanel>
       ) : (
         <div className="flex flex-col">{toolParts}</div>
+      )}
+
+      {/* 改动文件概览：始终显示在 tool 步骤与统计（stepFinish）之间 */}
+      {changedFiles.length > 0 && (
+        <div className={MSG_SPACING.finish}>
+          <DiffChips files={changedFiles} />
+        </div>
       )}
 
       {stepFinish && (
@@ -1287,41 +1391,3 @@ function getTaskChildSessionId(part: ToolPart): string | undefined {
   const metadata = part.state.metadata as Record<string, unknown> | undefined
   return metadata?.sessionId as string | undefined
 }
-
-/** 从 extractToolData 的结果计算 diff stats（当 metadata 没给 diffStats 时） */
-function computePartDiffStats(data: {
-  diff?: { before: string; after: string } | string
-  files?: Array<{ before?: string; after?: string; additions?: number; deletions?: number }>
-}): { additions: number; deletions: number } | undefined {
-  if (data.files?.length) {
-    let a = 0,
-      d = 0
-    for (const f of data.files) {
-      if (f.additions !== undefined) a += f.additions
-      if (f.deletions !== undefined) d += f.deletions
-      if (f.additions === undefined && f.before !== undefined && f.after !== undefined) {
-        const s = diffPairStats(f.before, f.after)
-        a += s.additions
-        d += s.deletions
-      }
-    }
-    return a || d ? { additions: a, deletions: d } : undefined
-  }
-  if (data.diff && typeof data.diff === 'object') {
-    const s = diffPairStats(data.diff.before, data.diff.after)
-    return s.additions || s.deletions ? s : undefined
-  }
-  return undefined
-}
-
-function diffPairStats(before: string, after: string): { additions: number; deletions: number } {
-  const changes = diffLines(before, after)
-  let additions = 0,
-    deletions = 0
-  for (const c of changes) {
-    if (c.added) additions += c.count || 0
-    if (c.removed) deletions += c.count || 0
-  }
-  return { additions, deletions }
-}
-
