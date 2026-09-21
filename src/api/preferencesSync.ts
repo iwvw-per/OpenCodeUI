@@ -1,76 +1,144 @@
 // ============================================
 // Preferences Sync - 客户端设置的多端同步
 //
-// 登录 API Monitor 账号后，把本地设置（localStorage 全量 + 账号外的服务器
-// 列表）推送到面板的 /api/aiagent/preferences，并在启动/登录时拉取合并，
-// 让桌面端与 Web 端共享同一份用户偏好。
+// 登录 API Monitor 账号后，把本地设置（localStorage 中的用户偏好）推送到
+// 面板的 /api/aiagent/preferences，并在启动/轮询/手动触发时与服务端做双向
+// 合并，让桌面端、移动端与 Web 端共享同一份用户偏好。
 //
-// 同步边界（黑名单制）：
-//   默认同步所有键，只排除运行时状态与同步自身的元数据（见 EXCLUDED_*）。
+// ============================================
+// 安全边界：白名单制（收缩默认权限）
+// ============================================
 //
-//   此前是白名单制（只同步 opencode* / theme-* / i18nextLng），但大量设置
-//   用了裸键名（font-scale、diff-style、tool-card-style、chat-wide-mode、
-//   immersive-mode 等），不在前缀里 —— 结果是「项目列表能同步、主题色和
-//   外观设置不同步」。改为默认同步后，新增设置不会再漏。
+// 只有下列键允许参与同步，其余一律拒绝：
+//
+//   1. 全局外观/布局裸键（SYNCABLE_EXACT 集合，逐个人工登记）
+//   2. opencode: 前缀全部放行（notifications / sound-settings /
+//      update-check / toast-enabled）
+//   3. opencode- 前缀放行，但排除本机专属键：opencode-servers、
+//      opencode-active-server、opencode-binary-path、
+//      opencode-auto-start-service、opencode-service-env-vars、
+//      opencode-terminal-layout
+//   4. srv:aiagent: 前缀放行，但排除路径/统计类：last-directory、
+//      model-usage-stats、opencode-recent-projects
+//   5. srv: 其它分桶（srv:local:、srv:server-*）一律拒绝
+//   6. 其它一切键拒绝
+//
+// 白名单必须显式登记，不会因为新增一个 localStorage 键就自动同步。这是刻意
+// 的：安全优先，新增需要同步的键必须在 SYNCABLE_EXACT 里加一行，或者落在
+// 已经放行的前缀下。也就是说「意外泄露」被转换成「必须显式登记」。
+//
+// 历史教训：此前采用黑名单制（默认同步所有键），把面板凭据
+// （webRcloneAuth 含 Basic 认证串）、tileboard_cache_*、
+// ai-draw-nexus-chat-storage、dashboard_api_stats_cache_v1、
+// debug-err（含本地源码路径）、opencode-terminal-layout（含全盘目录列表）
+// 全量推上了服务端。
+//
+// ============================================
+// 本机专属键（保持排除，不参与同步）
+// ============================================
+//
+// 不同主机的盘符与用户目录不同（工作机 D:\ + Administrator，笔电 E:\ +
+// DSUK），因此记录本机路径的键同步过去就是死路径：
+//   - opencode-active-server：当前活动服务器是各端运行时状态
+//   - opencode-binary-path / opencode-auto-start-service /
+//     opencode-service-env-vars：本机二进制路径与服务设置
+//   - opencode-terminal-layout：含全盘目录列表，路径异构且体积大
+//   - opencode-servers：含各端地址与凭证，跨端同步会让其中一台不可用
+//   - last-directory / selected-project-id / opencode-recent-projects：
+//     记录本机上次打开的路径
+//
+// ============================================
+// 合并语义（多条目容器）
+// ============================================
+//
+// 普通标量键按服务端返回的逐键 updatedAt 做新者胜（lastWriteWins）。
+// 以下聚合键按后缀识别，做语义合并而不是整键覆盖，避免丢数据：
+//   - opencode-pinned-sessions：数组，按 sessionId 去重并集
+//   - opencode-saved-directories：数组，按 path 去重并集
+//   - opencode-pinned-messages：数组，按 sessionId 去重并集
+//
+// opencode-hidden-directories 例外，保持整键覆盖（跟随服务端 LWW）：
+// 它存的是绝对路径，跨端合并会把别的机器上「已隐藏」的路径带进来 —— 那些
+// 路径在本机可能根本不存在，形成幽灵条目；且取消隐藏的意图无法用条目级
+// 墓碑表达（数组元素是裸字符串，无稳定 ID）。整键覆盖至少保证语义一致。
+//
+// 取消置顶/取消保存的意图用墓碑（tombstone）表达：维护「已删除条目」记录，
+// 合并时排除墓碑项，30 天后自动过期清理。
+//
+// ============================================
+// 冲突仲裁
+// ============================================
+//
+// 写入时服务端按「逐键 updatedAt」比较（PUT 带 ?lastWriteWins=1）。本地用
+// SYNC_STAMPS_KEY 记录每个键的最后修改时间，只对相对上次快照发生变化的键刷新
+// 时间戳，未变化的键沿用旧时间戳，避免用「当前时间」把别的端更新的旧键顶回去。
+// 时间戳用 ISO 8601，与服务端字符串比较口径一致。
 // ============================================
 
 import { accountRequest, readAccount, type AiAgentAccount } from './aiagent'
 
 const SYNC_ENABLED_KEY = 'opencode-preferences-sync-enabled'
 const SYNC_META_KEY = 'opencode-preferences-sync-meta'
+const SYNC_STAMPS_KEY = 'opencode-preferences-sync-stamps'
+const TOMBSTONES_KEY = 'opencode-preferences-sync-tombstones'
 
-const EXCLUDED_KEYS = new Set([
-  // 登录会话本身：同步它等于用凭证去同步凭证，且登录后才同步，无意义。
-  'opencode-aiagent-account',
-  // 同步自身的状态与元数据，避免自我递归。
-  SYNC_ENABLED_KEY,
-  SYNC_META_KEY,
-  // 服务器列表：含各机器自己的地址与凭证，跨设备同步会把 A 机的
-  // localhost 地址带到 B 机，反而不可用。
-  'opencode-servers',
-  // 当前选中/最近使用的运行时状态：跟随本机环境，跨端同步会让两边互相覆盖。
-  'selected-model-key',
-  'selected-project-id',
-  'last-directory',
-  // 用量统计是本机累计值，合并会重复计数。
-  'model-usage-stats',
+const SNAPSHOT_KEY = '__snapshot__'
+
+const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000
+
+const SYNCABLE_EXACT = new Set([
+  'chat-wide-mode',
+  'code-word-wrap',
+  'collapse-user-messages',
+  'descriptive-tool-steps',
+  'desktop-collapsed-input-dock',
+  'diff-style',
+  'external-file-drop-mode',
+  'font-scale',
+  'glass-effect',
+  'i18nextLng',
+  'process-collapse-enabled',
+  'queue-followup-messages',
+  'reasoning-display-mode',
+  'render-user-markdown',
+  'sidebar-width',
+  'step-finish-display',
+  'theme-custom-css',
+  'theme-mode',
+  'theme-preset',
 ])
 
-const EXCLUDED_PREFIXES = [
-  // 多服务器订阅含 focusedServerId 等运行时状态，跨端无意义。
-  'opencode-multi-server',
-  // per-server 存储按「当前活动服务器」分桶，而活动服务器是本地概念
-  // （两台机器都用各自的 localhost 作为 sid）。同步它会把 A 机 local 桶的内容
-  // 覆盖到 B 机的 local 桶，语义上不是「共享一份设置」而是互相踩。
-  //
-  // 注意这里用裸前缀做 startsWith 匹配：键形如 `srv:{serverId}:{key}`，
-  // 前两段已由冒号分隔，再加冒号会变成 `srv::` 而匹配不到。
-  'srv:',
-]
+const SYNC_METADATA_KEYS = new Set([SYNC_ENABLED_KEY, SYNC_META_KEY, SYNC_STAMPS_KEY, TOMBSTONES_KEY])
 
-const EXCLUDED_SUFFIXES = [
-  // 目录类：记录「上次打开的路径」，是本机上下文，换设备无意义。
-  'last-directory',
-]
+const EXCLUDED_OPENCODE_DASH_KEYS = new Set([
+  'opencode-servers',
+  'opencode-active-server',
+  'opencode-binary-path',
+  'opencode-auto-start-service',
+  'opencode-service-env-vars',
+  'opencode-terminal-layout',
+  'opencode-aiagent-account',
+  'opencode-multi-server',
+])
+
+const EXCLUDED_SRV_AIAGENT_SUFFIXES = ['last-directory', 'model-usage-stats', 'opencode-recent-projects']
 
 /**
  * 是否参与同步的 localStorage 键。
  *
- * 默认同步；命中排除项则跳过。排除的是「运行时状态」与「本机专属值」，
- * 而非「设置」—— 所有用户可见的设置项都应参与同步。
+ * 白名单制：只有落在准入前缀下且不在排除清单里的键才放行，未登记的键一律
+ * 不同步。安全优先，新增键必须显式加入白名单。
  */
 export function isSyncableKey(key: string): boolean {
   if (!key) return false
-  if (EXCLUDED_KEYS.has(key)) return false
-  // 前缀判定同时接受「裸前缀」与「前缀 + 冒号」两种写法，
-  // 避免调用方在写前缀时纠结要不要带分隔符。
-  for (const prefix of EXCLUDED_PREFIXES) {
-    if (key.startsWith(prefix)) return false
+  if (SYNC_METADATA_KEYS.has(key)) return false
+  if (SYNCABLE_EXACT.has(key)) return true
+  if (key.startsWith('opencode:')) return true
+  if (key.startsWith('opencode-')) return !EXCLUDED_OPENCODE_DASH_KEYS.has(key)
+  if (key.startsWith('srv:aiagent:')) {
+    return !EXCLUDED_SRV_AIAGENT_SUFFIXES.some(suffix => key.endsWith(`:${suffix}`))
   }
-  for (const suffix of EXCLUDED_SUFFIXES) {
-    if (key === suffix || key.endsWith(`:${suffix}`)) return false
-  }
-  return true
+  return false
 }
 
 /**
@@ -171,6 +239,214 @@ export function getSyncMeta(): SyncMeta {
   return readSyncMeta()
 }
 
+// ============================================
+// Per-key 时间戳（冲突仲裁）
+// ============================================
+
+interface StampState {
+  /** 每个键本地最后一次内容变化的时间（ISO 字符串）。 */
+  stamps: Record<string, string>
+  /** 每个键上一次同步时的原始值，用于检测「本次是否被本地修改过」。 */
+  known: Record<string, string>
+}
+
+function readStampState(): StampState {
+  try {
+    const raw = localStorage.getItem(SYNC_STAMPS_KEY)
+    if (!raw) return { stamps: {}, known: {} }
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return { stamps: {}, known: {} }
+    const record = parsed as Record<string, unknown>
+    const stamps: Record<string, string> = {}
+    const known: Record<string, string> = {}
+    if (record.stamps && typeof record.stamps === 'object') {
+      for (const [key, value] of Object.entries(record.stamps as Record<string, unknown>)) {
+        if (typeof value === 'string') stamps[key] = value
+      }
+    }
+    if (record.known && typeof record.known === 'object') {
+      for (const [key, value] of Object.entries(record.known as Record<string, unknown>)) {
+        if (typeof value === 'string') known[key] = value
+      }
+    }
+    return { stamps, known }
+  } catch {
+    return { stamps: {}, known: {} }
+  }
+}
+
+function writeStampState(state: StampState): void {
+  try {
+    localStorage.setItem(SYNC_STAMPS_KEY, JSON.stringify(state))
+  } catch {
+    // ignore
+  }
+}
+
+/** 为每个键计算 updatedAt：内容变了的用 now，没变的沿用旧戳（无旧戳才用 now）。 */
+function resolveStamps(
+  values: Record<string, unknown>,
+  known: Record<string, string>,
+  stamps: Record<string, string>,
+  nowIso: string,
+): Record<string, string> {
+  const next: Record<string, string> = {}
+  for (const [key, value] of Object.entries(values)) {
+    const serialized = JSON.stringify(value)
+    const previous = known[key]
+    if (previous !== undefined && previous === serialized && stamps[key]) {
+      next[key] = stamps[key]
+    } else {
+      next[key] = nowIso
+    }
+  }
+  return next
+}
+
+// ============================================
+// 聚合键的合并语义与墓碑
+// ============================================
+
+type MergeRule =
+  | { kind: 'array'; id: (entry: Record<string, unknown>) => string | null }
+  | { kind: 'map-number' }
+
+/**
+ * 按「键名后缀」识别聚合键，这样裸键（opencode-pinned-sessions）与
+ * per-server 分桶键（srv:aiagent:inst_X:opencode-pinned-sessions）走同一套
+ * 合并规则。opencode-hidden-directories 刻意不在此列，保持整键覆盖。
+ */
+const MERGE_RULES: Record<string, MergeRule> = {
+  'opencode-pinned-sessions': { kind: 'array', id: entry => (typeof entry.sessionId === 'string' ? entry.sessionId : null) },
+  'opencode-saved-directories': { kind: 'array', id: entry => (typeof entry.path === 'string' ? entry.path : null) },
+  'opencode-pinned-messages': { kind: 'array', id: entry => (typeof entry.sessionId === 'string' ? entry.sessionId : null) },
+}
+
+function mergeRuleFor(key: string): MergeRule | undefined {
+  const separator = key.lastIndexOf(':')
+  const suffix = separator === -1 ? key : key.slice(separator + 1)
+  return MERGE_RULES[suffix]
+}
+
+function parseJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+type TombstoneState = Record<string, Record<string, number>>
+
+function readTombstones(now = Date.now()): TombstoneState {
+  let state: TombstoneState = {}
+  try {
+    const raw = localStorage.getItem(TOMBSTONES_KEY)
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw)
+      const record = asRecord(parsed)
+      if (record) {
+        for (const [key, entries] of Object.entries(record)) {
+          const list = asRecord(entries)
+          if (!list) continue
+          const kept: Record<string, number> = {}
+          for (const [id, at] of Object.entries(list)) {
+            if (typeof at === 'number' && Number.isFinite(at) && now - at < TOMBSTONE_TTL_MS) kept[id] = at
+          }
+          if (Object.keys(kept).length > 0) state[key] = kept
+        }
+      }
+    }
+  } catch {
+    state = {}
+  }
+  return state
+}
+
+function writeTombstones(state: TombstoneState): void {
+  try {
+    localStorage.setItem(TOMBSTONES_KEY, JSON.stringify(state))
+  } catch {
+    // ignore
+  }
+}
+
+function readSnapshot(): Record<string, unknown> | null {
+  try {
+    const snapshot = readStampState().known[SNAPSHOT_KEY]
+    if (!snapshot) return null
+    return asRecord(JSON.parse(snapshot))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 找出本地发生了删除的条目并写入墓碑。
+ *
+ * 判定依据是「上一次同步时的条目集合」减去「当前条目集合」：并在该差集上，
+ * 因此 A 端新增一条、B 端删除另一条时只记录删除项，不会误伤新增项。
+ */
+function mergeRuleKeysFromSnapshot(): string[] {
+  const snapshot = readSnapshot()
+  const keys = new Set<string>()
+  for (const key of listStorageKeys()) {
+    if (mergeRuleFor(key)) keys.add(key)
+  }
+  if (snapshot) {
+    for (const key of Object.keys(snapshot)) {
+      if (mergeRuleFor(key)) keys.add(key)
+    }
+  }
+  return [...keys]
+}
+
+function recordTombstones(entries: Record<string, string>, state: TombstoneState): TombstoneState {
+  const now = Date.now()
+  const snapshot = readSnapshot()
+  for (const key of mergeRuleKeysFromSnapshot()) {
+    const rule = mergeRuleFor(key)
+    if (!rule) continue
+    const previousIds = entryIds(parseJson(typeof snapshot?.[key] === 'string' ? (snapshot[key] as string) : ''), rule)
+    if (previousIds.size === 0) continue
+    const currentIds = entryIds(parseJson(entries[key] ?? ''), rule)
+    const bucket = state[key] ?? {}
+    for (const id of previousIds) {
+      if (!currentIds.has(id) && id) bucket[id] = now
+    }
+    if (Object.keys(bucket).length > 0) state[key] = bucket
+  }
+  return state
+}
+
+function entryIds(value: unknown, rule: MergeRule): Set<string> {
+  const ids = new Set<string>()
+  if (value === undefined || value === null) return ids
+  if (rule.kind === 'array') {
+    if (!Array.isArray(value)) return ids
+    for (const item of value) {
+      const record = asRecord(item)
+      if (!record) continue
+      const id = rule.id(record)
+      if (id) ids.add(id)
+    }
+    return ids
+  }
+  const record = asRecord(value)
+  if (!record) return ids
+  for (const key of Object.keys(record)) ids.add(key)
+  return ids
+}
+
+// ============================================
+// 采集 / 拉取 / 推送
+// ============================================
+
 /** 稳定的内容指纹：键排序后拼接，用于判断是否需要上传。 */
 function fingerprint(entries: Record<string, string>): string {
   const keys = Object.keys(entries).sort()
@@ -191,12 +467,62 @@ interface ServerPreferenceItem {
   updatedAt: string
 }
 
+interface MergeResult {
+  value: unknown
+  changed: boolean
+}
+
+/**
+ * 按聚合规则合并本地值与服务端值。任一侧解析失败时返回 changed=false，
+ * 交由调用方按「新者胜」的普通键逻辑处理。
+ */
+function mergeSyncValue(rule: MergeRule, localRaw: string | null, serverValue: unknown, dead: Set<string>): MergeResult {
+  if (rule.kind === 'array') {
+    const localValue = localRaw === null ? undefined : parseJson(localRaw)
+    const localList = Array.isArray(localValue) ? localValue : null
+    const serverList = Array.isArray(serverValue) ? serverValue : null
+    if (localList === null || serverList === null) return { value: undefined, changed: false }
+
+    const merged: Record<string, unknown>[] = []
+    const seen = new Set<string>()
+    for (const item of [...serverList, ...localList]) {
+      const record = asRecord(item)
+      if (!record) continue
+      const id = rule.id(record)
+      if (!id || seen.has(id) || dead.has(id)) continue
+      seen.add(id)
+      merged.push(record)
+    }
+    return { value: merged, changed: true }
+  }
+
+  const localMap = localRaw === null ? null : asRecord(parseJson(localRaw))
+  const serverMap = asRecord(serverValue)
+  if (localMap === null || serverMap === null) return { value: undefined, changed: false }
+
+  const merged: Record<string, number> = {}
+  for (const [path, at] of Object.entries(serverMap)) {
+    if (typeof at === 'number' && Number.isFinite(at)) merged[path] = at
+  }
+  for (const [path, at] of Object.entries(localMap)) {
+    if (typeof at !== 'number' || !Number.isFinite(at)) continue
+    const existing = merged[path]
+    if (existing === undefined || at > existing) merged[path] = at
+  }
+  for (const path of Object.keys(merged)) {
+    if (dead.has(path)) delete merged[path]
+  }
+  return { value: merged, changed: true }
+}
+
 /**
  * 拉取服务端偏好并写入本地。返回写入的键数量。
  *
- * 服务端把值当作不透明的 JSON 存储，但 localStorage 里存的始终是字符串，
- * 因此这里按「原始字符串」语义还原：非字符串的 JSON 值（数组/对象/数字/
- * 布尔）序列化回字符串，字符串值直接使用（它们在推送时就是按需解析的）。
+ * 普通键：服务端逐键 updatedAt 不早于本地戳才覆盖本地；本地没有戳视为
+ * 首次同步，直接用服务端值。
+ * 聚合键：以「本地当前值」而非「上次同步快照」参与合并，本地已删除的条目
+ * 才会被识别为删除（若拿快照合并，本地删掉的条目会随快照再次进入并集）。
+ * 墓碑：本地已删除与「服务端本次仍未包含」的条目都会记成墓碑，防止复活。
  */
 export async function pullPreferences(account?: AiAgentAccount | null): Promise<number> {
   const current = account ?? readAccount()
@@ -205,28 +531,85 @@ export async function pullPreferences(account?: AiAgentAccount | null): Promise<
   const items = await accountRequest<ServerPreferenceItem[]>(current, '/api/aiagent/preferences')
   if (!Array.isArray(items)) return 0
 
+  const stampState = readStampState()
+  const now = Date.now()
+  const tombstones = readTombstones(now)
+  const stamps = { ...stampState.stamps }
+  const known = { ...stampState.known }
+
   let written = 0
   for (const item of items) {
     if (!item || typeof item.key !== 'string' || !isSyncableKey(item.key)) continue
+    const key = item.key
+    const serverIso = typeof item.updatedAt === 'string' ? item.updatedAt : ''
+    const serverAt = Date.parse(serverIso)
+    const localStamp = Date.parse(stamps[key] ?? '')
+
+    const rule = mergeRuleFor(key)
+    if (rule) {
+      const localRaw = localStorage.getItem(key)
+      const serverIds = entryIds(item.value, rule)
+      const snapshot = asRecord(parseJson(known[SNAPSHOT_KEY] ?? ''))
+      const snapshotRaw = snapshot?.[key]
+      const knownIds = entryIds(parseJson(typeof snapshotRaw === 'string' ? snapshotRaw : ''), rule)
+      const localIds = entryIds(parseJson(localRaw ?? ''), rule)
+      const bucket = tombstones[key] ?? {}
+      // 数组类条目是「在不在集合里」的二值状态，本地有、服务端没有即视为
+      // 本地删除；映射类（recent-projects）里只有本地有只说明它是本机新增的
+      // 较新记录，不能据此判死，只认「上次快照有、本次两边都没有」的消失项。
+      for (const id of knownIds) {
+        if (!serverIds.has(id) && id) bucket[id] = now
+      }
+      if (rule.kind === 'array') {
+        for (const id of localIds) {
+          if (!serverIds.has(id) && id) bucket[id] = now
+        }
+      }
+      if (Object.keys(bucket).length > 0) tombstones[key] = bucket
+
+      const dead = new Set(Object.keys(tombstones[key] ?? {}))
+      const merged = mergeSyncValue(rule, localRaw, item.value, dead)
+      if (merged.changed) {
+        const raw = JSON.stringify(merged.value)
+        try {
+          if (localStorage.getItem(key) !== raw) {
+            localStorage.setItem(key, raw)
+            written += 1
+          }
+          known[key] = raw
+          stamps[key] = new Date(Math.max(Number.isFinite(serverAt) ? serverAt : 0, Date.now())).toISOString()
+        } catch {
+          // 单项写入失败不影响其余键
+        }
+        continue
+      }
+    }
+
     const value = typeof item.value === 'string' ? item.value : JSON.stringify(item.value)
     if (typeof value !== 'string') continue
+    if (localStamp && Number.isFinite(serverAt) && serverAt < localStamp) continue
     try {
-      if (localStorage.getItem(item.key) === value) continue
-      localStorage.setItem(item.key, value)
+      if (localStorage.getItem(key) === value) continue
+      localStorage.setItem(key, value)
       written += 1
     } catch {
       // 单项写入失败不影响其余键
     }
+    known[key] = value
+    if (serverIso) stamps[key] = serverIso
   }
+
+  writeTombstones(tombstones)
+  writeStampState({ stamps, known: { ...known, [SNAPSHOT_KEY]: JSON.stringify(collectLocalPreferences()) } })
   return written
 }
 
 /**
  * 推送本地偏好到服务端。返回实际写入的键数量。
  *
- * 值统一按「原始字符串」推送：能解析成 JSON 的就推解析后的结构（便于服务端
- * 与其它客户端按类型读取），不能解析的推原始字符串。这样 localStorage 中
- * 既存 JSON 又存裸字符串（如 i18nextLng=zh-CN）的键都能无损往返。
+ * 值统一按「原始字符串」推送：能解析成 JSON 的就推解析后的结构，不能解析的
+ * 推原始字符串。时间戳按 per-key 计算（只有本地改过的键才刷新），并带
+ * lastWriteWins=1 让服务端逐键比较，避免旧数据顶掉新数据。
  */
 export async function pushPreferences(account?: AiAgentAccount | null, force = false): Promise<number> {
   const current = account ?? readAccount()
@@ -239,8 +622,40 @@ export async function pushPreferences(account?: AiAgentAccount | null, force = f
     return 0
   }
 
+  const stampState = readStampState()
+  const tombstones = recordTombstones(entries, readTombstones())
+  const mergedEntries = { ...entries }
+  for (const key of mergeRuleKeysFromSnapshot()) {
+    const raw = entries[key]
+    if (raw === undefined) continue
+    const rule = mergeRuleFor(key)
+    if (!rule) continue
+    const value = parseJson(raw)
+    if (value === undefined || value === null) continue
+    const dead = new Set(Object.keys(tombstones[key] ?? {}))
+    if (rule.kind === 'array') {
+      if (!Array.isArray(value)) continue
+      mergedEntries[key] = JSON.stringify(
+        value.filter(entry => {
+          const record = asRecord(entry)
+          if (!record) return false
+          const id = rule.id(record)
+          return !id || !dead.has(id)
+        }),
+      )
+    } else {
+      const record = asRecord(value)
+      if (!record) continue
+      const cleaned: Record<string, unknown> = {}
+      for (const [path, at] of Object.entries(record)) {
+        if (!dead.has(path)) cleaned[path] = at
+      }
+      mergedEntries[key] = JSON.stringify(cleaned)
+    }
+  }
+
   const values: Record<string, unknown> = {}
-  for (const [key, raw] of Object.entries(entries)) {
+  for (const [key, raw] of Object.entries(mergedEntries)) {
     try {
       values[key] = JSON.parse(raw)
     } catch {
@@ -248,21 +663,43 @@ export async function pushPreferences(account?: AiAgentAccount | null, force = f
     }
   }
 
-  const result = await accountRequest<{ written?: string[] }>(current, '/api/aiagent/preferences', {
-    method: 'PUT',
-    body: JSON.stringify({ values, updatedAt: new Date().toISOString() }),
-  })
+  const nowIso = new Date().toISOString()
+  const updatedAt = resolveStamps(values, stampState.known, stampState.stamps, nowIso)
+
+  const result = await accountRequest<{ written?: string[] }>(
+    current,
+    '/api/aiagent/preferences?lastWriteWins=1',
+    {
+      method: 'PUT',
+      body: JSON.stringify({ values, updatedAt }),
+    },
+  )
+
+  const known = { ...stampState.known }
+  for (const [key, value] of Object.entries(values)) {
+    known[key] = JSON.stringify(value)
+    if (mergedEntries[key] !== entries[key]) {
+      try {
+        localStorage.setItem(key, mergedEntries[key])
+      } catch {
+        // ignore
+      }
+    }
+  }
+  known[SNAPSHOT_KEY] = JSON.stringify(collectLocalPreferences())
+  writeStampState({ stamps: updatedAt, known })
+  writeTombstones(tombstones)
 
   writeSyncMeta({
     lastSyncedAt: Date.now(),
-    fingerprint: currentFingerprint,
+    fingerprint: fingerprint(collectLocalPreferences()),
   })
   return Array.isArray(result?.written) ? result.written.length : Object.keys(values).length
 }
 
 /**
- * 双向同步：先拉取服务端偏好到本地，再推送本地偏好。
- * 拉取覆盖本地同名键，因此多端冲突时以服务端为准。
+ * 双向同步：先拉取服务端偏好到本地并合并，再推送本地偏好。
+ * 拉取会写入逐键时间戳，因此推送时未被本地改动的键沿用服务端时间戳。
  */
 export async function syncPreferences(account?: AiAgentAccount | null, force = false): Promise<{ pulled: number; pushed: number }> {
   const current = account ?? readAccount()
