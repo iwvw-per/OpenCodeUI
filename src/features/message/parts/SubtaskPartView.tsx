@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SubtaskPart } from '../../../types/message'
-import { useChildSessions, type ChildSessionInfo } from '../../../store'
+import { useChildSessions, useSessionStatus, type ChildSessionInfo } from '../../../store'
 import { useSessionNavigation } from '../../../contexts/SessionNavigationContext'
 import { useDisclosureScrollLock } from '../../../hooks'
 import { UsersIcon, ChevronDownIcon, LayersIcon, TerminalIcon, ReturnIcon } from '../../../components/Icons'
@@ -35,12 +35,17 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
   // 注意：part.sessionID 是父 session，我们需要找到这个 subtask 创建的子 session
   // 子 session 的 parentID 应该等于 part.sessionID
   const childSessions = useChildSessions(part.sessionID)
+  const parentStatus = useSessionStatus(part.sessionID)
+  const parentRunning = parentStatus?.type === 'busy' || parentStatus?.type === 'retry'
 
   // 找到匹配这个 subtask 的子 session
   // 通常是最近创建的那个，或者通过 agent 名称匹配
   const childSession = findMatchingChildSession(childSessions, part)
 
-  const status = childSession?.status ?? 'running'
+  // 找不到子 session 时不能直接当成 running：父会话若已完成，子代理必然也已结束，
+  // 否则历史上完成的任务会一直挂着「正在工作」。只在父会话仍在运行时才显示运行态。
+  const fallbackStatus: ChildSessionInfo['status'] = parentRunning ? 'running' : 'idle'
+  const status = childSession?.status ?? fallbackStatus
   const isRunning = status === 'running'
 
   // 进入子 session：未分屏时优先在分屏视图中打开

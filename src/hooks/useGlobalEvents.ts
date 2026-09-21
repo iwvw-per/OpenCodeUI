@@ -838,6 +838,14 @@ export function useGlobalEvents(directories?: string[]) {
 
           activeSessionStore.updateStatus(scopedId, data.status)
 
+          // 同步子 agent 状态：session.status 是服务端对每个会话（含子会话）的权威状态，
+          // 子代理结束时必须据此落定，否则子代理面板会一直显示「正在工作」。
+          if (data.status.type === 'idle') {
+            childSessionStore.markIdle(scopedId)
+          } else if (data.status.type === 'retry' || data.status.type === 'busy') {
+            childSessionStore.markRunning(scopedId)
+          }
+
           // Toast — session 从 busy/retry 变成 idle 时弹 completed 通知
           if (wasBusy && data.status.type === 'idle') {
             if (belongsToCurrentSession(scopedId)) {

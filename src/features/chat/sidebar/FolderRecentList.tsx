@@ -1244,10 +1244,10 @@ function FolderRecentSection({
             <div onTouchStart={e => e.stopPropagation()}>
               {!hasActivated || (!hasWorkspaceTree && isLoading) ? (
                 // 与 minimal SessionListItem 对齐：状态点占位 + 像素格子 spinner + 扫光文案
-                <div className="flex items-center gap-2 px-2 py-1.5" aria-busy="true">
+                <div className="flex items-center gap-2 px-2 py-1" aria-busy="true">
                   <span className="size-5 shrink-0" aria-hidden="true" />
                   <Spinner size="sm" tone="accent" variant="pixel" />
-                  <span className="reasoning-shimmer-text text-[length:var(--fs-sm)]">
+                  <span className="reasoning-shimmer-text text-[length:var(--fs-xs)]">
                     {t('sidebar.loadingChats')}
                   </span>
                 </div>
@@ -1280,7 +1280,7 @@ function FolderRecentSection({
                     : t('sidebar.noChatsInFolder')}
                 </div>
               ) : (
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-0.5">
                   {filteredSessions.map((session, index) => {
                     const isChecked = selectedSessionIds?.has(session.id) ?? false
                     // 上：前一条 session，或（首条时）父文件夹已选中

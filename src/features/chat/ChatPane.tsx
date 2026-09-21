@@ -156,6 +156,14 @@ export const ChatPane = memo(function ChatPane({
   const outerViewport = useChatViewportMaybe()
   const splitPaneEnabled = canUseSplitPane(outerViewport ?? PANE_VIEWPORT)
 
+  // 分屏 pane 顶栏的高度是否要与侧栏 logo 区（h-11 = 2.75rem）对齐。
+  // 判据必须取外层（App 级）视口：分屏时 PaneHeader 读到的是 PANE_VIEWPORT，
+  // 它的 sidebarBehavior 固定为 overlay，无法区分「移动端」与「网页桌面端」。
+  // Windows/macOS 桌面 pane 顶栏位于标题栏之下，移动端另有 3.5rem 顶部栏，
+  // 两者都保持 2.5rem，仅网页/Linux 桌面端需要对齐。
+  const alignHeaderWithSidebar =
+    !usesCustomDesktopTitlebar() && (outerViewport?.interaction.sidebarBehavior ?? 'docked') !== 'overlay'
+
   // ============================================
   // Refs
   // ============================================
@@ -1119,6 +1127,12 @@ export const ChatPane = memo(function ChatPane({
             : 'relative h-full flex flex-col overflow-hidden bg-bg-000'
         }
         onClick={handlePaneFocus}
+        // 分屏 pane 的 PaneHeader 是常规流内元素，已经占据真实行高。
+        // --chat-header-height 是给「绝对覆盖式 Header」预留空间用的（消息区
+        // paddingTop、工作状态卡片上边距、右面板下移都读它）。分屏下若不置零，
+        // 这些消费方会再让出一份顶栏高度，顶栏被顶出可视区、消息区顶部出现重叠。
+        // 在这里局部覆盖，只影响本 pane 子树，不影响主视图与其它 pane。
+        style={showCompactShell ? ({ '--chat-header-height': '0px' } as React.CSSProperties) : undefined}
       >
         {showCompactShell && (
           <PaneHeader
@@ -1132,6 +1146,7 @@ export const ChatPane = memo(function ChatPane({
             canSplitPane={splitPaneEnabled}
             isPaneFullscreen={isPaneFullscreen}
             onTogglePaneFullscreen={onTogglePaneFullscreen}
+            alignHeaderWithSidebar={alignHeaderWithSidebar}
             onFocus={handlePaneFocus}
           />
         )}

@@ -38,6 +38,8 @@ class ChildSessionStore {
   private sessionInfo = new Map<string, ChildSessionInfo>()
   private subscribers = new Set<Subscriber>()
   private version = 0
+  // 注册之前先到达的终态（idle/error）：注册时消费，避免被 running 覆盖
+  private pendingTerminalStatus = new Map<string, 'idle' | 'error'>()
 
   // ============================================
   // Subscription
@@ -78,13 +80,27 @@ class ChildSessionStore {
     }
     children.add(childKey)
 
-    // 存储 session 信息
+    // 存储 session 信息。
+    // 重复注册（session.created / session.updated）不能把已结束的状态冲回 running：
+    // 子代理 idle/error 之后仍会收到 updated（标题更新等），无条件覆盖会让
+    // 已完成的子代理永远显示「正在工作」。只有显式的终态（idle/error）才允许
+    // 覆盖已有的终态；未显式传 status 时保留现有记录。
+    const pending = this.pendingTerminalStatus.get(childKey)
+    if (pending) this.pendingTerminalStatus.delete(childKey)
+
+    const existing = this.sessionInfo.get(childKey)
+    const resolvedStatus: ChildSessionInfo['status'] =
+      status ??
+      pending ??
+      // 已终态（idle/error）不允许被重复注册冲回 running
+      (existing?.status === 'idle' || existing?.status === 'error' ? existing.status : 'running')
+
     this.sessionInfo.set(childKey, {
       id: childKey,
       parentID: parentKey,
       title: session.title || i18n.t('chat:permissionDialog.subtaskFallback'),
       agent: session.agent,
-      status: status ?? 'running',
+      status: resolvedStatus,
       createdAt: session.time.created,
     })
 
@@ -106,14 +122,45 @@ class ChildSessionStore {
    * 标记子 session 为 idle
    */
   markIdle(sessionId: string) {
-    this.updateChildSession(sessionId, { status: 'idle' })
+    this.applyTerminalStatus(sessionId, 'idle')
   }
 
   /**
    * 标记子 session 为 error
    */
   markError(sessionId: string) {
-    this.updateChildSession(sessionId, { status: 'error' })
+    this.applyTerminalStatus(sessionId, 'error')
+  }
+
+  /**
+   * 标记子 session 为 running。
+   *
+   * 由 session.status(busy/retry) 驱动。只复活「已注册」的子会话：未注册的会话
+   * 可能只是父会话本身在跑，凭空建记录会在子代理面板里凭空多出一行。
+   */
+  markRunning(sessionId: string) {
+    if (!this.sessionInfo.has(sessionId)) return
+    // 已终态不复活：run 结束后的迟到 busy 事件不应把「已完成」再打回运行态
+    const status = this.sessionInfo.get(sessionId)!.status
+    if (status === 'error') return
+    this.pendingTerminalStatus.delete(sessionId)
+    this.updateChildSession(sessionId, { status: 'running' })
+  }
+
+  /**
+   * 落定终态（idle/error）。
+   *
+   * 子会话可能在注册之前就先收到 session.idle（事件乱序），此时直接写 store 会
+   * 因为记录不存在而静默丢弃，随后的 registerChildSession 再把它标成 running，
+   * 子代理就永远卡在「正在工作」。因此未注册时先把终态暂存，注册时消费掉。
+   */
+  private applyTerminalStatus(sessionId: string, status: 'idle' | 'error') {
+    if (this.sessionInfo.has(sessionId)) {
+      this.updateChildSession(sessionId, { status })
+      return
+    }
+    this.pendingTerminalStatus.set(sessionId, status)
+    this.notify()
   }
 
   // ============================================
@@ -194,6 +241,7 @@ class ChildSessionStore {
   clearAll() {
     this.childrenByParent.clear()
     this.sessionInfo.clear()
+    this.pendingTerminalStatus.clear()
     this.notify()
   }
 
@@ -218,6 +266,7 @@ class ChildSessionStore {
     let changed = false
 
     for (const id of idsToRemove) {
+      this.pendingTerminalStatus.delete(id)
       const info = this.sessionInfo.get(id)
       if (info) {
         const siblings = this.childrenByParent.get(info.parentID)

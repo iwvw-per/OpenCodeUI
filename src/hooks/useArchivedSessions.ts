@@ -18,6 +18,7 @@ import {
 } from '../api'
 import { pinnedSessionsStore } from '../store/pinnedSessionsStore'
 import { serverStore } from '../store/serverStore'
+import { resolveSessionTarget, splitSessionKey } from '../utils/sessionKey'
 
 interface UseArchivedSessionsOptions {
   /** 延迟启用，用于懒加载 */
@@ -37,6 +38,8 @@ interface UseArchivedSessionsResult {
   restore: (sessionId: string) => Promise<void>
   /** 永久删除会话，成功后从列表移除 */
   remove: (sessionId: string) => Promise<void>
+  /** 永久删除多会话（用于批量删除/一键清空），返回删除失败的会话 key */
+  removeMany: (sessionIds: string[]) => Promise<string[]>
 }
 
 export function useArchivedSessions(options: UseArchivedSessionsOptions = {}): UseArchivedSessionsResult {
@@ -141,5 +144,48 @@ export function useArchivedSessions(options: UseArchivedSessionsOptions = {}): U
     [sessions, serverId],
   )
 
-  return { sessions, isLoading, error, refresh, restore, remove }
+  const removeMany = useCallback(
+    async (sessionIds: string[]) => {
+      if (sessionIds.length === 0) return []
+      // 列表可能混有多个 server 的会话，按 server + directory 分组，保证每条
+      // 请求都带上正确的 directory，否则服务端可能定位不到会话。
+      const groups = new Map<string, { serverId: string; directory?: string; ids: string[] }>()
+      for (const sessionKey of sessionIds) {
+        const session = sessions.find(item => item.id === sessionKey)
+        const target = resolveSessionTarget(sessionKey, serverId)
+        if (!target.sessionId) continue
+        const groupKey = `${target.serverId}\u0000${session?.directory ?? ''}`
+        const group = groups.get(groupKey)
+        if (group) {
+          group.ids.push(target.sessionId)
+        } else {
+          groups.set(groupKey, { serverId: target.serverId, directory: session?.directory, ids: [target.sessionId] })
+        }
+      }
+
+      const failed: string[] = []
+      await Promise.all(
+        Array.from(groups.values()).map(async group => {
+          const results = await Promise.allSettled(
+            group.ids.map(id => deleteSession(id, group.directory, group.serverId)),
+          )
+          results.forEach((result, index) => {
+            if (result.status !== 'fulfilled') failed.push(group.ids[index])
+          })
+        }),
+      )
+
+      const failedRawIds = new Set(failed)
+      setSessions(prev => prev.filter(item => failedRawIds.has(splitSessionKey(item.id).sessionId)))
+      for (const sessionKey of sessionIds) {
+        const { sessionId: rawId } = splitSessionKey(sessionKey)
+        if (failedRawIds.has(rawId)) continue
+        pinnedSessionsStore.unpin(sessionKey)
+      }
+      return failed
+    },
+    [sessions, serverId],
+  )
+
+  return { sessions, isLoading, error, refresh, restore, remove, removeMany }
 }
