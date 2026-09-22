@@ -62,6 +62,10 @@ interface SessionChangesPanelProps {
   serverId?: string
   position?: PanelPosition
   isResizing?: boolean
+  /** 从消息里的变更 chip 点进来时的定位目标：展开并选中该文件的 diff。 */
+  revealFile?: string | null
+  /** 定位完成（或无法定位）后通知上层清掉请求，避免重复触发。 */
+  onRevealConsumed?: () => void
 }
 
 export const SessionChangesPanel = memo(function SessionChangesPanel({
@@ -70,6 +74,8 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   serverId,
   position = 'right',
   isResizing: isPanelResizing = false,
+  revealFile = null,
+  onRevealConsumed,
 }: SessionChangesPanelProps) {
   const { t } = useTranslation(['components', 'common'])
   const containerRef = useRef<HTMLDivElement>(null)
@@ -281,7 +287,9 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (changeOptions.length === 0) return
 
-      const currentIndex = changeOptions.findIndex(mode => changeMenuOptionRefs.current[mode] === document.activeElement)
+      const currentIndex = changeOptions.findIndex(
+        mode => changeMenuOptionRefs.current[mode] === document.activeElement,
+      )
       if (event.key === 'Escape') {
         event.preventDefault()
         setChangeMenuOpen(false)
@@ -309,7 +317,10 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
         focusByIndex(nextIndex)
       } else if (event.key === 'ArrowUp') {
         event.preventDefault()
-        const nextIndex = currentIndex === -1 ? changeOptions.length - 1 : (currentIndex - 1 + changeOptions.length) % changeOptions.length
+        const nextIndex =
+          currentIndex === -1
+            ? changeOptions.length - 1
+            : (currentIndex - 1 + changeOptions.length) % changeOptions.length
         focusByIndex(nextIndex)
       } else if (event.key === 'Home') {
         event.preventDefault()
@@ -493,6 +504,19 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     setSelectedFile(prev => (prev === file ? prev : file))
   }, [])
 
+  // 消费「从消息变更 chip 点进来」的定位请求。
+  //
+  // 只在目标文件确实出现在当前模式的 diff 里时选中；否则保持原状并直接消费掉，
+  // 避免请求长期挂着。定位是瞬时的：消费后立刻通知上层清空，用户随后手动切换
+  // 文件不会被再次拉回。
+  useEffect(() => {
+    if (!revealFile) return
+    if (diffs.some(diff => diff.file === revealFile)) {
+      handleSelectFile(revealFile)
+    }
+    onRevealConsumed?.()
+  }, [revealFile, diffs, handleSelectFile, onRevealConsumed])
+
   const handleFileContextMenu = useCallback((event: React.MouseEvent, file: string) => {
     event.preventDefault()
     event.stopPropagation()
@@ -597,7 +621,11 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   const showPreview = !loading && selectedDiff !== null && !(error && diffs.length === 0)
 
   if (projectLoading && !project) {
-    return <div className="p-4 text-center text-text-400 text-[length:var(--fs-sm)]">{t('sessionChanges.loadingChanges')}</div>
+    return (
+      <div className="p-4 text-center text-text-400 text-[length:var(--fs-sm)]">
+        {t('sessionChanges.loadingChanges')}
+      </div>
+    )
   }
 
   if (!project && error) {
@@ -734,7 +762,8 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                           changeMenuOpen &&
                           ((changeMenuOpenFocusRef.current === 'selected' && isSelected) ||
                             (changeMenuOpenFocusRef.current === 'first' && mode === changeOptions[0]) ||
-                            (changeMenuOpenFocusRef.current === 'last' && mode === changeOptions[changeOptions.length - 1]))
+                            (changeMenuOpenFocusRef.current === 'last' &&
+                              mode === changeOptions[changeOptions.length - 1]))
 
                         if (node && shouldFocusNode) {
                           node.focus()
@@ -752,11 +781,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
                       }}
                       className={`
                         group flex w-full items-center rounded-md px-2.5 py-1.5 text-left text-[length:var(--fs-sm)] transition-colors
-                        ${
-                          isSelected
-                            ? 'bg-bg-200/70 text-text-100'
-                            : 'text-text-200 hover:bg-bg-200'
-                        }
+                        ${isSelected ? 'bg-bg-200/70 text-text-100' : 'text-text-200 hover:bg-bg-200'}
                       `}
                     >
                       <span className="min-w-0 flex-1 truncate">{meta.label}</span>
@@ -789,16 +814,10 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
             {/* View Mode Toggle */}
             <Tabs variant="slider" value={viewMode} onValueChange={value => setViewMode(value as 'unified' | 'split')}>
               <TabsList activeIndex={viewMode === 'unified' ? 0 : 1} itemCount={2} className="shrink-0">
-                <TabsTrigger
-                  value="unified"
-                  className="px-2 py-0.5 text-[length:var(--fs-xxs)]"
-                >
+                <TabsTrigger value="unified" className="px-2 py-0.5 text-[length:var(--fs-xxs)]">
                   {t('sessionChanges.unified')}
                 </TabsTrigger>
-                <TabsTrigger
-                  value="split"
-                  className="px-2 py-0.5 text-[length:var(--fs-xxs)]"
-                >
+                <TabsTrigger value="split" className="px-2 py-0.5 text-[length:var(--fs-xxs)]">
                   {t('sessionChanges.split')}
                 </TabsTrigger>
               </TabsList>
@@ -821,7 +840,9 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
         {/* File List */}
         <div className="flex-1 overflow-auto panel-scrollbar-y">
           {loading ? (
-            <div className="p-4 text-center text-text-400 text-[length:var(--fs-sm)]">{t('sessionChanges.loadingChanges')}</div>
+            <div className="p-4 text-center text-text-400 text-[length:var(--fs-sm)]">
+              {t('sessionChanges.loadingChanges')}
+            </div>
           ) : error && diffs.length === 0 ? (
             <div className="p-4 text-center text-danger-100 text-[length:var(--fs-sm)]">{error}</div>
           ) : diffs.length === 0 ? (
@@ -1053,7 +1074,14 @@ const DiffPreviewPanel = memo(function DiffPreviewPanel({
 
       {/* Diff Content - DiffViewer 自带滚动 */}
       <div className="flex-1 min-h-0">
-        <DiffViewer before={before} after={after} language={language} viewMode={viewMode} isResizing={isResizing} data={diffViewerData} />
+        <DiffViewer
+          before={before}
+          after={after}
+          language={language}
+          viewMode={viewMode}
+          isResizing={isResizing}
+          data={diffViewerData}
+        />
       </div>
     </div>
   )

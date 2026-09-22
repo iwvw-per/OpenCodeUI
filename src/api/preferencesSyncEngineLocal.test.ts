@@ -61,6 +61,15 @@ describe('preferences sync engine (instant local change)', () => {
     return { fetchMock, putCount: () => putCount }
   }
 
+  /** 轮询等待条件成立，避免固定 sleep 在满载并行下过紧导致偶发失败。 */
+  async function waitFor(predicate: () => boolean, timeoutMs = 8000): Promise<void> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      if (predicate()) return
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+  }
+
   it('uploads a local change without waiting for the 15s poll', async () => {
     // 回归：引擎原先只靠 15 秒轮询发现本地改动，端到端延迟最大的一段就在这里。
     await seedAccountAndEnable()
@@ -76,8 +85,8 @@ describe('preferences sync engine (instant local change)', () => {
     // 模拟「新建项目」：写入当前实例的 per-server 存储（触发变更通知）
     serverStorage.setJSON('opencode-saved-directories', [{ path: 'D:/Code/New', name: 'New', addedAt: 1 }])
 
-    // 只需等 debounce（500ms）+ 余量，远小于 15 秒轮询
-    await new Promise(resolve => setTimeout(resolve, 1500))
+    // 只需等 debounce（500ms）后上传发生，远小于 15 秒轮询
+    await waitFor(() => sse.putCount() > before)
 
     expect(sse.putCount()).toBeGreaterThan(before)
     stopPreferencesSync()
@@ -99,7 +108,9 @@ describe('preferences sync engine (instant local change)', () => {
     serverStorage.setJSON('opencode-saved-directories', [{ path: 'D:/Code/B', name: 'B', addedAt: 2 }])
     serverStorage.setJSON('opencode-saved-directories', [{ path: 'D:/Code/C', name: 'C', addedAt: 3 }])
 
-    await new Promise(resolve => setTimeout(resolve, 1500))
+    await waitFor(() => sse.putCount() > before)
+    // 再等一小段确认没有多余的第 2 次上传（debounce 生效）
+    await new Promise(resolve => setTimeout(resolve, 600))
 
     // debounce 应把它们合并：相对基线只多出 1 次上传
     expect(sse.putCount() - before).toBe(1)

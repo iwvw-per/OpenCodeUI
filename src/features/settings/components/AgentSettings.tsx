@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { autoApproveStore } from '../../../store'
-import type { AlwaysAllowMode } from '../../../store/autoApproveStore'
+import type { AlwaysAllowMode, QuestionAutoSelectTimeout } from '../../../store/autoApproveStore'
 import { themeStore, type ToolCardStyle } from '../../../store/themeStore'
 import { ExpandableSection } from '../../../components/ui'
 import { ChevronDownIcon } from '../../../components/Icons'
@@ -12,6 +12,9 @@ export function AgentSettings() {
   const { t } = useTranslation(['settings'])
   const [alwaysAllowMode, setAlwaysAllowMode] = useState<AlwaysAllowMode>(autoApproveStore.alwaysAllowMode)
   const [approvePendingOnFullAuto, setApprovePendingOnFullAuto] = useState(autoApproveStore.approvePendingOnFullAuto)
+  const [questionAutoSelectTimeout, setQuestionAutoSelectTimeoutState] = useState<QuestionAutoSelectTimeout>(
+    autoApproveStore.questionAutoSelectTimeout,
+  )
   const [queueFollowupMessages, setQueueFollowupMessages] = useState(themeStore.queueFollowupMessages)
   const [descriptiveToolSteps, setDescriptiveToolSteps] = useState(themeStore.descriptiveToolSteps)
   const [inlineToolRequests, setInlineToolRequests] = useState(themeStore.inlineToolRequests)
@@ -71,6 +74,12 @@ export function AgentSettings() {
     const next = !approvePendingOnFullAuto
     setApprovePendingOnFullAuto(next)
     autoApproveStore.setApprovePendingOnFullAuto(next)
+  }
+
+  const handleQuestionAutoSelectTimeoutChange = (value: string) => {
+    const seconds = Number(value) as QuestionAutoSelectTimeout
+    setQuestionAutoSelectTimeoutState(seconds)
+    autoApproveStore.setQuestionAutoSelectTimeout(seconds)
   }
 
   const toggleQueueFollowup = () => {
@@ -138,6 +147,21 @@ export function AgentSettings() {
           onClick={toggleQueueFollowup}
         >
           <Toggle enabled={queueFollowupMessages} onChange={toggleQueueFollowup} />
+        </SettingRow>
+
+        <SettingRow
+          label={t('chat.questionAutoSelect')}
+          description={t('chat.questionAutoSelectDesc')}
+        >
+          <SegmentedControl
+            value={String(questionAutoSelectTimeout)}
+            options={[
+              { value: '0', label: t('chat.questionAutoSelectOff') },
+              { value: '60', label: t('chat.questionAutoSelect1m') },
+              { value: '120', label: t('chat.questionAutoSelect2m') },
+            ]}
+            onChange={handleQuestionAutoSelectTimeoutChange}
+          />
         </SettingRow>
       </SettingsSection>
 

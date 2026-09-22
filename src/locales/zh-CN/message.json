@@ -12,7 +12,8 @@
     "more": "+{{count}} 个文件",
     "editCount": "共修改 {{count}} 次",
     "hunk": "第 {{index}}/{{total}} 次修改",
-    "truncated": "… 已省略其余改动"
+    "truncated": "… 已省略其余改动",
+    "openInPanel": "在右侧面板查看 {{path}}"
   },
   "processedFor": "已处理 {{duration}}",
   "processing": "处理中...",

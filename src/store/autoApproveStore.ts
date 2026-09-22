@@ -8,6 +8,8 @@ import { serverStorage } from '../utils/perServerStorage'
 // Full Auto 模式：off / session / global
 export type FullAutoMode = 'off' | 'session' | 'global'
 export type AlwaysAllowMode = 'backend' | 'frontend'
+// 提问超时自动选择：0 = 关闭，单位秒
+export type QuestionAutoSelectTimeout = 0 | 60 | 120
 
 // Full Auto 状态变更回调
 // sourcePaneId 可选：表示这次切换是从哪个 pane 触发的。
@@ -38,6 +40,12 @@ function wildcardMatch(pattern: string, text: string): boolean {
   return regex.test(text)
 }
 
+function parseQuestionAutoSelectTimeout(raw: string | null): QuestionAutoSelectTimeout {
+  if (raw === '60') return 60
+  if (raw === '120') return 120
+  return 0
+}
+
 /**
  * Auto-Approve Store
  * 按 sessionId 存储自动批准规则
@@ -66,6 +74,10 @@ class AutoApproveStore {
   private _paneFullAutoModes = new Map<string, FullAutoMode>()
   private _autoReplyRequestIds = new Set<string>()
 
+  // 提问超时自动选推荐项（秒，0 = 关闭），按服务器隔离持久化
+  private _questionAutoSelectTimeout: QuestionAutoSelectTimeout = 0
+  private readonly STORAGE_KEY_QUESTION_AUTO_SELECT_TIMEOUT = 'opencode-question-auto-select-timeout'
+
   constructor() {
     // 从 localStorage 读取开关状态
     try {
@@ -73,9 +85,13 @@ class AutoApproveStore {
       this._enabled = stored === null ? true : stored === 'true'
       const approvePendingStored = serverStorage.get(this.STORAGE_KEY_APPROVE_PENDING_ON_FULL_AUTO)
       this._approvePendingOnFullAuto = approvePendingStored === 'true'
+      this._questionAutoSelectTimeout = parseQuestionAutoSelectTimeout(
+        serverStorage.get(this.STORAGE_KEY_QUESTION_AUTO_SELECT_TIMEOUT),
+      )
     } catch {
       this._enabled = true
       this._approvePendingOnFullAuto = false
+      this._questionAutoSelectTimeout = 0
     }
   }
 
@@ -92,9 +108,13 @@ class AutoApproveStore {
       this._enabled = stored === null ? true : stored === 'true'
       const approvePendingStored = serverStorage.get(this.STORAGE_KEY_APPROVE_PENDING_ON_FULL_AUTO)
       this._approvePendingOnFullAuto = approvePendingStored === 'true'
+      this._questionAutoSelectTimeout = parseQuestionAutoSelectTimeout(
+        serverStorage.get(this.STORAGE_KEY_QUESTION_AUTO_SELECT_TIMEOUT),
+      )
     } catch {
       this._enabled = true
       this._approvePendingOnFullAuto = false
+      this._questionAutoSelectTimeout = 0
     }
     // 切换服务器时清空规则并关闭 Full Auto
     this.rulesMap.clear()
@@ -154,6 +174,23 @@ class AutoApproveStore {
     return () => {
       this._listeners.delete(listener)
     }
+  }
+
+  // ---- 提问超时自动选择 ----
+
+  get questionAutoSelectTimeout(): QuestionAutoSelectTimeout {
+    return this._questionAutoSelectTimeout
+  }
+
+  setQuestionAutoSelectTimeout(seconds: QuestionAutoSelectTimeout): void {
+    if (this._questionAutoSelectTimeout === seconds) return
+    this._questionAutoSelectTimeout = seconds
+    try {
+      serverStorage.set(this.STORAGE_KEY_QUESTION_AUTO_SELECT_TIMEOUT, String(seconds))
+    } catch {
+      // ignore
+    }
+    this.notify()
   }
 
   // ---- Full Auto 模式 ----

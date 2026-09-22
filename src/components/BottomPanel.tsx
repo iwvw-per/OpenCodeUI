@@ -348,6 +348,8 @@ const ChangesContent = memo(function ChangesContent({
             serverId={serverId}
             position="bottom"
             isResizing={isPanelResizing}
+            revealFile={tab.revealFile ?? null}
+            onRevealConsumed={() => layoutStore.consumeRevealFile(tab.id)}
           />
         </div>
       ))}

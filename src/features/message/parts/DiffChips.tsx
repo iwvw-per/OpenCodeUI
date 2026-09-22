@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Popover, PopoverAnchor, PopoverContent } from '../../../components/ui/Popover'
 import { getMaterialIconUrl } from '../../../utils/materialIcons'
 import { cn } from '../../../utils/cn'
+import { layoutStore } from '../../../store/layoutStore'
 import { buildDiffPreview, type ChangedFile } from './changedFiles'
 
 const MAX_VISIBLE = 6
@@ -87,6 +88,12 @@ export const DiffChips = memo(function DiffChips({ files, className }: DiffChips
         <button
           key={file.path}
           type="button"
+          // 点击在右侧面板的 Changes 视图里定位该文件的 diff：
+          // hover 只能看预览，想看完整上下文需要落到面板里。
+          onClick={() => {
+            scheduleClose()
+            layoutStore.revealChangesFile(file.path, 'right')
+          }}
           onMouseEnter={event => {
             anchorRef.current = event.currentTarget
             open(file.path)
@@ -104,7 +111,8 @@ export const DiffChips = memo(function DiffChips({ files, className }: DiffChips
               ? 'border-border-300 bg-bg-200 text-text-100'
               : 'border-border-200/50 bg-bg-100 text-text-300 hover:bg-bg-200',
           )}
-          title={file.path}
+          title={t('diffChips.openInPanel', { path: file.path })}
+          aria-label={t('diffChips.openInPanel', { path: file.path })}
         >
           <FileGlyph path={file.path} />
           <span className="min-w-0 truncate">{basename(file.path)}</span>
@@ -166,11 +174,15 @@ function DiffPanel({ file }: { file: ChangedFile }) {
         </span>
       </div>
 
+      {/* 纵向滚动在外层，横向滚动只作用于代码内容。
+          长行此前被 overflow-hidden + text-ellipsis 截断，看不全。
+          hunk 标题用 sticky left-0 固定在左侧：横向滚动时标题与统计数保持可见，
+          只有代码行随之左右移动，因此不再需要多个独立滚动条。 */}
       <div className="max-h-72 overflow-y-auto custom-scrollbar">
         {sections.map(section => (
-          <div key={section.index}>
+          <div key={section.index} className="overflow-x-auto custom-scrollbar">
             {sections.length > 1 && (
-              <div className="flex items-center gap-2 border-b border-border-200/30 bg-bg-200/40 px-2.5 py-1 font-mono text-text-500">
+              <div className="sticky left-0 flex w-fit min-w-full items-center gap-2 border-b border-border-200/30 bg-bg-200/40 px-2.5 py-1 font-mono text-text-500">
                 <span>{t('diffChips.hunk', { index: section.index, total: sections.length })}</span>
                 <span className="ml-auto tabular-nums">
                   {section.additions > 0 && <span className="text-success-100">+{section.additions}</span>}
@@ -182,7 +194,7 @@ function DiffPanel({ file }: { file: ChangedFile }) {
                 </span>
               </div>
             )}
-            <div className="py-1 font-mono leading-[1.7]">
+            <div className="w-max min-w-full py-1 font-mono leading-[1.7]">
               {section.lines.map((line, index) => (
                 <div
                   key={index}
@@ -196,7 +208,7 @@ function DiffPanel({ file }: { file: ChangedFile }) {
                   <span className="w-3 shrink-0 select-none opacity-70">
                     {line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '}
                   </span>
-                  <span className="min-w-0 flex-1 overflow-hidden text-ellipsis">{line.text || ' '}</span>
+                  <span>{line.text || ' '}</span>
                 </div>
               ))}
               {section.truncated && <div className="px-2.5 py-1 text-text-500">{t('diffChips.truncated')}</div>}

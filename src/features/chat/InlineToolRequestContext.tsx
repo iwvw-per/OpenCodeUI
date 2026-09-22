@@ -99,3 +99,38 @@ export function findQuestionRequestForTool(
 
   return undefined
 }
+
+interface ToolPartLike {
+  callID: string
+  tool: string
+  state: { metadata?: unknown }
+}
+
+/**
+ * 挑出没能匹配到任何已渲染工具部件的提问请求。
+ *
+ * 内嵌模式下匹配失败（子 session 关系还没注册、工具部件不在当前会话）时，
+ * 内嵌卡片不会渲染。这些「落空」的请求需要浮层兜底，否则用户完全看不到提问。
+ */
+export function findUnmatchedQuestions(
+  pendingQuestions: ApiQuestionRequest[],
+  messages: { parts: { type: string }[] }[],
+): ApiQuestionRequest[] {
+  if (pendingQuestions.length === 0) return []
+
+  const matched = new Set<string>()
+  for (const message of messages) {
+    for (const rawPart of message.parts) {
+      if (rawPart.type !== 'tool') continue
+      const part = rawPart as unknown as ToolPartLike
+      const childSessionId =
+        typeof part.tool === 'string' && part.tool.toLowerCase() === 'task'
+          ? ((part.state.metadata as Record<string, unknown> | undefined)?.sessionId as string | undefined)
+          : undefined
+      const question = findQuestionRequestForTool(pendingQuestions, part.callID, childSessionId)
+      if (question) matched.add(question.id)
+    }
+  }
+
+  return pendingQuestions.filter(q => !matched.has(q.id))
+}
