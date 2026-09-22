@@ -71,7 +71,8 @@
     "minimize": "最小化",
     "typeYourAnswer": "输入你的回答...",
     "pageOf": "{{current}} / {{total}}",
-    "answeredCount": "已答 {{done}}/{{total}}"
+    "answeredCount": "已答 {{done}}/{{total}}",
+    "autoSelectIn": "{{seconds}} 秒后自动选推荐项"
   },
   "permissionDialog": {
     "permission": "权限：{{permission}}",

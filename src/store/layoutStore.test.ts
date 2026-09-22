@@ -41,6 +41,56 @@ describe('LayoutStore panel and terminal layout', () => {
     expect(restored.panelTabs.some(tab => tab.id === 'term-1')).toBe(false)
   })
 
+  it('persists the expanded project names for cross-device sync', () => {
+    const store = new LayoutStore()
+    store.setSidebarExpandedProjects(['API-Monitor', 'OpenCodeUI'])
+
+    expect(JSON.parse(localStorage.getItem('opencode-sidebar-expanded-projects') ?? 'null')).toEqual([
+      'API-Monitor',
+      'OpenCodeUI',
+    ])
+    // 重建后恢复
+    expect(new LayoutStore().getState().sidebarExpandedProjects).toEqual(['API-Monitor', 'OpenCodeUI'])
+  })
+
+  it('picks up expanded project names written externally (sync pull)', () => {
+    const store = new LayoutStore()
+    expect(store.getState().sidebarExpandedProjects).toEqual([])
+
+    localStorage.setItem('opencode-sidebar-expanded-projects', JSON.stringify(['HS10162']))
+    store.reloadFromStorage()
+
+    expect(store.getState().sidebarExpandedProjects).toEqual(['HS10162'])
+  })
+
+  it('reveals a changed file in the changes tab and clears it after consumption', () => {
+    const store = new LayoutStore()
+    // 先关闭右侧面板，验证 reveal 会把它打开
+    store.closeRightPanel()
+
+    store.revealChangesFile('src/foo.ts', 'right')
+
+    const state = store.getState()
+    expect(state.rightPanelOpen).toBe(true)
+    const changesTab = state.panelTabs.find(t => t.type === 'changes' && t.position === 'right')
+    expect(changesTab?.revealFile).toBe('src/foo.ts')
+    // 定位后该 tab 成为活动 tab
+    expect(state.activeTabId.right).toBe(changesTab?.id)
+
+    store.consumeRevealFile(changesTab!.id)
+    const after = store.getState().panelTabs.find(t => t.id === changesTab!.id)
+    expect(after?.revealFile).toBeNull()
+  })
+
+  it('does not persist the transient revealFile field', () => {
+    const store = new LayoutStore()
+    store.revealChangesFile('src/foo.ts', 'right')
+
+    const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY_PANEL_LAYOUT) ?? 'null')
+    const persistedChanges = persisted.panelTabs.find((t: { type: string }) => t.type === 'changes')
+    expect(persistedChanges?.revealFile).toBeUndefined()
+  })
+
   it('keeps bottom and right panels open when syncing a directory with no terminal sessions', () => {
     const store = new LayoutStore()
 

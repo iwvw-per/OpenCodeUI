@@ -86,6 +86,11 @@ export function usePermissionHandler(serverId: string): UsePermissionHandlerResu
   // 防止重复回复
   const replyingIdsRef = useRef<Set<string>>(new Set())
 
+  // 回复回调保持稳定 identity，但服务器切换后必须读到最新的 serverId，
+  // 否则回复会发到旧服务器。
+  const serverIdRef = useRef(serverId)
+  serverIdRef.current = serverId
+
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: PermissionReply, directory?: string, sessionId?: string): Promise<boolean> => {
       // 防止重复回复
@@ -98,14 +103,14 @@ export function usePermissionHandler(serverId: string): UsePermissionHandlerResu
       setIsReplying(true)
 
       try {
-        await withRetry(() => replyPermission(requestId, reply, undefined, directory, sessionId, serverId))
+        await withRetry(() => replyPermission(requestId, reply, undefined, directory, sessionId, serverIdRef.current))
         setPendingPermissionRequests(prev =>
           prev.some(r => r.id === requestId) ? prev.filter(r => r.id !== requestId) : prev,
         )
         activeSessionStore.resolvePendingRequest(requestId)
         return true
       } catch (error) {
-        const stillPending = await isPermissionStillPending(requestId, directory, sessionId, serverId)
+        const stillPending = await isPermissionStillPending(requestId, directory, sessionId, serverIdRef.current)
         if (stillPending === false) {
           setPendingPermissionRequests(prev =>
             prev.some(r => r.id === requestId) ? prev.filter(r => r.id !== requestId) : prev,
@@ -136,7 +141,7 @@ export function usePermissionHandler(serverId: string): UsePermissionHandlerResu
       setIsReplying(true)
 
       try {
-        await withRetry(() => replyQuestion(requestId, answers, directory, serverId))
+        await withRetry(() => replyQuestion(requestId, answers, directory, serverIdRef.current))
         setPendingQuestionRequests(prev => prev.filter(r => r.id !== requestId))
         activeSessionStore.resolvePendingRequest(requestId)
         return true
@@ -162,7 +167,7 @@ export function usePermissionHandler(serverId: string): UsePermissionHandlerResu
     setIsReplying(true)
 
     try {
-      await withRetry(() => rejectQuestion(requestId, directory, serverId))
+      await withRetry(() => rejectQuestion(requestId, directory, serverIdRef.current))
       setPendingQuestionRequests(prev => prev.filter(r => r.id !== requestId))
       activeSessionStore.resolvePendingRequest(requestId)
       return true

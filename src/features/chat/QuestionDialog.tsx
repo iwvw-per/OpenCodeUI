@@ -1,11 +1,13 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { QuestionIcon, CheckIcon, ReturnIcon, ChevronDownIcon } from '../../components/Icons'
+import { QuestionIcon, CheckIcon, ReturnIcon, ChevronDownIcon, TimerIcon } from '../../components/Icons'
 import type { ApiQuestionRequest, ApiQuestionInfo, QuestionAnswer } from '../../api'
 import { usePresence } from '../../hooks'
 import { useChatViewport } from './chatViewport'
 import { getContentMaxWidthClass } from './contentWidth'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
+import { useQuestionAutoSelect } from '../../hooks/useQuestionAutoSelect'
+import { buildAutoSelectAnswers, canAutoSelect } from '../../utils/questionAutoSelect'
 
 interface QuestionDialogProps {
   request: ApiQuestionRequest
@@ -151,6 +153,16 @@ export function QuestionDialog({
     }
   })
 
+  const handleAutoSelect = useCallback(() => {
+    if (canAutoSelect(request)) {
+      onReply(buildAutoSelectAnswers(request))
+    } else {
+      onReject()
+    }
+  }, [request, onReply, onReject])
+
+  const autoSelectRemaining = useQuestionAutoSelect(request.id, handleAutoSelect, !isReplying)
+
   // 键盘快捷键：和主输入框一致的 send keybinding 提交，Escape 跳过
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -205,6 +217,12 @@ export function QuestionDialog({
                 {queueLength > 1 && (
                   <span className="text-[length:var(--fs-sm)] text-text-400 bg-bg-200 px-1.5 py-0.5 rounded">
                     {t('questionDialog.moreCount', { count: queueLength - 1 })}
+                  </span>
+                )}
+                {autoSelectRemaining !== null && (
+                  <span className="inline-flex items-center gap-1 tabular-nums text-[length:var(--fs-sm)] text-text-400">
+                    <TimerIcon size={13} className="shrink-0" />
+                    {t('questionDialog.autoSelectIn', { seconds: autoSelectRemaining })}
                   </span>
                 )}
               </div>

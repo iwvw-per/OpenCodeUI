@@ -28,6 +28,11 @@ export interface PanelTab {
   position: PanelPosition
   previewFile?: PreviewFile | null
   previewFiles?: PreviewFile[]
+  /**
+   * changes tab 的瞬时定位目标：从消息里的文件变更 chip 点进来时，
+   * 记录要展开哪个文件的 diff。消费后由面板清空，不参与持久化。
+   */
+  revealFile?: string | null
   // Terminal 特有属性
   ptyId?: string
   /** 终端所属服务器（PTY 创建时记录；连接/恢复时用该服务器，而不是当前焦点服务器） */
@@ -123,6 +128,13 @@ interface LayoutState {
   sidebarSessionSortField: SessionSortField
   /** 侧栏会话排序方向：true = 倒序（新→旧），false = 正序（旧→新） */
   sidebarSessionSortDesc: boolean
+  /**
+   * 侧栏展开的项目（按项目名记录，而非 id）。
+   *
+   * id 通常是 worktree 绝对路径（含盘符），跨设备不可比；项目名两端一致，
+   * 用它做 key 才能让「哪几个项目是展开的」在多端对齐。
+   */
+  sidebarExpandedProjects: string[]
   /** 发送消息快捷键：Enter（默认 true）或 Shift+Enter（false） */
   sendOnEnter: boolean
 
@@ -150,6 +162,7 @@ const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS = 'opencode-sidebar-folder-recents'
 const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF = 'opencode-sidebar-folder-recents-show-diff'
 const STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS = 'opencode-sidebar-show-child-sessions'
 const STORAGE_KEY_SIDEBAR_SESSION_SORT = 'opencode-sidebar-session-sort'
+const STORAGE_KEY_SIDEBAR_EXPANDED_PROJECTS = 'opencode-sidebar-expanded-projects'
 const STORAGE_KEY_SEND_ON_ENTER = 'opencode-send-on-enter'
 const STORAGE_KEY_PANEL_LAYOUT = 'opencode-panel-layout'
 const STORAGE_KEY_TERMINAL_LAYOUT = 'opencode-terminal-layout'
@@ -341,6 +354,7 @@ export class LayoutStore {
     sidebarChildSessions: 'active',
     sidebarSessionSortField: DEFAULT_SESSION_SORT.field,
     sidebarSessionSortDesc: DEFAULT_SESSION_SORT.desc,
+    sidebarExpandedProjects: [],
     sendOnEnter: true,
     rightPanelOpen: false,
     rightPanelWidth: 450,
@@ -480,6 +494,19 @@ export class LayoutStore {
         // ignore malformed preference
       }
 
+      // 展开的项目名列表（跨端对齐用项目名，见 sidebarExpandedProjects 注释）
+      try {
+        const rawExpanded = localStorage.getItem(STORAGE_KEY_SIDEBAR_EXPANDED_PROJECTS)
+        if (rawExpanded !== null) {
+          const parsed = JSON.parse(rawExpanded) as unknown
+          if (Array.isArray(parsed)) {
+            this.state.sidebarExpandedProjects = parsed.filter((item): item is string => typeof item === 'string')
+          }
+        }
+      } catch {
+        // ignore malformed preference
+      }
+
       const savedSendOnEnter = localStorage.getItem(STORAGE_KEY_SEND_ON_ENTER)
       if (savedSendOnEnter !== null) {
         this.state.sendOnEnter = savedSendOnEnter !== 'false'
@@ -606,6 +633,23 @@ export class LayoutStore {
     this.state.sidebarSessionSortDesc = desc
     try {
       localStorage.setItem(STORAGE_KEY_SIDEBAR_SESSION_SORT, JSON.stringify({ field, desc }))
+    } catch {
+      /* ignore */
+    }
+    this.notify()
+  }
+
+  /** 设置侧栏展开的项目名列表（项目行的展开/收起）。 */
+  setSidebarExpandedProjects(names: string[]) {
+    if (
+      this.state.sidebarExpandedProjects.length === names.length &&
+      this.state.sidebarExpandedProjects.every((name, index) => name === names[index])
+    ) {
+      return
+    }
+    this.state.sidebarExpandedProjects = [...names]
+    try {
+      localStorage.setItem(STORAGE_KEY_SIDEBAR_EXPANDED_PROJECTS, JSON.stringify(this.state.sidebarExpandedProjects))
     } catch {
       /* ignore */
     }
@@ -921,6 +965,59 @@ export class LayoutStore {
     this.state.activeTabId[targetTab.position] = targetTab.id
     this.setPanelOpen(targetTab.position, true)
     this.notify()
+  }
+
+  /**
+   * 在 Changes 面板定位到某个文件的 diff。
+   *
+   * 消息里的文件变更 chip 点击后调用：打开右侧（或指定位置）的 changes tab，
+   * 并把要展开的文件写进 `revealFile`，由面板消费后选中并滚动到该文件。
+   * 与 openFilePreview 的区别是落到 diff 视图而非文件内容预览。
+   */
+  revealChangesFile(filePath: string, position: PanelPosition = 'right'): void {
+    if (!filePath) return
+    const targetTab = this.getTargetChangesTab(position)
+    if (!targetTab) return
+
+    targetTab.revealFile = filePath
+    this.state.activeTabId[targetTab.position] = targetTab.id
+    this.setPanelOpen(targetTab.position, true)
+    this.notify()
+  }
+
+  /** 面板消费定位请求后调用，清掉瞬时字段，避免重复定位。 */
+  consumeRevealFile(tabId: string): void {
+    const tab = this.state.panelTabs.find(item => item.id === tabId && item.type === 'changes')
+    if (!tab || !tab.revealFile) return
+    tab.revealFile = null
+    this.notify()
+  }
+
+  private getTargetChangesTab(position?: PanelPosition): PanelTab | null {
+    if (position) {
+      const activeId = this.state.activeTabId[position]
+      const activeChangesTab = this.state.panelTabs.find(
+        t => t.id === activeId && t.type === 'changes' && t.position === position,
+      )
+      if (activeChangesTab) return activeChangesTab
+
+      const changesTab = this.state.panelTabs.find(t => t.type === 'changes' && t.position === position)
+      if (changesTab) return changesTab
+
+      const id = this.addChangesTab(position)
+      return this.state.panelTabs.find(t => t.id === id) ?? null
+    }
+
+    const preferred = (['right', 'bottom'] as const)
+      .map(pos =>
+        this.state.panelTabs.find(
+          t => t.id === this.state.activeTabId[pos] && t.type === 'changes' && t.position === pos,
+        ),
+      )
+      .find(Boolean)
+    if (preferred) return preferred
+
+    return this.state.panelTabs.find(t => t.type === 'changes') ?? null
   }
 
   activateFilePreview(tabId: string, path: string) {

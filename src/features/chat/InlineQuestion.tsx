@@ -6,10 +6,12 @@
 
 import { memo, useState, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckIcon, QuestionIcon } from '../../components/Icons'
+import { CheckIcon, QuestionIcon, TimerIcon } from '../../components/Icons'
 import { ApprovalCard } from '../../components/ui/ApprovalCard'
 import type { ApiQuestionRequest, ApiQuestionInfo, QuestionAnswer } from '../../api'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
+import { useQuestionAutoSelect } from '../../hooks/useQuestionAutoSelect'
+import { buildAutoSelectAnswers, canAutoSelect } from '../../utils/questionAutoSelect'
 
 interface InlineQuestionProps {
   request: ApiQuestionRequest
@@ -109,6 +111,16 @@ export const InlineQuestion = memo(function InlineQuestion({
     })
     onReply(request.id, result)
   }, [request, answers, customEnabled, customValues, onReply])
+
+  const handleAutoSelect = useCallback(() => {
+    if (canAutoSelect(request)) {
+      onReply(request.id, buildAutoSelectAnswers(request))
+    } else {
+      onReject(request.id)
+    }
+  }, [request, onReply, onReject])
+
+  const autoSelectRemaining = useQuestionAutoSelect(request.id, handleAutoSelect, !isReplying)
 
   const canSubmit = request.questions.every((_q, idx) => {
     const selected = answers.get(idx) || new Set()
@@ -215,8 +227,16 @@ export const InlineQuestion = memo(function InlineQuestion({
           >
             {t('common:skip')}
           </button>
+          {autoSelectRemaining !== null && (
+            <span className="ml-auto inline-flex items-center gap-1 tabular-nums text-[length:var(--fs-xxs)] text-text-500">
+              <TimerIcon size={12} className="shrink-0" />
+              {t('chat:questionDialog.autoSelectIn', { seconds: autoSelectRemaining })}
+            </span>
+          )}
           {isPaged && (
-            <span className="ml-auto tabular-nums text-[length:var(--fs-xxs)] text-text-500">
+            <span
+              className={`${autoSelectRemaining === null ? 'ml-auto' : ''} tabular-nums text-[length:var(--fs-xxs)] text-text-500`}
+            >
               {t('chat:questionDialog.answeredCount', { done: answeredCount, total: totalQuestions })}
             </span>
           )}

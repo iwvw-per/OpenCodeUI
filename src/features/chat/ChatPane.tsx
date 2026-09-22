@@ -22,7 +22,11 @@ import { useServerStore } from '../../hooks/useServerStore'
 import { useCancelHint } from '../../hooks/useCancelHint'
 import { makeSessionKey, sessionKeyToServerId } from '../../utils/sessionKey'
 import { serverStore } from '../../store/serverStore'
-import { InlineToolRequestContext, type InlineToolRequestContextValue } from './InlineToolRequestContext'
+import {
+  InlineToolRequestContext,
+  findUnmatchedQuestions,
+  type InlineToolRequestContextValue,
+} from './InlineToolRequestContext'
 import { ChatViewportProvider, canUseSplitPane, useChatViewportMaybe, type ChatViewportValue } from './chatViewport'
 import { useChatPageViewModel } from './useChatPageViewModel'
 import { SessionNavigationContext } from '../../contexts/SessionNavigationContext'
@@ -404,7 +408,10 @@ export const ChatPane = memo(function ChatPane({
   // second low-priority render lane.
   const deferredMessageView = useDeferredValue(shouldDeferMessages ? messageView : null)
   const renderedMessagesView = shouldDeferMessages && deferredMessageView ? deferredMessageView : messageView
-  const renderedMessages = renderedMessagesView.sessionId === routeSessionId ? renderedMessagesView.messages : []
+  const renderedMessages = useMemo(
+    () => (renderedMessagesView.sessionId === routeSessionId ? renderedMessagesView.messages : []),
+    [renderedMessagesView, routeSessionId],
+  )
   const isRenderingDeferredMessages = renderedMessages !== messages
   const renderedLoadState = loadState === 'loaded' && isRenderingDeferredMessages ? 'loading' : loadState
   // 对齐 oc：session 消息 ready 后再 mount ChatArea，避免空 virtualizer 先建再跳
@@ -899,6 +906,14 @@ export const ChatPane = memo(function ChatPane({
     ],
   )
 
+  // 内嵌模式下，如果请求没能匹配到任何已渲染的工具部件（子 session 关系还没注册、
+  // 工具部件不在当前会话等），内嵌卡片不会出现。这里挑出这些「落空」的请求，
+  // 用浮层兜底，避免提问彻底不可见地挂住。
+  const unmatchedPendingQuestions = useMemo(
+    () => (inlineToolRequests ? findUnmatchedQuestions(pendingQuestionRequests, renderedMessages) : []),
+    [inlineToolRequests, renderedMessages, pendingQuestionRequests],
+  )
+
   const revertedMessage = inputRestoreContent
     ? {
         text: inputRestoreContent.text,
@@ -1066,13 +1081,15 @@ export const ChatPane = memo(function ChatPane({
                 : undefined
             }
             collapsedQuestion={
-              !inlineToolRequests &&
               pendingPermissionRequests.length === 0 &&
               pendingQuestionRequests.length > 0 &&
+              (!inlineToolRequests || unmatchedPendingQuestions.length > 0) &&
               questionCollapsed
                 ? {
                     label: t('chat:questionDialog.title'),
-                    queueLength: pendingQuestionRequests.length,
+                    queueLength: inlineToolRequests
+                      ? unmatchedPendingQuestions.length
+                      : pendingQuestionRequests.length,
                     onExpand: () => setQuestionCollapsed(false),
                   }
                 : undefined
@@ -1100,17 +1117,30 @@ export const ChatPane = memo(function ChatPane({
         />
       )}
 
-      {!inlineToolRequests && pendingPermissionRequests.length === 0 && pendingQuestionRequests.length > 0 && (
-        <QuestionDialog
-          request={pendingQuestionRequests[0]}
-          onReply={answers => handleQuestionReply(pendingQuestionRequests[0].id, answers, effectiveDirectory)}
-          onReject={() => handleQuestionReject(pendingQuestionRequests[0].id, effectiveDirectory)}
-          queueLength={pendingQuestionRequests.length}
-          isReplying={isReplying}
-          collapsed={questionCollapsed}
-          onCollapsedChange={setQuestionCollapsed}
-        />
-      )}
+      {pendingPermissionRequests.length === 0 &&
+        pendingQuestionRequests.length > 0 &&
+        (!inlineToolRequests || unmatchedPendingQuestions.length > 0) && (
+          <QuestionDialog
+            request={inlineToolRequests ? unmatchedPendingQuestions[0] : pendingQuestionRequests[0]}
+            onReply={answers =>
+              handleQuestionReply(
+                (inlineToolRequests ? unmatchedPendingQuestions[0] : pendingQuestionRequests[0]).id,
+                answers,
+                effectiveDirectory,
+              )
+            }
+            onReject={() =>
+              handleQuestionReject(
+                (inlineToolRequests ? unmatchedPendingQuestions[0] : pendingQuestionRequests[0]).id,
+                effectiveDirectory,
+              )
+            }
+            queueLength={inlineToolRequests ? unmatchedPendingQuestions.length : pendingQuestionRequests.length}
+            isReplying={isReplying}
+            collapsed={questionCollapsed}
+            onCollapsedChange={setQuestionCollapsed}
+          />
+        )}
     </div>
   )
 

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, type SetStateAction } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderRecentList, type FolderRecentProject } from './FolderRecentList'
 import { HostList } from './HostList'
@@ -32,6 +32,7 @@ import { useBusySessions } from '../../../store/activeSessionStore'
 import { notificationStore, useNotifications } from '../../../store/notificationStore'
 import { pinnedSessionsStore } from '../../../store/pinnedSessionsStore'
 import { serverStore } from '../../../store/serverStore'
+import { layoutStore } from '../../../store/layoutStore'
 import {
   updateSession,
   deleteSession as apiDeleteSession,
@@ -53,7 +54,12 @@ import { interactive } from '../../../utils/interaction'
 // - 收起宽度 49px，展开宽度 288px
 
 interface SidePanelProps {
-  onNewSession: () => void
+  /**
+   * 新建会话。可传入目标服务器与目录（项目行的「新对话」按钮）：
+   * 不传时沿用当前焦点服务器；传入时切到该服务器，避免点 A 项目的按钮
+   * 却因焦点服务器是 B 而跳到 B。
+   */
+  onNewSession: (target?: { serverId?: string; directory?: string }) => void
   onSelectSession: (session: ApiSession) => void
   onCloseMobile?: () => void
   selectedSessionId: string | null
@@ -89,6 +95,16 @@ function getSelectionRange(visibleIds: string[], anchorId: string, targetId: str
   const from = Math.min(startIndex, endIndex)
   const to = Math.max(startIndex, endIndex)
   return visibleIds.slice(from, to + 1)
+}
+
+/**
+ * 项目展开状态在存储里的 key。
+ *
+ * 用项目名而非 id：id 通常是 worktree 绝对路径（含盘符），跨设备不可比，
+ * 用名字才能让「哪几个项目展开」在多端对齐。名字缺失时退回 worktree。
+ */
+function projectExpandKey(project: ProjectItem): string {
+  return project.name || project.worktree || project.id
 }
 
 function findProjectGroupForDirectory(projects: ProjectItem[], directory: string) {
@@ -152,10 +168,7 @@ export function SidePanel({
   // 不做服务器侧自动发现：项目列表完全由同步的 saved-directories 决定，
   // 这样多端看到的是同一份，用户不必在每台设备上重复隐藏噪音目录。
   const activeServerId = activeServer?.id ?? 'local'
-  const { catalog: gitWorkspaceCatalog } = useGitWorkspaceCatalog(
-    catalogDirectories,
-    catalogServerId,
-  )
+  const { catalog: gitWorkspaceCatalog } = useGitWorkspaceCatalog(catalogDirectories, catalogServerId)
   const { sidebarChildSessions, sidebarSessionSortDesc } = useLayoutStore()
   // all = 始终列出全部子会话；active = 只列活跃/正在查看；off = 不额外列出
   const showAllChildSessions = sidebarChildSessions === 'all'
@@ -167,7 +180,6 @@ export function SidePanel({
   const [connectionState, setConnectionState] = useState<ConnectionInfo | null>(null)
   // 侧栏视图：主机（切换后端）/ 项目（会话与项目）
   const [sidebarTab, setSidebarTab] = useState<'hosts' | 'projects'>('projects')
-  const [expandedRecentProjectIds, setExpandedRecentProjectIds] = useState<string[]>([])
 
   // ---- 编辑模式状态 ----
   const [isEditMode, setIsEditMode] = useState(false)
@@ -636,6 +648,36 @@ export function SidePanel({
     return list
   }, [serverCurrentProject, folderProjectGroups, currentDirectory, currentProject])
 
+  // ---- 项目行展开/收起（跨端对齐）----
+  // 状态存在 layoutStore 里，键是「项目名」而非 id：id 通常是 worktree 绝对路径
+  // （含盘符），跨设备不可比；项目名两端一致，才能让展开状态在多端对齐。
+  // 这里把它映射回当前端的项目 id 供列表消费。
+  const expandedProjectNames = useLayoutStore().sidebarExpandedProjects
+  const expandedRecentProjectIds = useMemo(
+    () => folderProjects.filter(p => expandedProjectNames.includes(projectExpandKey(p))).map(p => p.id),
+    [folderProjects, expandedProjectNames],
+  )
+  const setExpandedRecentProjectIds = useCallback(
+    (updater: SetStateAction<string[]>) => {
+      const currentIds = folderProjects.filter(p => expandedProjectNames.includes(projectExpandKey(p))).map(p => p.id)
+      const nextIds = typeof updater === 'function' ? updater(currentIds) : updater
+      const nextNames = nextIds
+        .map(id => folderProjects.find(p => p.id === id))
+        .filter((p): p is ProjectItem => !!p)
+        .map(projectExpandKey)
+
+      // 项目列表尚未加载时一律不写回：此刻映射必然为空，会把存储里真实的展开状态
+      // 清空（启动阶段 FolderRecentList 的 reconcile 会触发一次回调），
+      // 随后同步拉取又用服务端值覆盖，用户看到的展开状态就随机变化。
+      if (folderProjects.length === 0) return
+
+      // 只登记当前可见项目的名字，避免已移除项目的残留名字被一直带着。
+      // 空数组要写回：否则「全部收起」无法表达，存储仍留着旧名字，下一轮又被读回来。
+      layoutStore.setSidebarExpandedProjects(nextNames)
+    },
+    [folderProjects, expandedProjectNames],
+  )
+
   // 新添加/新保存的项目自动展开
   const prevFolderProjectIdsRef = useRef<string[] | null>(null)
   useEffect(() => {
@@ -650,7 +692,7 @@ export function SidePanel({
         return missing.length > 0 ? [...current, ...missing] : current
       })
     }
-  }, [folderProjects])
+  }, [folderProjects, setExpandedRecentProjectIds])
 
   const workspaceDirectoriesByProjectId = useMemo(() => {
     const map = new Map<string, string[]>()
@@ -840,15 +882,19 @@ export function SidePanel({
     [getProjectDirectoriesToRemove, removeDirectory],
   )
 
-  // 需求 4：在指定项目目录下新建会话 —— 先切目录上下文，再走全局新建
+  // 需求 4：在指定项目目录下新建会话。
+  //
+  // 必须带上项目所属服务器：onNewSession 默认切到「焦点服务器」，而焦点服务器
+  // 可能是另一台（用户在别处点过会话），于是点 A 项目的「新对话」会跳到 B —— 表现为
+  // 「随机跳服务器」。项目行属于活动服务器，这里显式指定即可。
   const handleNewSessionInDirectory = useCallback(
     (directory: string) => {
       if (!isSameDirectory(currentDirectory, directory)) {
         setCurrentDirectory(directory)
       }
-      onNewSession()
+      onNewSession({ serverId: activeServerId, directory })
     },
-    [currentDirectory, setCurrentDirectory, onNewSession],
+    [currentDirectory, setCurrentDirectory, onNewSession, activeServerId],
   )
 
   const commonFolderRecentListProps = {
@@ -923,7 +969,7 @@ export function SidePanel({
         {/* New Chat - 图标始终在 padding-left: 6px 位置，收起时刚好居中 */}
         <button
           type="button"
-          onClick={onNewSession}
+          onClick={() => onNewSession()}
           aria-label={t('sidebar.newChat')}
           className={cn(
             'h-8 flex items-center rounded-lg text-text-300 group overflow-hidden',

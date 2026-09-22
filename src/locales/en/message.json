@@ -12,7 +12,8 @@
     "more": "+{{count}} files",
     "editCount": "Edited {{count}} times",
     "hunk": "Edit {{index}}/{{total}}",
-    "truncated": "… remaining changes omitted"
+    "truncated": "… remaining changes omitted",
+    "openInPanel": "Open {{path}} in the side panel"
   },
   "processedFor": "Worked for {{duration}}",
   "processing": "Processing...",

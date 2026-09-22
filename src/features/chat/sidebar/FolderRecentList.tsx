@@ -138,10 +138,16 @@ function getCurrentProjectId(projects: FolderRecentProject[], currentDirectory?:
   return projects.find(project => isSameDirectory(project.worktree, currentDirectory))?.id
 }
 
-function reconcileExpandedProjectIds(prev: string[], projects: FolderRecentProject[], currentDirectory?: string) {
+/**
+ * 只做「剔除已不存在的项目」。
+ *
+ * 刻意不加「空列表时展开第一个」的兜底：展开状态是跨端同步的，用户把项目全部
+ * 收起后 prev 就是空数组，兜底会把它重新展开并写回存储 —— 收起操作永远失效，
+ * 且会覆盖其它设备的展开状态。首次进入的默认展开由调用方一次性处理。
+ */
+function reconcileExpandedProjectIds(prev: string[], projects: FolderRecentProject[]) {
   const next = prev.filter(id => projects.some(project => project.id === id))
-  const fallback = next.length > 0 ? next : getInitialExpandedProjectIds(projects, currentDirectory)
-  return areProjectIdListsEqual(fallback, prev) ? prev : fallback
+  return areProjectIdListsEqual(next, prev) ? prev : next
 }
 
 function expandProjectId(prev: string[], projectId?: string) {
@@ -422,12 +428,13 @@ export function FolderRecentList({
     onExpandedProjectIdsChange,
   )
 
-  // 当 projects 列表变化时，过滤掉已不存在的展开项 + 确保当前目录对应的 project 展开
+  // 当 projects 列表变化时，过滤掉已不存在的展开项。
+  //
+  // 不再「确保当前目录对应项目展开」：展开状态是跨端同步的，强制展开当前项目
+  // 会把它写回存储，污染其它设备的展开状态（表现为「收起后又被自动展开」、
+  // 「同步来的状态被本地覆盖」）。当前项目的展开交给用户操作或存储里的值决定。
   useEffect(() => {
-    onExpandedProjectIdsChange(prev => {
-      const reconciled = reconcileExpandedProjectIds(prev, projects, currentDirectory)
-      return expandProjectId(reconciled, getCurrentProjectId(projects, currentDirectory))
-    })
+    onExpandedProjectIdsChange(prev => reconcileExpandedProjectIds(prev, projects))
   }, [projects, currentDirectory, onExpandedProjectIdsChange])
 
   const handleToggleProject = useCallback(
@@ -1468,10 +1475,11 @@ function WorkspaceFolderList({
   const [workspaceExpandedIds, setWorkspaceExpandedIds] = useState<string[]>(() =>
     getInitialExpandedProjectIds(workspaceProjects, currentDirectory),
   )
+  // workspace 列表不参与同步，保留「当前工作区自动展开」的原有行为
   const expandedWorkspaceIds = useMemo(
     () =>
       expandProjectId(
-        reconcileExpandedProjectIds(workspaceExpandedIds, workspaceProjects, currentDirectory),
+        reconcileExpandedProjectIds(workspaceExpandedIds, workspaceProjects),
         getCurrentProjectId(workspaceProjects, currentDirectory),
       ),
     [workspaceExpandedIds, workspaceProjects, currentDirectory],

@@ -75,7 +75,8 @@ function App() {
     if (routeSessionId.includes('::')) return routeSessionId
     return makeSessionKey(serverStore.getActiveServerId(), routeSessionId)
   }, [routeSessionId])
-  const { currentDirectory, savedDirectories, sidebarExpanded, setSidebarExpanded } = useDirectory()
+  const { currentDirectory, savedDirectories, sidebarExpanded, setSidebarExpanded, setCurrentDirectory } =
+    useDirectory()
   const { rightPanelOpen, rightPanelWidth, wakeLock } = useLayoutStore()
   const { surfaceRef, value: chatViewport } = useChatViewportController({
     sidebarExpanded,
@@ -224,11 +225,29 @@ function App() {
     [paneLayout.focusedPaneId, navigatePaneToSession],
   )
 
-  const handleNewSession = useCallback(() => {
-    const paneId = paneLayout.focusedPaneId ?? paneLayoutStore.getFocusedPaneId()
-    if (!paneId) return
-    navigatePaneHome(paneId)
-  }, [paneLayout.focusedPaneId, navigatePaneHome])
+  const handleNewSession = useCallback(
+    (target?: { serverId?: string; directory?: string }) => {
+      const paneId = paneLayout.focusedPaneId ?? paneLayoutStore.getFocusedPaneId()
+      if (!paneId) return
+      // 项目行的「新对话」会带上该项目所属服务器与目录：此时必须切到它，
+      // 否则会沿用「焦点服务器」，在焦点与项目所属服务器不同时跳到别的主机。
+      if (target?.serverId) {
+        paneLayoutStore.focusPane(paneId)
+        paneLayoutStore.setPaneSession(paneId, null)
+        multiServerStore.setFocusedServerId(target.serverId)
+        if (serverStore.getActiveServerId() !== target.serverId) {
+          serverStore.setActiveServer(target.serverId)
+        }
+        navigateRouteHome(target.serverId)
+        // navigateHome 只带服务器，目录需单独写入（项目行的按钮要求落到该项目目录）。
+        // 此时本就进入 home（无 session 路由），不存在「清掉 session 路由」的问题。
+        if (target.directory) setCurrentDirectory(target.directory)
+        return
+      }
+      navigatePaneHome(paneId)
+    },
+    [paneLayout.focusedPaneId, navigatePaneHome, navigateRouteHome, setCurrentDirectory],
+  )
 
   const handleEnterSplitMode = useCallback(() => {
     paneLayoutStore.enterSplitMode(paneLayout.focusedSessionId)

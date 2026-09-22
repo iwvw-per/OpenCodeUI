@@ -71,7 +71,8 @@
     "minimize": "Minimize",
     "typeYourAnswer": "Type your own answer...",
     "pageOf": "{{current}} / {{total}}",
-    "answeredCount": "{{done}}/{{total}} answered"
+    "answeredCount": "{{done}}/{{total}} answered",
+    "autoSelectIn": "Auto-selects recommended in {{seconds}}s"
   },
   "permissionDialog": {
     "permission": "Permission: {{permission}}",
