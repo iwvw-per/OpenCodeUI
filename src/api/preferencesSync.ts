@@ -59,6 +59,12 @@
 //   - opencode-saved-directories：数组，按 path 去重并集
 //   - opencode-pinned-messages：数组，按 sessionId 去重并集
 //
+// 合并范围仅限「同一个键」：saved-directories 按实例分桶
+// （srv:aiagent:inst_X:opencode-saved-directories），各实例互不干扰。
+// 刻意不做跨实例并集 —— 那会把工作机的 D:/Code/* 带进笔电的项目列表（反之
+// 亦然），出现本机不存在的幽灵目录。用户要的是「同一主机在各设备上一致」，
+// 而这一点由「同一个键在各设备间同步」天然满足。
+//
 // opencode-hidden-directories 已废弃：项目列表不再做服务器侧自动发现，用户
 // 看到的项目完全由 saved-directories 决定，「隐藏发现项」这个概念随之消失。
 // 该键仍在准入前缀下（历史数据不主动删除），但不再有代码写入或读取它。
@@ -77,7 +83,7 @@
 // ============================================
 
 import { accountRequest, readAccount, type AiAgentAccount } from './aiagent'
-import { serverStore } from '../store/serverStore'
+import { notifyPerServerStorageChanged } from '../utils/perServerStorage'
 
 const SYNC_ENABLED_KEY = 'opencode-preferences-sync-enabled'
 const SYNC_META_KEY = 'opencode-preferences-sync-meta'
@@ -361,24 +367,6 @@ const MERGE_RULES: Record<string, MergeRule> = {
   'opencode-pinned-messages': { kind: 'array', id: entry => (typeof entry.sessionId === 'string' ? entry.sessionId : null) },
 }
 
-/**
- * 跨实例聚合的键后缀。
- *
- * saved-directories 存的是「用户手工添加的项目目录」，语义上属于用户而非
- * 某台主机：在笔电上加的项目，切到工作实例时同样应该看到。但存储键带实例
- * 分桶前缀（srv:aiagent:inst_X:...），不同实例各写一份，切换实例就丢。
- *
- * 因此这两个键在同步时做跨实例处理：
- *   - 读（pull）：把本地所有实例桶里的条目并集写回「当前活动实例」的桶，
- *     于是切到任一实例都能看到完整列表；
- *   - 写（push）：把当前实例桶的内容广播到其它实例桶，避免切换实例后
- *     本地看起来「少了几项」又在下轮 pull 时被当成删除记墓碑。
- *
- * pinned-sessions 刻意不在列：它带 sessionId 与 directory，会话属于具体
- * 后端，跨实例合并会把别的实例的会话带进来形成幽灵条目。
- */
-const CROSS_INSTANCE_SUFFIXES = new Set(['opencode-saved-directories'])
-
 function keySuffix(key: string): string {
   const separator = key.lastIndexOf(':')
   return separator === -1 ? key : key.slice(separator + 1)
@@ -386,88 +374,6 @@ function keySuffix(key: string): string {
 
 function mergeRuleFor(key: string): MergeRule | undefined {
   return MERGE_RULES[keySuffix(key)]
-}
-
-/** 本地所有实例桶中该后缀的键（用于跨实例聚合与广播）。 */
-function crossInstanceKeys(suffix: string): string[] {
-  const keys: string[] = []
-  for (const key of listStorageKeys()) {
-    if (keySuffix(key) !== suffix) continue
-    if (!/^srv:aiagent:[^:]+:/.test(key)) continue
-    keys.push(key)
-  }
-  return keys
-}
-
-/**
- * 把当前活动实例桶里的跨实例键广播到其它实例桶（并集 − 墓碑）。
- *
- * 与 applyCrossInstanceAggregation 方向相反：那个是「从别处汇入当前」，
- * 这个是「从当前分发到别处」。推送前调用，保证本实例的改动对其它实例可见。
- *
- * 用并集而非覆盖，是为了在别处桶有当前桶没有的条目时不丢数据；同时必须减去
- * 墓碑，否则「在任一实例移除项目」会被别的实例桶立刻复活（见 unionEntriesIntoKey）。
- */
-function broadcastCrossInstanceKeys(tombstones: TombstoneState): void {
-  const activeServerId = serverStore.getActiveServerId()
-  for (const suffix of CROSS_INSTANCE_SUFFIXES) {
-    const activeKey = `srv:${activeServerId}:${suffix}`
-    if (localStorage.getItem(activeKey) === null) continue
-    const keys = crossInstanceKeys(suffix)
-    if (keys.length <= 1) continue
-    unionEntriesIntoKey(activeKey, keys.filter(key => key !== activeKey), tombstones)
-  }
-}
-
-/**
- * 把 sources 各键里的数组条目按 path 并集写入 targetKey，并排除墓碑条目。
- * 返回 true 表示 targetKey 实际发生了变化。
- *
- * 为什么必须减墓碑：跨实例聚合/广播都发生在墓碑判定之前，如果只做并集，
- * 「在工作实例移除项目 P」会被「笔电桶里仍有 P」立刻并回来 —— 本地 UI 先移除、
- * 下一轮 pull（≤15 秒或 SSE）又复活，移除操作静默失效。墓碑是唯一能表达
- * 「这个 path 被用户删掉了」的记录，因此并集必须把它作为差集输入。
- */
-function unionEntriesIntoKey(targetKey: string, sources: string[], tombstones?: TombstoneState): boolean {
-  const state = tombstones ?? readTombstones()
-  const dead = new Set(Object.keys(state[targetKey] ?? {}))
-
-  const merged = new Map<string, Record<string, unknown>>()
-  const collect = (raw: string | null) => {
-    const list = parseJson(raw ?? '')
-    if (!Array.isArray(list)) return
-    for (const entry of list) {
-      const record = asRecord(entry)
-      if (!record) continue
-      const path = typeof record.path === 'string' ? record.path : ''
-      if (!path || dead.has(path)) continue
-      const existing = merged.get(path)
-      const addedAt = typeof record.addedAt === 'number' ? record.addedAt : 0
-      const existingAt = typeof existing?.addedAt === 'number' ? (existing.addedAt as number) : -1
-      if (!existing || addedAt > existingAt) merged.set(path, record)
-    }
-  }
-
-  collect(localStorage.getItem(targetKey))
-  for (const key of sources) collect(localStorage.getItem(key))
-
-  // 按 addedAt 再按 path 排序：并集结果顺序若依赖 localStorage 键序，同一份内容
-  // 在不同设备上会序列化成不同字符串，导致指纹抖动、每轮重复上传。
-  const ordered = [...merged.values()].sort((a, b) => {
-    const at = typeof a.addedAt === 'number' ? a.addedAt : 0
-    const bt = typeof b.addedAt === 'number' ? b.addedAt : 0
-    if (at !== bt) return at - bt
-    return String(a.path).localeCompare(String(b.path))
-  })
-
-  const raw = JSON.stringify(ordered)
-  try {
-    if (localStorage.getItem(targetKey) === raw) return false
-    localStorage.setItem(targetKey, raw)
-    return true
-  } catch {
-    return false
-  }
 }
 
 function parseJson(raw: string): unknown {
@@ -741,32 +647,11 @@ export async function pullPreferences(account?: AiAgentAccount | null): Promise<
     if (serverIso) stamps[key] = serverIso
   }
 
-  written += applyCrossInstanceAggregation(tombstones)
-
   writeTombstones(tombstones)
   writeStampState({ stamps, known: { ...known, [SNAPSHOT_KEY]: JSON.stringify(collectLocalPreferences()) } })
-  return written
-}
-
-/**
- * 把本地所有实例桶里的跨实例键并集写回当前活动实例的桶。
- *
- * 背景：saved-directories 按实例分桶（srv:aiagent:inst_X:...），而「用户添加
- * 的项目目录」属于用户不属于主机。不聚合的话，在笔电实例下加的项目切到工作
- * 实例就看不到，反之亦然。
- *
- * 按 path 去重并保留较新的 addedAt；当前实例桶已有条目的顺序优先保留。
- * 返回新增的键数量。
- */
-function applyCrossInstanceAggregation(tombstones: TombstoneState): number {
-  let written = 0
-  for (const suffix of CROSS_INSTANCE_SUFFIXES) {
-    const keys = crossInstanceKeys(suffix)
-    if (keys.length <= 1) continue
-    const activeKey = `srv:${serverStore.getActiveServerId()}:${suffix}`
-    if (!keys.includes(activeKey)) continue
-    if (unionEntriesIntoKey(activeKey, keys.filter(key => key !== activeKey), tombstones)) written += 1
-  }
+  // 拉取是「从外部写入 localStorage」：React 状态（savedDirectories 等）不会
+  // 自动感知，必须显式通知订阅者重新读取，否则 UI 停在初始化快照上。
+  if (written > 0) notifyPerServerStorageChanged()
   return written
 }
 
@@ -788,17 +673,11 @@ export async function pushPreferences(account?: AiAgentAccount | null, force = f
     return 0
   }
 
-  // 顺序很关键：先按快照差集记录墓碑（识别出「本轮被移除的条目」），再做跨实例
-  // 广播。反过来的话，刚从当前桶移除的 path 会被别的实例桶立刻并回来，墓碑也就
-  // 记不上，移除操作静默失效。
   const stampState = readStampState()
   const tombstones = recordTombstones(entries, readTombstones())
-  broadcastCrossInstanceKeys(tombstones)
-
-  const entriesWithBroadcast = collectLocalPreferences()
-  const mergedEntries = { ...entriesWithBroadcast }
+  const mergedEntries = { ...entries }
   for (const key of mergeRuleKeysFromSnapshot()) {
-    const raw = entriesWithBroadcast[key]
+    const raw = entries[key]
     if (raw === undefined) continue
     const rule = mergeRuleFor(key)
     if (!rule) continue
@@ -866,7 +745,7 @@ export async function pushPreferences(account?: AiAgentAccount | null, force = f
   const known = { ...stampState.known }
   for (const [key, value] of Object.entries(values)) {
     known[key] = JSON.stringify(value)
-    if (mergedEntries[key] !== entriesWithBroadcast[key]) {
+    if (mergedEntries[key] !== entries[key]) {
       try {
         localStorage.setItem(key, mergedEntries[key])
       } catch {

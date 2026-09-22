@@ -45,6 +45,18 @@ export function subscribePerServerStorageVersion(fn: () => void): () => void {
   return () => versionListeners.delete(fn)
 }
 
+/**
+ * 通知订阅者「存储被外部改动」。
+ *
+ * 走 serverStorage.set/setJSON 的写入会自动 bumpVersion，但偏好同步引擎为了
+ * 保留原始字符串，直接操作 localStorage 写入（并可能改动任意 serverId 的桶），
+ * 绕过了这层通知。拉取到别的端改动后必须显式调用本函数，订阅者才会重新读取，
+ * 否则 UI 状态（如 savedDirectories）停留在初始化时的快照，看起来「同步没生效」。
+ */
+export function notifyPerServerStorageChanged(): void {
+  bumpVersion()
+}
+
 export const serverStorage = {
   /**
    * 读取当前服务器的存储值

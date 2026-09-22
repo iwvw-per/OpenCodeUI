@@ -506,28 +506,9 @@ describe('preferences sync', () => {
     expect(tombstones[key].only).toBeTypeOf('number')
   })
 
-  it('aggregates saved directories across instance buckets on pull', async () => {
-    const account = await seedAccount()
-    const { serverStore } = await import('../store/serverStore')
-
-    // 笔电实例桶里有本地项目，工作实例桶为空；当前活动实例是工作。
-    localStorage.setItem(
-      'srv:aiagent:inst_laptop:opencode-saved-directories',
-      JSON.stringify([{ path: 'E:/Code/OpenCodeUI', name: 'OpenCodeUI', addedAt: 1 }]),
-    )
-    localStorage.setItem('srv:aiagent:inst_work:opencode-saved-directories', JSON.stringify([]))
-    serverStore.addServerWithId('aiagent:inst_work', { name: 'work', url: 'https://panel.example.com/gw/inst_work' })
-    serverStore.setActiveServer('aiagent:inst_work')
-
-    stubPreferencesFetch([])
-    const { pullPreferences } = await import('./preferencesSync')
-    await pullPreferences(account)
-
-    const active = JSON.parse(localStorage.getItem('srv:aiagent:inst_work:opencode-saved-directories') || '[]')
-    expect(active.map((entry: { path: string }) => entry.path)).toEqual(['E:/Code/OpenCodeUI'])
-  })
-
-  it('broadcasts saved directories to other instance buckets on push', async () => {
+  it('keeps instance buckets isolated (no cross-instance merge)', async () => {
+    // 各实例的 saved-directories 必须互不干扰：跨实例并集会把工作机的 D:/Code/*
+    // 带进笔电的项目列表，出现本机不存在的幽灵目录。
     const account = await seedAccount()
     const { serverStore } = await import('../store/serverStore')
 
@@ -535,11 +516,11 @@ describe('preferences sync', () => {
     serverStore.setActiveServer('aiagent:inst_work')
     localStorage.setItem(
       'srv:aiagent:inst_work:opencode-saved-directories',
-      JSON.stringify([{ path: 'D:/Code/API-Monitor', name: 'API-Monitor', addedAt: 9 }]),
+      JSON.stringify([{ path: 'D:/Code/API-Monitor', name: 'API-Monitor', addedAt: 1 }]),
     )
     localStorage.setItem(
       'srv:aiagent:inst_laptop:opencode-saved-directories',
-      JSON.stringify([{ path: 'E:/Code/OpenCodeUI', name: 'OpenCodeUI', addedAt: 3 }]),
+      JSON.stringify([{ path: 'E:/Code/OpenCodeUI', name: 'OpenCodeUI', addedAt: 2 }]),
     )
 
     let sentValues: Record<string, unknown> = {}
@@ -547,43 +528,42 @@ describe('preferences sync', () => {
       sentValues = body.values as Record<string, unknown>
     })
 
-    const { pushPreferences } = await import('./preferencesSync')
+    const { pushPreferences, pullPreferences } = await import('./preferencesSync')
     await pushPreferences(account, true)
+    await pullPreferences(account)
 
+    // 工作实例桶只保留自己的项目，笔电路径没有被并进来
     const active = JSON.parse(localStorage.getItem('srv:aiagent:inst_work:opencode-saved-directories') || '[]')
-    expect(active.map((entry: { path: string }) => entry.path).sort()).toEqual([
-      'D:/Code/API-Monitor',
-      'E:/Code/OpenCodeUI',
+    expect(active.map((e: { path: string }) => e.path)).toEqual(['D:/Code/API-Monitor'])
+    // 每个键各推各的内容，互不合并
+    expect(sentValues['srv:aiagent:inst_work:opencode-saved-directories']).toEqual([
+      { path: 'D:/Code/API-Monitor', name: 'API-Monitor', addedAt: 1 },
     ])
-    const sent = sentValues['srv:aiagent:inst_work:opencode-saved-directories'] as { path: string }[]
-    expect(sent.map(entry => entry.path).sort()).toEqual(['D:/Code/API-Monitor', 'E:/Code/OpenCodeUI'])
+    expect(sentValues['srv:aiagent:inst_laptop:opencode-saved-directories']).toEqual([
+      { path: 'E:/Code/OpenCodeUI', name: 'OpenCodeUI', addedAt: 2 },
+    ])
+    // 笔电桶未被工作实例的内容改写
+    const laptop = JSON.parse(localStorage.getItem('srv:aiagent:inst_laptop:opencode-saved-directories') || '[]')
+    expect(laptop.map((e: { path: string }) => e.path)).toEqual(['E:/Code/OpenCodeUI'])
   })
 
-  it('does not resurrect a project removed in the active instance', async () => {
-    // 回归：跨实例聚合/广播都发生在墓碑判定之前，若只做并集，
-    // 「在工作实例移除项目 P」会被「笔电桶里仍有 P」立刻并回来 —— 移除静默失效。
+  it('records a tombstone when a project is removed locally', async () => {
     const account = await seedAccount()
     const { serverStore } = await import('../store/serverStore')
 
     serverStore.addServerWithId('aiagent:inst_work', { name: 'work', url: 'https://panel.example.com/gw/inst_work' })
     serverStore.setActiveServer('aiagent:inst_work')
 
+    const key = 'srv:aiagent:inst_work:opencode-saved-directories'
     const entry = { path: 'D:/Code/API-Monitor', name: 'API-Monitor', addedAt: 1 }
-    // 快照记录「上次同步时两个实例桶都有 P」，随后用户在工作实例把它移除。
     localStorage.setItem(
       SYNC_STAMPS_KEY,
       JSON.stringify({
         stamps: {},
-        known: {
-          __snapshot__: JSON.stringify({
-            'srv:aiagent:inst_work:opencode-saved-directories': JSON.stringify([entry]),
-            'srv:aiagent:inst_laptop:opencode-saved-directories': JSON.stringify([entry]),
-          }),
-        },
+        known: { __snapshot__: JSON.stringify({ [key]: JSON.stringify([entry]) }) },
       }),
     )
-    localStorage.setItem('srv:aiagent:inst_work:opencode-saved-directories', JSON.stringify([]))
-    localStorage.setItem('srv:aiagent:inst_laptop:opencode-saved-directories', JSON.stringify([entry]))
+    localStorage.setItem(key, JSON.stringify([]))
 
     let sentValues: Record<string, unknown> = {}
     stubPreferencesFetch([], (_url, body) => {
@@ -593,65 +573,9 @@ describe('preferences sync', () => {
     const { pushPreferences } = await import('./preferencesSync')
     await pushPreferences(account, true)
 
-    // 墓碑已记录
     const tombstones = JSON.parse(localStorage.getItem(TOMBSTONES_KEY) || '{}')
-    expect(tombstones['srv:aiagent:inst_work:opencode-saved-directories']['D:/Code/API-Monitor']).toBeTypeOf('number')
-
-    // 活动桶没有被别的实例桶复活
-    const active = JSON.parse(localStorage.getItem('srv:aiagent:inst_work:opencode-saved-directories') || '[]')
-    expect(active).toEqual([])
-
-    // 推送上去的也是空的（删除意图已表达）
-    expect(sentValues['srv:aiagent:inst_work:opencode-saved-directories']).toEqual([])
-  })
-
-  it('does not resurrect a removed project on the next pull either', async () => {
-    const account = await seedAccount()
-    const { serverStore } = await import('../store/serverStore')
-
-    serverStore.addServerWithId('aiagent:inst_work', { name: 'work', url: 'https://panel.example.com/gw/inst_work' })
-    serverStore.setActiveServer('aiagent:inst_work')
-
-    const entry = { path: 'D:/Code/API-Monitor', name: 'API-Monitor', addedAt: 1 }
-    localStorage.setItem(
-      TOMBSTONES_KEY,
-      JSON.stringify({ 'srv:aiagent:inst_work:opencode-saved-directories': { 'D:/Code/API-Monitor': Date.now() } }),
-    )
-    localStorage.setItem('srv:aiagent:inst_work:opencode-saved-directories', JSON.stringify([]))
-    localStorage.setItem('srv:aiagent:inst_laptop:opencode-saved-directories', JSON.stringify([entry]))
-
-    stubPreferencesFetch([])
-    const { pullPreferences } = await import('./preferencesSync')
-    await pullPreferences(account)
-
-    const active = JSON.parse(localStorage.getItem('srv:aiagent:inst_work:opencode-saved-directories') || '[]')
-    expect(active).toEqual([])
-  })
-
-  it('orders cross-instance union deterministically', async () => {
-    // 并集结果顺序若依赖 localStorage 键序，同内容在不同设备会序列化成不同字符串，
-    // 导致指纹抖动、每轮重复上传。这里断言顺序由 addedAt 决定。
-    const account = await seedAccount()
-    const { serverStore } = await import('../store/serverStore')
-
-    serverStore.addServerWithId('aiagent:inst_work', { name: 'work', url: 'https://panel.example.com/gw/inst_work' })
-    serverStore.setActiveServer('aiagent:inst_work')
-
-    localStorage.setItem(
-      'srv:aiagent:inst_laptop:opencode-saved-directories',
-      JSON.stringify([{ path: 'E:/Code/OpenCodeUI', name: 'OpenCodeUI', addedAt: 5 }]),
-    )
-    localStorage.setItem(
-      'srv:aiagent:inst_work:opencode-saved-directories',
-      JSON.stringify([{ path: 'D:/Code/API-Monitor', name: 'API-Monitor', addedAt: 9 }]),
-    )
-
-    stubPreferencesFetch([])
-    const { pullPreferences } = await import('./preferencesSync')
-    await pullPreferences(account)
-
-    const active = JSON.parse(localStorage.getItem('srv:aiagent:inst_work:opencode-saved-directories') || '[]')
-    expect(active.map((e: { path: string }) => e.path)).toEqual(['E:/Code/OpenCodeUI', 'D:/Code/API-Monitor'])
+    expect(tombstones[key]['D:/Code/API-Monitor']).toBeTypeOf('number')
+    expect(sentValues[key]).toEqual([])
   })
 
   it('toggles the sync switch', async () => {
