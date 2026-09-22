@@ -41,6 +41,33 @@ describe('LayoutStore panel and terminal layout', () => {
     expect(restored.panelTabs.some(tab => tab.id === 'term-1')).toBe(false)
   })
 
+  it('does not let a sync pull re-open the mobile sidebar', () => {
+    // 回归：移动端侧栏是 overlay 手势翻页的临时状态，关掉后同步拉取读到持久化的
+    // true 会把它重新弹开（表现为「关掉后随同步重复出现」）。
+    // 关键：持久化值必须是 true，否则重读是空操作，测不出问题。
+    localStorage.setItem('opencode-sidebar-expanded', 'true')
+    const store = new LayoutStore()
+    expect(store.getState().sidebarExpanded).toBe(true)
+
+    store.setSidebarExpandedTransient(false) // 手机上滑走侧栏
+    expect(store.getState().sidebarExpanded).toBe(false)
+
+    // 同步拉取触发重读：不得用持久化的 true 覆盖移动端的临时收起状态
+    store.reloadFromStorage()
+    expect(store.getState().sidebarExpanded).toBe(false)
+  })
+
+  it('does not write the sync key when toggling the mobile sidebar', () => {
+    const store = new LayoutStore()
+    store.setSidebarExpanded(true)
+    const persisted = localStorage.getItem('opencode-sidebar-expanded')
+
+    store.setSidebarExpandedTransient(false)
+    // 持久化值不变（移动端开合不落盘、不同步）
+    expect(localStorage.getItem('opencode-sidebar-expanded')).toBe(persisted)
+    expect(store.getState().sidebarExpanded).toBe(false)
+  })
+
   it('persists the expanded project names for cross-device sync', () => {
     const store = new LayoutStore()
     store.setSidebarExpandedProjects(['API-Monitor', 'OpenCodeUI'])
