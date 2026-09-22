@@ -63,9 +63,22 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
   // 从 layoutStore 获取 sidebarExpanded
   const { sidebarExpanded } = useLayoutStore()
 
-  const [savedDirectories, setSavedDirectories] = useState<SavedDirectory[]>(readSavedDirectories)
+  // savedDirectories / recentProjects 绑定的是「读取时的那台服务器」。
+  // 只存值不够：写回时必须写回同一台服务器的桶，否则切换主机（或同步引擎
+  // 在别的服务器上触发重读）时，会把 A 主机的列表写进 B 主机的桶，原桶被
+  // 旧状态覆盖 —— 表现为「新建的项目一同步就没了」。
+  const [savedState, setSavedState] = useState<{ serverId: string; directories: SavedDirectory[] }>(() => ({
+    serverId: serverStore.getActiveServerId(),
+    directories: readSavedDirectories(),
+  }))
 
-  const [recentProjects, setRecentProjects] = useState<RecentProjects>(readRecentProjects)
+  const [recentState, setRecentState] = useState<{ serverId: string; projects: RecentProjects }>(() => ({
+    serverId: serverStore.getActiveServerId(),
+    projects: readRecentProjects(),
+  }))
+
+  const savedDirectories = savedState.directories
+  const recentProjects = recentState.projects
 
   const [pathInfo, setPathInfo] = useState<ApiPath | null>(null)
 
@@ -78,8 +91,9 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return serverStore.onServerChange((_, reason) => {
       if (reason === 'server-switch') {
-        setSavedDirectories(readSavedDirectories())
-        setRecentProjects(readRecentProjects())
+        // 连同 serverId 一起换：写回时才知道这份列表属于哪台服务器。
+        setSavedState({ serverId: serverStore.getActiveServerId(), directories: readSavedDirectories() })
+        setRecentState({ serverId: serverStore.getActiveServerId(), projects: readRecentProjects() })
         setUrlDirectory(undefined)
       }
       setPathInfo(null)
@@ -104,33 +118,39 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
   // 比较内容后，只有真正变化的键才触发一次 setState，循环在第二轮收敛。
   useEffect(() => {
     return subscribePerServerStorageVersion(() => {
-      setSavedDirectories(prev => {
+      // 只在「通知来自当前绑定的服务器」时才重读：同步引擎可能改动别的实例的桶，
+      // 那种变化不属于本组件正在展示的列表，重读会把当前列表换成别人的内容。
+      const activeId = serverStore.getActiveServerId()
+      setSavedState(prev => {
+        if (prev.serverId !== activeId) return prev
         const next = readSavedDirectories()
-        return JSON.stringify(prev) === JSON.stringify(next) ? prev : next
+        return JSON.stringify(prev.directories) === JSON.stringify(next) ? prev : { serverId: activeId, directories: next }
       })
-      setRecentProjects(prev => {
+      setRecentState(prev => {
+        if (prev.serverId !== activeId) return prev
         const next = readRecentProjects()
-        return JSON.stringify(prev) === JSON.stringify(next) ? prev : next
+        return JSON.stringify(prev.projects) === JSON.stringify(next) ? prev : { serverId: activeId, projects: next }
       })
     })
   }, [])
 
-  // 保存 savedDirectories 到当前活动服务器的 per-server 存储（切主机各看各的）
+  // 写回时必须写回「这份数据所属的服务器」，而不是「当前活动服务器」：
+  // 同步引擎可能在别的服务器上触发重读，两者不一致时会把 A 的列表写进 B 的桶，
+  // 原桶被旧状态覆盖，表现为「新建的项目一同步就没了」。
   useEffect(() => {
-    serverStorage.setJSON(STORAGE_KEY_SAVED, savedDirectories)
-  }, [savedDirectories])
+    serverStorage.setJSONFor(STORAGE_KEY_SAVED, savedState.directories, savedState.serverId)
+  }, [savedState])
 
-  // 保存 recentProjects 到 per-server storage
   useEffect(() => {
-    serverStorage.setJSON(STORAGE_KEY_RECENT, recentProjects)
-  }, [recentProjects])
+    serverStorage.setJSONFor(STORAGE_KEY_RECENT, recentState.projects, recentState.serverId)
+  }, [recentState])
 
   // 设置当前目录（更新 URL + 记录最近使用）
   const setCurrentDirectory = useCallback(
     (directory: string | undefined) => {
       setUrlDirectory(directory)
       if (directory) {
-        setRecentProjects(prev => ({ ...prev, [directory]: Date.now() }))
+        setRecentState(prev => ({ ...prev, projects: { ...prev.projects, [directory]: Date.now() } }))
       }
     },
     [setUrlDirectory],
@@ -163,7 +183,7 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
         addedAt: Date.now(),
       }
 
-      setSavedDirectories(prev => [...prev, newDir])
+      setSavedState(prev => ({ ...prev, directories: [...prev.directories, newDir] }))
       setCurrentDirectory(normalized)
     },
     [savedDirectories, setCurrentDirectory],
@@ -173,7 +193,10 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
   const removeDirectory = useCallback(
     (path: string) => {
       const normalized = normalizeToForwardSlash(path)
-      setSavedDirectories(prev => prev.filter(d => !isSameDirectory(d.path, normalized)))
+      setSavedState(prev => ({
+        ...prev,
+        directories: prev.directories.filter(d => !isSameDirectory(d.path, normalized)),
+      }))
       if (isSameDirectory(urlDirectory, normalized)) {
         setCurrentDirectory(undefined)
       }
@@ -189,8 +212,8 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    setSavedDirectories(prev => {
-      const next = [...prev]
+    setSavedState(prev => {
+      const next = [...prev.directories]
       const draggedIndex = next.findIndex(directory => isSameDirectory(directory.path, normalizedDragged))
       const targetIndex = next.findIndex(directory => isSameDirectory(directory.path, normalizedTarget))
 
@@ -200,7 +223,7 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
 
       const [draggedDirectory] = next.splice(draggedIndex, 1)
       next.splice(targetIndex, 0, draggedDirectory)
-      return next
+      return { ...prev, directories: next }
     })
   }, [])
 

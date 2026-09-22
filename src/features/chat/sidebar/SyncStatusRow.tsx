@@ -12,7 +12,6 @@
 // ============================================
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { useTranslation } from 'react-i18next'
 import { CheckIcon, AlertCircleIcon } from '../../../components/Icons'
 import { Spinner } from '../../../components/ui/Spinner'
 import { getSyncState, subscribeSyncState, type SyncState } from '../../../api/preferencesSyncEngine'
@@ -70,8 +69,8 @@ function useSyncState(): SyncState {
   return useSyncExternalStore(subscribeSyncState, getSyncState, getSyncState)
 }
 
-/** 账号与开关状态：未登录或未启用时不展示该行。 */
-function useSyncAvailable(): boolean {
+/** 账号与开关状态：未登录或未启用时不展示。 */
+export function useSyncIndicatorAvailable(): boolean {
   const [available, setAvailable] = useState(() => isSyncEnabled() && !!readAccount())
   useEffect(() => {
     // 登录/登出会改变可用性；低频轮询即可，无需事件通道。
@@ -84,56 +83,48 @@ function useSyncAvailable(): boolean {
   return available
 }
 
-export interface SyncStatusRowProps {
-  /** 收起侧栏时隐藏文案，仅保留图标。 */
-  showLabels: boolean
-}
-
-export function SyncStatusRow({ showLabels }: SyncStatusRowProps) {
-  const { t } = useTranslation(['chat', 'common'])
-  const state = useSyncState()
-  const available = useSyncAvailable()
-
-  if (!available) return null
-
-  const view = syncStatusView(state)
-  const syncing = view.kind === 'syncing'
-  const failed = view.kind === 'error'
-  const label = t(`sidebar.sync_${view.kind}`, { defaultValue: view.label })
-
+/** 图标本体：同步中用动态小方格，成功用绿色对号，失败用红色叹号。 */
+function SyncStatusIconGlyph({ kind }: { kind: SyncIndicatorKind }) {
+  if (kind === 'syncing') return <Spinner size="sm" tone="accent" variant="pixel" />
+  if (kind === 'error') {
+    return (
+      <span className="flex size-4 items-center justify-center rounded-full bg-danger-100/15 text-danger-100">
+        <AlertCircleIcon size={11} />
+      </span>
+    )
+  }
   return (
-    <div className="shrink-0 px-2 pt-1.5">
-      <div
-        className={cn('h-7 flex items-center rounded-lg', showLabels ? 'px-1.5' : 'justify-center')}
-        title={view.title}
-      >
-        {/* 图标：同步中用动态小方格，成功用绿色对号，失败用红色叹号 */}
-        <span className="size-5 flex items-center justify-center shrink-0">
-          {syncing ? (
-            <Spinner size="sm" tone="accent" variant="pixel" />
-          ) : failed ? (
-            <span className="flex size-4 items-center justify-center rounded-full bg-danger-100/15 text-danger-100">
-              <AlertCircleIcon size={11} />
-            </span>
-          ) : (
-            <span className="flex size-4 items-center justify-center rounded-full bg-success-100/15 text-success-100">
-              <CheckIcon size={11} />
-            </span>
-          )}
-        </span>
-
-        <span
-          className={cn(
-            'ml-2 flex-1 truncate text-[length:var(--fs-sm)] transition-opacity duration-300',
-            syncing ? 'text-accent-main-100' : failed ? 'text-danger-100' : 'text-text-400',
-          )}
-          style={{ opacity: showLabels ? 1 : 0 }}
-        >
-          {label}
-        </span>
-      </div>
-    </div>
+    <span className="flex size-4 items-center justify-center rounded-full bg-success-100/15 text-success-100">
+      <CheckIcon size={11} />
+    </span>
   )
 }
 
-export default SyncStatusRow
+/**
+ * 同步状态图标（仅图标，悬停显示详情）。
+ *
+ * 挂在主机快速切换行右侧：同步是「多端之间」的状态，与主机选择同属一行更自然，
+ * 也避免单独占一行。未登录或未启用同步时不渲染。
+ */
+export function SyncStatusIcon() {
+  const state = useSyncState()
+  const available = useSyncIndicatorAvailable()
+  if (!available) return null
+
+  const view = syncStatusView(state)
+  return (
+    <span
+      className={cn(
+        'flex size-5 items-center justify-center rounded-full',
+        view.kind === 'syncing' ? 'text-accent-main-100' : undefined,
+      )}
+      title={view.title}
+      aria-label={view.label}
+      role="status"
+    >
+      <SyncStatusIconGlyph kind={view.kind} />
+    </span>
+  )
+}
+
+export default SyncStatusIcon
