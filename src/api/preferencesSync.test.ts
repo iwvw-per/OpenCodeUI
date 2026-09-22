@@ -267,6 +267,31 @@ describe('preferences sync', () => {
     expect(localStorage.getItem('theme-preset')).toBe('ocean')
   })
 
+  it('does not let a pull clobber a local edit made since the last push', async () => {
+    // 竞态：syncPreferences 先 pull 再 push。用户在两次同步之间改了本地值
+    // （如点开侧栏），本地戳还停在上一轮同步时间，服务端值的时间戳与之相等或
+    // 更晚，pull 就会把用户的改动覆盖掉，表现为「点了没反应/被折叠回去」。
+    const account = await seedAccount()
+    const STAMP = '2026-09-22T10:00:00.000Z'
+    // 基线里记录上一轮同步后的值（false），本地此刻已被用户改成 true
+    localStorage.setItem('opencode-sidebar-expanded', 'true')
+    localStorage.setItem(
+      SYNC_STAMPS_KEY,
+      JSON.stringify({
+        stamps: { 'opencode-sidebar-expanded': STAMP },
+        known: { 'opencode-sidebar-expanded': 'false' },
+      }),
+    )
+
+    stubPreferencesFetch([{ key: 'opencode-sidebar-expanded', value: 'false', updatedAt: STAMP }])
+
+    const { pullPreferences } = await import('./preferencesSync')
+    await pullPreferences(account)
+
+    // 本地未推送的改动必须保住，不能被服务端的旧值盖回
+    expect(localStorage.getItem('opencode-sidebar-expanded')).toBe('true')
+  })
+
   it('pulls server preferences into localStorage', async () => {
     const account = await seedAccount()
     const localToken = JSON.parse(localStorage.getItem('opencode-aiagent-account') || '{}').token

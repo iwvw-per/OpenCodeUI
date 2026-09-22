@@ -712,9 +712,22 @@ export async function pullPreferences(account?: AiAgentAccount | null): Promise<
 
     const value = typeof item.value === 'string' ? item.value : JSON.stringify(item.value)
     if (typeof value !== 'string') continue
+
+    // 本地相对上次同步基线发生了变化，说明这是一次尚未上传的本地改动。
+    //
+    // 必须让本地胜出，不能拿服务端值覆盖：syncPreferences 是先 pull 后 push，
+    // 本地戳要等 push 才刷新，此刻仍停在上一轮同步时间，服务端的 updatedAt 与它
+    // 相等或更晚，时间戳比较挡不住。典型表现是「打开侧栏后被同步折叠回去」——
+    // 用户刚写下的 true 被服务端上一轮的 false 盖掉。
+    //
+    // 仅在基线存在且与本地不一致时判定（首次同步 known 为空，此时无从区分
+    // 「本地默认值」与「用户改动」，沿用服务端胜出的既有语义）。
+    const localRaw = localStorage.getItem(key)
+    if (known[key] !== undefined && localRaw !== null && localRaw !== known[key]) continue
+
     if (localStamp && Number.isFinite(serverAt) && serverAt < localStamp) continue
     try {
-      if (localStorage.getItem(key) === value) continue
+      if (localRaw === value) continue
       localStorage.setItem(key, value)
       written += 1
     } catch {
