@@ -137,20 +137,21 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
   // 写回时必须写回「这份数据所属的服务器」，而不是「当前活动服务器」：
   // 同步引擎可能在别的服务器上触发重读，两者不一致时会把 A 的列表写进 B 的桶，
   // 原桶被旧状态覆盖，表现为「新建的项目一同步就没了」。
-  useEffect(() => {
-    serverStorage.setJSONFor(STORAGE_KEY_SAVED, savedState.directories, savedState.serverId)
-  }, [savedState])
-
-  useEffect(() => {
-    serverStorage.setJSONFor(STORAGE_KEY_RECENT, recentState.projects, recentState.serverId)
-  }, [recentState])
+  //
+  // 每个变更点都「同步落盘」而不是只依赖下方 effect：存储通知（订阅回调）会立刻
+  // 读 localStorage，若写回尚未执行，重读拿到旧值会把刚加的项目冲掉 —— 这正是
+  // 「新建项目一同步就没了」的直接原因。因此所有写入都在 setState 内同时落盘。
 
   // 设置当前目录（更新 URL + 记录最近使用）
   const setCurrentDirectory = useCallback(
     (directory: string | undefined) => {
       setUrlDirectory(directory)
       if (directory) {
-        setRecentState(prev => ({ ...prev, projects: { ...prev.projects, [directory]: Date.now() } }))
+        setRecentState(prev => {
+          const next = { ...prev, projects: { ...prev.projects, [directory]: Date.now() } }
+          serverStorage.setJSONFor(STORAGE_KEY_RECENT, next.projects, next.serverId)
+          return next
+        })
       }
     },
     [setUrlDirectory],
@@ -183,7 +184,11 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
         addedAt: Date.now(),
       }
 
-      setSavedState(prev => ({ ...prev, directories: [...prev.directories, newDir] }))
+      setSavedState(prev => {
+        const next = { ...prev, directories: [...prev.directories, newDir] }
+        serverStorage.setJSONFor(STORAGE_KEY_SAVED, next.directories, next.serverId)
+        return next
+      })
       setCurrentDirectory(normalized)
     },
     [savedDirectories, setCurrentDirectory],
@@ -193,10 +198,11 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
   const removeDirectory = useCallback(
     (path: string) => {
       const normalized = normalizeToForwardSlash(path)
-      setSavedState(prev => ({
-        ...prev,
-        directories: prev.directories.filter(d => !isSameDirectory(d.path, normalized)),
-      }))
+      setSavedState(prev => {
+        const next = { ...prev, directories: prev.directories.filter(d => !isSameDirectory(d.path, normalized)) }
+        serverStorage.setJSONFor(STORAGE_KEY_SAVED, next.directories, next.serverId)
+        return next
+      })
       if (isSameDirectory(urlDirectory, normalized)) {
         setCurrentDirectory(undefined)
       }
@@ -223,7 +229,9 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
 
       const [draggedDirectory] = next.splice(draggedIndex, 1)
       next.splice(targetIndex, 0, draggedDirectory)
-      return { ...prev, directories: next }
+      const updated = { ...prev, directories: next }
+      serverStorage.setJSONFor(STORAGE_KEY_SAVED, updated.directories, updated.serverId)
+      return updated
     })
   }, [])
 
