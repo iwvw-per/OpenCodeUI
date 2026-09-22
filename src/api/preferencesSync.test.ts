@@ -312,8 +312,9 @@ describe('preferences sync', () => {
     await pullPreferences(account)
 
     const merged = JSON.parse(localStorage.getItem('opencode-pinned-sessions') || '[]')
-    expect(merged.map((entry: { sessionId: string }) => entry.sessionId)).toEqual(['server-1', 'local-1'])
-    expect(merged[1].title).toBe('Server copy')
+    expect(merged.map((entry: { sessionId: string }) => entry.sessionId)).toEqual(['local-1', 'server-1'])
+    // 同 id 重复时保留本地那条（本地顺序优先），不被服务端的旧副本覆盖标题。
+    expect(merged[0].title).toBe('Local')
   })
 
   it('merges per-server pinned sessions and saved directories as a union', async () => {
@@ -350,11 +351,12 @@ describe('preferences sync', () => {
     await pullPreferences(account)
 
     const pinned = JSON.parse(localStorage.getItem('srv:aiagent:inst_1:opencode-pinned-sessions') || '[]')
-    expect(pinned.map((entry: { sessionId: string }) => entry.sessionId)).toEqual(['server-1', 'local-1'])
+    expect(pinned.map((entry: { sessionId: string }) => entry.sessionId)).toEqual(['local-1', 'server-1'])
 
     const saved = JSON.parse(localStorage.getItem('srv:aiagent:inst_1:opencode-saved-directories') || '[]')
     expect(saved.map((entry: { path: string }) => entry.path)).toEqual(['/a', '/b'])
-    expect(saved[0].name).toBe('A server')
+    // 同 path 重复时保留本地那条（本地顺序优先），不被服务端的旧副本覆盖名称。
+    expect(saved[0].name).toBe('A')
   })
 
   it('keeps legacy hidden-directories on whole-key last-write-wins', async () => {

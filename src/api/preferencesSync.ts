@@ -521,44 +521,108 @@ interface MergeResult {
 }
 
 /**
- * 按聚合规则合并本地值与服务端值。任一侧解析失败时返回 changed=false，
+ * 三方合并：base（上次同步基线）、local（当前本地）、server（当前服务端）。
+ *
+ * 为什么必须带 base：只比较 local 与 server 无法区分两种完全相反的情况 ——
+ *   - 「本地有、服务端没有」既可能是本地新增（要保留），也可能是远端刚删除（要跟随删除）
+ *   - 「服务端有、本地没有」既可能是远端新增（要采纳），也可能是本地刚删除（不能复活）
+ * 没有 base 时只能猜，猜错就会出现「删除被复活」或「新增被丢弃」。
+ *
+ * base 就是 known[__snapshot__]（上次同步完成时的状态），所以不需要额外存储。
+ *
+ * 每条目按 id 归类（与 Git 三方合并同构，把「删除」也当成一种改动）：
+ *   - base 有、local 无           → 本地删除，不复活（写墓碑）
+ *   - base 有、local 有、server 无 → 远端删除，本地跟随删除
+ *   - base 无、local 有           → 本地新增，保留
+ *   - base 无、server 有          → 远端新增，采纳
+ *   - base 有、两侧都还在         → 两侧都没删，保留（内容取较新的一侧）
+ *   - base 无、两侧都无           → 不存在，忽略
+ */
+function threeWayMergeIds(
+  baseIds: Set<string>,
+  localIds: Set<string>,
+  serverIds: Set<string>,
+  dead: Set<string>,
+): Set<string> {
+  const keep = new Set<string>()
+  const all = new Set<string>([...baseIds, ...localIds, ...serverIds])
+
+  for (const id of all) {
+    if (!id) continue
+    // 墓碑是显式的删除意图：基线可能已过期或缺失（例如新设备首次同步、
+    // 快照被清），此时只有墓碑能证明「这条被用户删过」。本地重新添加会清除
+    // 墓碑（见 clearResurrectedTombstones），因此这里排除不会挡住重新添加。
+    if (dead.has(id)) continue
+    const inBase = baseIds.has(id)
+    const inLocal = localIds.has(id)
+    const inServer = serverIds.has(id)
+
+    // 本地删除了（基线有、本地没有）：本地意图优先，不复活。
+    if (inBase && !inLocal) continue
+    // 远端删除了（基线有、服务端没有、本地还在）：跟随远端删除。
+    if (inBase && !inServer) continue
+    // 本地新增，或两侧都还在：保留。
+    if (inLocal) {
+      keep.add(id)
+      continue
+    }
+    // 纯远端新增（基线没有、本地没有、服务端有）：采纳。
+    if (inServer && !inBase) keep.add(id)
+  }
+  return keep
+}
+
+/**
+ * 按聚合规则做三方合并。任一侧解析失败时返回 changed=false，
  * 交由调用方按「新者胜」的普通键逻辑处理。
  */
-function mergeSyncValue(rule: MergeRule, localRaw: string | null, serverValue: unknown, dead: Set<string>): MergeResult {
+function mergeSyncValue(
+  rule: MergeRule,
+  baseRaw: string | null,
+  localRaw: string | null,
+  serverValue: unknown,
+  dead: Set<string>,
+): MergeResult {
   if (rule.kind === 'array') {
+    const baseList = Array.isArray(parseJson(baseRaw ?? '')) ? (parseJson(baseRaw ?? '') as unknown[]) : []
     const localValue = localRaw === null ? undefined : parseJson(localRaw)
     const localList = Array.isArray(localValue) ? localValue : null
     const serverList = Array.isArray(serverValue) ? serverValue : null
     if (localList === null || serverList === null) return { value: undefined, changed: false }
 
+    const keep = threeWayMergeIds(entryIds(baseList, rule), entryIds(localList, rule), entryIds(serverList, rule), dead)
+
+    // 以 local 顺序为基准，保留 local 中应留下的条目；再把仅服务端新增的追加进来。
     const merged: Record<string, unknown>[] = []
     const seen = new Set<string>()
-    for (const item of [...serverList, ...localList]) {
+    for (const item of [...localList, ...serverList]) {
       const record = asRecord(item)
       if (!record) continue
       const id = rule.id(record)
-      if (!id || seen.has(id) || dead.has(id)) continue
+      if (!id || seen.has(id) || !keep.has(id)) continue
       seen.add(id)
       merged.push(record)
     }
     return { value: merged, changed: true }
   }
 
+  const baseMap = asRecord(parseJson(baseRaw ?? ''))
   const localMap = localRaw === null ? null : asRecord(parseJson(localRaw))
   const serverMap = asRecord(serverValue)
   if (localMap === null || serverMap === null) return { value: undefined, changed: false }
 
+  const keep = threeWayMergeIds(entryIds(baseMap, rule), entryIds(localMap, rule), entryIds(serverMap, rule), dead)
+
   const merged: Record<string, number> = {}
   for (const [path, at] of Object.entries(serverMap)) {
+    if (!keep.has(path)) continue
     if (typeof at === 'number' && Number.isFinite(at)) merged[path] = at
   }
   for (const [path, at] of Object.entries(localMap)) {
+    if (!keep.has(path)) continue
     if (typeof at !== 'number' || !Number.isFinite(at)) continue
     const existing = merged[path]
     if (existing === undefined || at > existing) merged[path] = at
-  }
-  for (const path of Object.keys(merged)) {
-    if (dead.has(path)) delete merged[path]
   }
   return { value: merged, changed: true }
 }
@@ -596,27 +660,27 @@ export async function pullPreferences(account?: AiAgentAccount | null): Promise<
     const rule = mergeRuleFor(key)
     if (rule) {
       const localRaw = localStorage.getItem(key)
-      const serverIds = entryIds(item.value, rule)
       const snapshot = asRecord(parseJson(known[SNAPSHOT_KEY] ?? ''))
       const snapshotRaw = snapshot?.[key]
-      const knownIds = entryIds(parseJson(typeof snapshotRaw === 'string' ? snapshotRaw : ''), rule)
-      const localIds = entryIds(parseJson(localRaw ?? ''), rule)
+      const baseRaw = typeof snapshotRaw === 'string' ? snapshotRaw : null
+
+      // 本地相对基线消失的条目 → 记墓碑，防止它从服务端被再次带回来。
       const bucket = tombstones[key] ?? {}
-      // 数组类条目是「在不在集合里」的二值状态，本地有、服务端没有即视为
-      // 本地删除；映射类（recent-projects）里只有本地有只说明它是本机新增的
-      // 较新记录，不能据此判死，只认「上次快照有、本次两边都没有」的消失项。
-      for (const id of knownIds) {
-        if (!serverIds.has(id) && id) bucket[id] = now
+      const baseIds = entryIds(parseJson(baseRaw ?? ''), rule)
+      const localIds = entryIds(parseJson(localRaw ?? ''), rule)
+      for (const id of baseIds) {
+        if (!localIds.has(id) && id) bucket[id] = now
       }
-      if (rule.kind === 'array') {
-        for (const id of localIds) {
-          if (!serverIds.has(id) && id) bucket[id] = now
-        }
+      // 本地重新添加的条目要清除墓碑，否则会被当成「已删除」而永远加不回来。
+      for (const id of localIds) {
+        if (id in bucket) delete bucket[id]
       }
       if (Object.keys(bucket).length > 0) tombstones[key] = bucket
 
-      const dead = new Set(Object.keys(tombstones[key] ?? {}))
-      const merged = mergeSyncValue(rule, localRaw, item.value, dead)
+      // 三方合并：base 是上次同步基线，用来区分「本地新增」与「远端删除」、
+      // 「远端新增」与「本地删除」。没有 base 时这两对无法区分，删除会被复活。
+      const dead = new Set(Object.keys(bucket))
+      const merged = mergeSyncValue(rule, baseRaw, localRaw, item.value, dead)
       if (merged.changed) {
         const raw = JSON.stringify(merged.value)
         try {
