@@ -81,6 +81,15 @@ describe('SyncStatusIcon', () => {
     expect(container.innerHTML).toContain('success')
   })
 
+  it('renders the synced state as a fully lit pixel grid, not a check mark', () => {
+    seedLoggedInAndEnabled()
+    const { container } = render(<SyncStatusIcon />)
+    // 与「正在同步」同款九宫格几何，但静态全亮（不带动画类）
+    const cells = container.querySelectorAll('.grid.grid-cols-3 > span')
+    expect(cells).toHaveLength(9)
+    cells.forEach(cell => expect(cell.className).not.toContain('loader-pixel-cell'))
+  })
+
   it('exposes the status via title and aria-label for accessibility', () => {
     seedLoggedInAndEnabled()
     render(<SyncStatusIcon />)

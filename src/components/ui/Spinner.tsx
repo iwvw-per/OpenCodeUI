@@ -56,17 +56,30 @@ export const Spinner = forwardRef<SVGSVGElement, SpinnerProps>(
 )
 Spinner.displayName = 'Spinner'
 
-function PixelGrid({ cell }: { cell: number }) {
+export interface PixelGridProps {
+  /** 单个格子的边长（px）。 */
+  cell: number
+  /**
+   * 是否逐个闪烁。false 时九格常亮，用于「已完成」这类静态状态，
+   * 与闪烁变体共用同一套几何，视觉上能看出是同一个图标的不同阶段。
+   */
+  animated?: boolean
+  className?: string
+}
+
+export function PixelGrid({ cell, animated = true, className }: PixelGridProps) {
   return (
-    <span className="grid grid-cols-3" style={{ gap: 1 }}>
+    <span className={cn('grid grid-cols-3', className)} style={{ gap: 1 }}>
       {Array.from({ length: 9 }, (_, i) => (
         <span
           key={i}
-          className="loader-pixel-cell rounded-[0.5px] bg-current"
+          className={cn('rounded-[0.5px] bg-current', animated && 'loader-pixel-cell')}
           style={{
             width: cell,
             height: cell,
-            animationDelay: `${(i % 3) * 0.12 + Math.floor(i / 3) * 0.12}s`,
+            ...(animated
+              ? { animationDelay: `${(i % 3) * 0.12 + Math.floor(i / 3) * 0.12}s` }
+              : null),
           }}
         />
       ))}
