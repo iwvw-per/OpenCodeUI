@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { FolderRecentList, type FolderRecentProject } from './FolderRecentList'
 import { HostList } from './HostList'
 import { HostQuickSwitcher } from './HostQuickSwitcher'
+import { SyncStatusRow } from './SyncStatusRow'
 import { SessionSortMenu } from './SessionSortMenu'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
@@ -1173,6 +1174,9 @@ export function SidePanel({
 
       {/* Spacer for collapsed */}
       {!showLabels && <div className="flex-1" />}
+
+      {/* ===== 偏好同步状态（主机快速切换条上方） ===== */}
+      <SyncStatusRow showLabels={showLabels} />
 
       {/* ===== 主机快速切换条（对话区底部，仅展开显示） ===== */}
       {showLabels && <HostQuickSwitcher />}

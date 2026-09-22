@@ -29,6 +29,7 @@ import {
   isSyncableKey,
   syncPreferences,
 } from './preferencesSync'
+import { subscribePerServerStorageVersion } from '../utils/perServerStorage'
 
 export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'disabled'
 
@@ -39,11 +40,15 @@ export interface SyncState {
 }
 
 const POLL_INTERVAL_MS = 15_000
-const PUSH_DEBOUNCE_MS = 2_000
+// 本地改动合并窗口：一次编辑常触发多次写入（如删一项后重排），需要合并成一次
+// 上传；但不能太长，否则「改完立刻看另一台」的体感变差。500ms 足以吸收连写，
+// 又让上传几乎立刻发生。
+const PUSH_DEBOUNCE_MS = 500
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let eventsSubscription: PreferenceEventsSubscription | null = null
+let storageUnsubscribe: (() => void) | null = null
 let lastFingerprint = ''
 let lastSyncAt = 0
 let inFlight = false
@@ -159,6 +164,30 @@ function stopEventSubscription(): void {
 }
 
 /**
+ * 本地改动即时入队。
+ *
+ * 只靠轮询的话，改完项目要等最多一个轮询周期（15 秒）才被发现并上传 ——
+ * 这是端到端延迟里最大的一段。这里订阅 per-server 存储的写入通知，本地一改
+ * 立刻进入 2 秒 debounce，把「本端发现改动」从 0~15 秒压到 0 秒。
+ *
+ * 注意不能直接 runSync：一次编辑会连续触发多次写入（如删一项后重排），
+ * 走 debounce 合并成一次上传。另外这个通知也会被「拉取写入」触发，
+ * 那时指纹已与基线一致，pushPreferences 会因指纹相同而短路，不会空转。
+ */
+function startStorageSubscription(): void {
+  if (storageUnsubscribe) return
+  storageUnsubscribe = subscribePerServerStorageVersion(() => {
+    if (!isSyncEnabled() || !readAccount()) return
+    scheduleSync()
+  })
+}
+
+function stopStorageSubscription(): void {
+  storageUnsubscribe?.()
+  storageUnsubscribe = null
+}
+
+/**
  * 启动同步：首次做一次双向同步（拉取服务端、推送本地），随后建立 SSE 订阅
  * 并按轮询间隔兜底同步。未启用同步或未登录时为空操作。
  */
@@ -171,6 +200,7 @@ export async function startPreferencesSync(): Promise<void> {
   await runSync(true)
 
   startEventSubscription()
+  startStorageSubscription()
   pollTimer = setInterval(poll, POLL_INTERVAL_MS)
 }
 
@@ -185,6 +215,7 @@ export function stopPreferencesSync(): void {
   }
   pendingSync = false
   stopEventSubscription()
+  stopStorageSubscription()
   setState({ status: 'idle' })
 }
 
