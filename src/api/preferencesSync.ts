@@ -671,9 +671,21 @@ export async function pullPreferences(account?: AiAgentAccount | null): Promise<
       for (const id of baseIds) {
         if (!localIds.has(id) && id) bucket[id] = now
       }
-      // 本地重新添加的条目要清除墓碑，否则会被当成「已删除」而永远加不回来。
-      for (const id of localIds) {
-        if (id in bucket) delete bucket[id]
+      // 只有「本地条目比墓碑更新」才说明用户是删除后又重新添加，此时清除墓碑。
+      //
+      // 不能见到本地存在就清墓碑：正常拉取时该条目本来就还在本地（删除意图尚未
+      // 传出去），无条件清除会让墓碑在起作用之前就被销毁，已删条目随即被服务端
+      // 的旧值复活 —— 表现为「删除看起来同步了，其实又回来了」。
+      if (rule.kind === 'array') {
+        const localList = Array.isArray(parseJson(localRaw ?? '')) ? (parseJson(localRaw ?? '') as unknown[]) : []
+        for (const entry of localList) {
+          const record = asRecord(entry)
+          if (!record) continue
+          const id = rule.id(record)
+          if (!id || !(id in bucket)) continue
+          const addedAt = typeof record.addedAt === 'number' ? record.addedAt : 0
+          if (addedAt > bucket[id]) delete bucket[id]
+        }
       }
       if (Object.keys(bucket).length > 0) tombstones[key] = bucket
 
