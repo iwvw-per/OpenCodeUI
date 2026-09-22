@@ -14,6 +14,7 @@ import { useServerStore } from '../../../hooks/useServerStore'
 import { subscribeToServerConnectionState, getServerConnectionInfo, type ConnectionState } from '../../../api/events'
 import { cn } from '../../../utils/cn'
 import { interactive } from '../../../utils/interaction'
+import { SyncStatusIcon, useSyncIndicatorAvailable } from './SyncStatusRow'
 
 function useServerConnectionState(serverId: string): ConnectionState {
   const subscribe = useCallback(
@@ -52,20 +53,29 @@ export function HostQuickSwitcher() {
     [activeId, setActiveServer],
   )
 
-  if (visibleServers.length <= 1) return null
+  // 主机多于一台才需要切换条；但同步图标要挂在这一行右侧，所以只有「无主机可显示
+  // 且同步也不可用」时才整行省略，避免同步状态无处安放。
+  const showHosts = visibleServers.length > 1
+  const syncAvailable = useSyncIndicatorAvailable()
+  if (!showHosts && !syncAvailable) return null
 
   return (
     <div className="shrink-0 px-2 py-1.5 border-t border-border-200/40">
       <div className="flex flex-wrap items-center gap-1">
-        {visibleServers.map(server => (
-          <HostQuickHostRow
-            key={server.id}
-            serverId={server.id}
-            name={server.name}
-            isActive={server.id === activeId}
-            onSelect={handleSelect}
-          />
-        ))}
+        {showHosts &&
+          visibleServers.map(server => (
+            <HostQuickHostRow
+              key={server.id}
+              serverId={server.id}
+              name={server.name}
+              isActive={server.id === activeId}
+              onSelect={handleSelect}
+            />
+          ))}
+        {/* 同步状态：贴在该行右侧，只保留图标（悬停显示详情） */}
+        <span className="ml-auto flex items-center">
+          <SyncStatusIcon />
+        </span>
       </div>
     </div>
   )

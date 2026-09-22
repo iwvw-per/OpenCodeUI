@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { SyncStatusRow, syncStatusView, formatSyncedAt } from './SyncStatusRow'
+import { SyncStatusIcon, syncStatusView, formatSyncedAt } from './SyncStatusRow'
 import type { SyncState } from '../../../api/preferencesSyncEngine'
 
 const STORAGE_KEY = 'opencode-aiagent-account'
@@ -42,7 +42,7 @@ describe('syncStatusView', () => {
   })
 })
 
-describe('SyncStatusRow', () => {
+describe('SyncStatusIcon', () => {
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
@@ -61,32 +61,35 @@ describe('SyncStatusRow', () => {
       STORAGE_KEY,
       JSON.stringify({ domain: 'https://p.example.com', username: 'u', token: 't', loginAt: Date.now() }),
     )
-    const { container } = render(<SyncStatusRow showLabels />)
+    const { container } = render(<SyncStatusIcon />)
     expect(container.firstChild).toBeNull()
   })
 
   it('renders nothing when not logged in', () => {
     localStorage.setItem(SYNC_ENABLED_KEY, '1')
-    const { container } = render(<SyncStatusRow showLabels />)
+    const { container } = render(<SyncStatusIcon />)
     expect(container.firstChild).toBeNull()
   })
 
-  it('shows a success indicator when logged in and enabled', () => {
+  it('renders an icon-only indicator (no text node) when available', () => {
     seedLoggedInAndEnabled()
-    render(<SyncStatusRow showLabels />)
-    const row = screen.getByTitle(/待同步|已同步/)
-    expect(row.innerHTML).toContain('success')
+    const { container } = render(<SyncStatusIcon />)
+    // 只保留图标：不应渲染文案
+    expect(screen.queryByText(/待同步|已同步|正在同步/)).toBeNull()
+    expect(container.querySelector('[role="status"]')).toBeTruthy()
+    // 成功态用 success 语义色
+    expect(container.innerHTML).toContain('success')
   })
 
-  it('hides the label text when the sidebar is collapsed', () => {
+  it('exposes the status via title and aria-label for accessibility', () => {
     seedLoggedInAndEnabled()
-    const { container } = render(<SyncStatusRow showLabels={false} />)
-    const label = container.querySelector('span[style*="opacity: 0"]')
-    expect(label).toBeTruthy()
+    render(<SyncStatusIcon />)
+    const node = screen.getByRole('status')
+    expect(node.getAttribute('title')).toBeTruthy()
+    expect(node.getAttribute('aria-label')).toBeTruthy()
   })
 
   it('accepts a SyncState shape from the engine', () => {
-    // 类型契约：引擎新增字段时这里会先报错，避免 UI 静默不同步。
     const state: SyncState = { status: 'synced', lastSyncedAt: Date.now() }
     expect(syncStatusView(state).kind).toBe('synced')
   })
