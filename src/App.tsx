@@ -260,6 +260,24 @@ function App() {
   }, [paneLayout.focusedPaneId])
 
   const isMobilePanelLayout = chatViewport.interaction.sidebarBehavior === 'overlay'
+
+  // 移动端 overlay 侧栏的开合是临时浏览状态，不该参与偏好同步：进入该布局时
+  // 标记为 transient，同步拉取不再改写它；回到桌面端则恢复持久化语义。
+  // 同时把 overlay 侧栏收起，移动端始终以对话页为起点，避免桌面端偏好把侧栏
+  // 在手机上默认盖住内容。
+  const wasMobilePanelLayoutRef = useRef(false)
+  useEffect(() => {
+    layoutStore.setSidebarExpandedTransientMode(isMobilePanelLayout)
+    if (isMobilePanelLayout && !wasMobilePanelLayoutRef.current) {
+      // 进入移动端：收起 overlay 侧栏，始终以对话页为起点
+      layoutStore.setSidebarExpandedTransient(false)
+    } else if (!isMobilePanelLayout && wasMobilePanelLayoutRef.current) {
+      // 回到桌面端：恢复持久化的侧栏偏好，避免沿用移动端的临时收起状态
+      layoutStore.reloadFromStorage()
+    }
+    wasMobilePanelLayoutRef.current = isMobilePanelLayout
+  }, [isMobilePanelLayout])
+
   const mobileLeftPanelWidth = chatViewport.layout.sidebar.overlayWidth
   const mobilePageWidth = Math.max(1, chatViewport.layout.viewportWidth)
   const mobileChatScrollLeft = mobileLeftPanelWidth
@@ -333,22 +351,23 @@ function App() {
     if (!pager) return
 
     const page = getNearestMobilePage(pager.scrollLeft)
+    // 移动端侧栏开合是手势翻页的临时状态，走 transient 不落盘、不参与同步
     if (page === 'left') {
-      if (!sidebarExpanded) setSidebarExpanded(true)
+      if (!sidebarExpanded) layoutStore.setSidebarExpandedTransient(true)
       if (rightPanelOpen) layoutStore.closeRightPanel()
       return
     }
 
     if (page === 'right') {
       ensureMobileRightPanelRendered()
-      if (sidebarExpanded) setSidebarExpanded(false)
+      if (sidebarExpanded) layoutStore.setSidebarExpandedTransient(false)
       if (!rightPanelOpen) layoutStore.openRightPanel()
       return
     }
 
-    if (sidebarExpanded) setSidebarExpanded(false)
+    if (sidebarExpanded) layoutStore.setSidebarExpandedTransient(false)
     if (rightPanelOpen) layoutStore.closeRightPanel()
-  }, [ensureMobileRightPanelRendered, getNearestMobilePage, rightPanelOpen, setSidebarExpanded, sidebarExpanded])
+  }, [ensureMobileRightPanelRendered, getNearestMobilePage, rightPanelOpen, sidebarExpanded])
 
   const handleMobilePagerScroll = useCallback(() => {
     const pager = mobilePagerRef.current
@@ -465,9 +484,10 @@ function App() {
   useEffect(() => {
     if (!isMobilePanelLayout || !rightPanelOpen || !sidebarExpanded) return
 
-    const frameId = window.requestAnimationFrame(() => setSidebarExpanded(false))
+    // 移动端：打开右面板时收起侧栏，属临时交互，不落盘同步
+    const frameId = window.requestAnimationFrame(() => layoutStore.setSidebarExpandedTransient(false))
     return () => window.cancelAnimationFrame(frameId)
-  }, [isMobilePanelLayout, rightPanelOpen, setSidebarExpanded, sidebarExpanded])
+  }, [isMobilePanelLayout, rightPanelOpen, sidebarExpanded])
 
   useEffect(() => {
     return () => {
@@ -483,6 +503,9 @@ function App() {
     }
     if (isMobilePanelLayout) {
       scrollMobilePagerTo('left')
+      // 移动端 overlay 侧栏是浏览动作，不写同步键（否则会关掉桌面端的侧栏）
+      layoutStore.setSidebarExpandedTransient(true)
+      return
     }
     setSidebarExpanded(true)
   }, [isMobilePanelLayout, rightPanelOpen, scrollMobilePagerTo, setSidebarExpanded])
@@ -490,6 +513,8 @@ function App() {
   const handleCloseSidebar = useCallback(() => {
     if (isMobilePanelLayout) {
       scrollMobilePagerTo('chat')
+      layoutStore.setSidebarExpandedTransient(false)
+      return
     }
     setSidebarExpanded(false)
   }, [isMobilePanelLayout, scrollMobilePagerTo, setSidebarExpanded])
@@ -515,7 +540,8 @@ function App() {
     }
 
     ensureMobileRightPanelRendered()
-    if (sidebarExpanded) setSidebarExpanded(false)
+    // 移动端：切到右面板时收起侧栏，属临时交互，不落盘同步
+    if (sidebarExpanded) layoutStore.setSidebarExpandedTransient(false)
     scrollMobilePagerTo('right')
     layoutStore.openRightPanel()
   }, [

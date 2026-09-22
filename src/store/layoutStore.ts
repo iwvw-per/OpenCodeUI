@@ -449,13 +449,28 @@ export class LayoutStore {
     if (JSON.stringify(this.state) !== before) this.subscribers.forEach(fn => fn())
   }
 
+  /**
+   * 侧栏是否处于「移动端 overlay」形态。
+   *
+   * 移动端的侧栏是覆盖层 + 手势翻页的临时状态，与桌面端 docked 侧栏的「用户偏好」
+   * 语义不同：同步拉取读到的持久化值不应改写它，否则手机会在每次同步时被弹开
+   * （用户报的「关掉后随同步重复出现」）。由 App 在进入移动端布局时置位。
+   */
+  private sidebarExpandedIsTransient = false
+
+  setSidebarExpandedTransientMode(transient: boolean): void {
+    this.sidebarExpandedIsTransient = transient
+  }
+
   /** 从 localStorage 恢复状态（构造与 reloadFromStorage 共用）。 */
   private restoreFromStorage(): void {
     try {
-      // 侧边栏
-      const savedSidebar = localStorage.getItem(STORAGE_KEY_SIDEBAR)
-      if (savedSidebar !== null) {
-        this.state.sidebarExpanded = savedSidebar !== 'false'
+      // 侧边栏：移动端 overlay 形态下跳过，避免同步值覆盖临时交互状态
+      if (!this.sidebarExpandedIsTransient) {
+        const savedSidebar = localStorage.getItem(STORAGE_KEY_SIDEBAR)
+        if (savedSidebar !== null) {
+          this.state.sidebarExpanded = savedSidebar !== 'false'
+        }
       }
 
       const savedFolderRecents = localStorage.getItem(STORAGE_KEY_SIDEBAR_FOLDER_RECENTS)
@@ -584,6 +599,12 @@ export class LayoutStore {
   }
 
   setSidebarExpanded(expanded: boolean) {
+    // 移动端 overlay 形态下，任何调用方都不该写同步键：委托给 transient，
+    // 避免「别处调用持久化 setter」把移动端拖回同步语义。
+    if (this.sidebarExpandedIsTransient) {
+      this.setSidebarExpandedTransient(expanded)
+      return
+    }
     if (this.state.sidebarExpanded === expanded) return
     this.state.sidebarExpanded = expanded
     try {
@@ -591,6 +612,21 @@ export class LayoutStore {
     } catch {
       // ignore
     }
+    this.notify()
+  }
+
+  /**
+   * 只改内存、不落盘、不参与同步地设置侧栏展开。
+   *
+   * 移动端的侧栏是手势翻页的临时状态：它由 overlay 覆盖显示，开合属于浏览动作，
+   * 不是用户偏好。若走 setSidebarExpanded 会写入同步键，手机每次关侧栏都会把
+   * 桌面端的侧栏一起关掉；反过来同步拉取又会把手机侧栏弹开（表现为「关掉后随
+   * 同步反复出现」）。桌面端的 docked 侧栏才是真正的偏好，仍走持久化那条路。
+   */
+  setSidebarExpandedTransient(expanded: boolean) {
+    this.sidebarExpandedIsTransient = true
+    if (this.state.sidebarExpanded === expanded) return
+    this.state.sidebarExpanded = expanded
     this.notify()
   }
 
