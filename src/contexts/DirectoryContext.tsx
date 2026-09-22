@@ -5,7 +5,14 @@
 import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { getPath, type ApiPath } from '../api'
 import { useRouter } from '../hooks/useRouter'
-import { handleError, normalizeToForwardSlash, getDirectoryName, isSameDirectory, serverStorage } from '../utils'
+import {
+  handleError,
+  normalizeToForwardSlash,
+  getDirectoryName,
+  isSameDirectory,
+  serverStorage,
+  subscribePerServerStorageVersion,
+} from '../utils'
 import { layoutStore, useLayoutStore } from '../store/layoutStore'
 import { serverStore } from '../store/serverStore'
 import { multiServerStore, useMultiServerStore } from '../store/multiServerStore'
@@ -87,6 +94,26 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
     setPathInfo(null)
     getPath(pathServerId).then(setPathInfo).catch(handleError('get path info', 'api'))
   }, [pathServerId])
+
+  // 感知外部对 per-server 存储的写入（偏好同步引擎拉取别的端的改动时）：
+  // savedDirectories / recentProjects 是 useState，不会自动跟随 localStorage，
+  // 不重读就会停在初始化快照上，表现为「另一端改了但这边界面不变」。
+  //
+  // 用「内容相同就不 setState」而不是直接 set：下方的保存 effect 会因 setState
+  // 再次写入存储并 bumpVersion，直接 set 会形成 写入→通知→重读→写入 的自激循环。
+  // 比较内容后，只有真正变化的键才触发一次 setState，循环在第二轮收敛。
+  useEffect(() => {
+    return subscribePerServerStorageVersion(() => {
+      setSavedDirectories(prev => {
+        const next = readSavedDirectories()
+        return JSON.stringify(prev) === JSON.stringify(next) ? prev : next
+      })
+      setRecentProjects(prev => {
+        const next = readRecentProjects()
+        return JSON.stringify(prev) === JSON.stringify(next) ? prev : next
+      })
+    })
+  }, [])
 
   // 保存 savedDirectories 到当前活动服务器的 per-server 存储（切主机各看各的）
   useEffect(() => {
