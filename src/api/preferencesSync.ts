@@ -84,6 +84,7 @@
 
 import { accountRequest, readAccount, type AiAgentAccount } from './aiagent'
 import { notifyPerServerStorageChanged } from '../utils/perServerStorage'
+import { layoutStore } from '../store/layoutStore'
 
 const SYNC_ENABLED_KEY = 'opencode-preferences-sync-enabled'
 const SYNC_META_KEY = 'opencode-preferences-sync-meta'
@@ -725,9 +726,15 @@ export async function pullPreferences(account?: AiAgentAccount | null): Promise<
 
   writeTombstones(tombstones)
   writeStampState({ stamps, known: { ...known, [SNAPSHOT_KEY]: JSON.stringify(collectLocalPreferences()) } })
-  // 拉取是「从外部写入 localStorage」：React 状态（savedDirectories 等）不会
-  // 自动感知，必须显式通知订阅者重新读取，否则 UI 停在初始化快照上。
-  if (written > 0) notifyPerServerStorageChanged()
+  // 拉取是「从外部写入 localStorage」：React 状态不会自动感知，必须显式通知
+  // 订阅者重新读取，否则 UI 停在初始化快照上。
+  if (written > 0) {
+    notifyPerServerStorageChanged()
+    // layoutStore 管着一批只读一次的偏好（侧栏排序、开关等），它们不走
+    // per-server 存储，需要单独触发重读，否则表现为「另一台改了排序，这边要
+    // 切换主机才生效」。
+    layoutStore.reloadFromStorage()
+  }
   return written
 }
 
