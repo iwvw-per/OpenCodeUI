@@ -419,7 +419,24 @@ export class LayoutStore {
   }
 
   constructor() {
-    // 从 localStorage 恢复状态
+    this.restoreFromStorage()
+  }
+
+  /**
+   * 从 localStorage 重新读取受同步管理的偏好。
+   *
+   * 偏好同步引擎在拉取到别的端的改动后直接写 localStorage，本 store 只在构造时
+   * 读过一次，不重读就会停在旧值 —— 表现为「另一台改了排序/开关，这边切换主机
+   * 才生效」。由同步层在拉取后调用本方法即可保持一致。
+   */
+  reloadFromStorage(): void {
+    const before = JSON.stringify(this.state)
+    this.restoreFromStorage()
+    if (JSON.stringify(this.state) !== before) this.subscribers.forEach(fn => fn())
+  }
+
+  /** 从 localStorage 恢复状态（构造与 reloadFromStorage 共用）。 */
+  private restoreFromStorage(): void {
     try {
       // 侧边栏
       const savedSidebar = localStorage.getItem(STORAGE_KEY_SIDEBAR)

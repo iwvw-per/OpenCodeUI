@@ -230,3 +230,52 @@ describe('LayoutStore backup import', () => {
     expect(layoutStore.getState().activeTabId.bottom).toBe('term-1')
   })
 })
+
+describe('LayoutStore reloadFromStorage', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('picks up a sort preference written by an external writer', () => {
+    // 回归：排序等偏好由偏好同步引擎从外部写入 localStorage，
+    // store 只在构造时读一次，不重读就会停在旧值 —— 表现为「另一台改了排序，
+    // 这边要切换主机才生效」。
+    const store = new LayoutStore()
+    expect(store.getState().sidebarSessionSortField).toBe('updated')
+
+    localStorage.setItem('opencode-sidebar-session-sort', JSON.stringify({ field: 'created', desc: false }))
+    store.reloadFromStorage()
+
+    expect(store.getState().sidebarSessionSortField).toBe('created')
+    expect(store.getState().sidebarSessionSortDesc).toBe(false)
+  })
+
+  it('picks up sidebar toggles written externally', () => {
+    const store = new LayoutStore()
+    store.setSidebarFolderRecents(false)
+
+    localStorage.setItem('opencode-sidebar-folder-recents', 'true')
+    store.reloadFromStorage()
+
+    expect(store.getState().sidebarFolderRecents).toBe(true)
+  })
+
+  it('notifies subscribers only when something actually changed', () => {
+    const store = new LayoutStore()
+    let notified = 0
+    store.subscribe(() => {
+      notified += 1
+    })
+
+    store.reloadFromStorage()
+    expect(notified).toBe(0)
+
+    localStorage.setItem('opencode-sidebar-show-child-sessions', 'all')
+    store.reloadFromStorage()
+    expect(notified).toBe(1)
+  })
+})
