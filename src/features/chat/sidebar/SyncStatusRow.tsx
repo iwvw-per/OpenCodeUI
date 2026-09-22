@@ -12,8 +12,8 @@
 // ============================================
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { CheckIcon, AlertCircleIcon } from '../../../components/Icons'
-import { Spinner } from '../../../components/ui/Spinner'
+import { AlertCircleIcon } from '../../../components/Icons'
+import { PixelGrid, Spinner } from '../../../components/ui/Spinner'
 import { getSyncState, subscribeSyncState, type SyncState } from '../../../api/preferencesSyncEngine'
 import { isSyncEnabled } from '../../../api/preferencesSync'
 import { readAccount } from '../../../api/aiagent'
@@ -83,7 +83,12 @@ export function useSyncIndicatorAvailable(): boolean {
   return available
 }
 
-/** 图标本体：同步中用动态小方格，成功用绿色对号，失败用红色叹号。 */
+/**
+ * 图标本体：同步中用闪烁小方格，已同步用「全亮小方格」，失败用红色叹号。
+ *
+ * 成功态刻意复用同步中的九宫格几何（而非对号），让两个状态读起来是同一图标的
+ * 两个阶段：格子从逐个点亮变为全部点亮，表示同步走完。
+ */
 function SyncStatusIconGlyph({ kind }: { kind: SyncIndicatorKind }) {
   if (kind === 'syncing') return <Spinner size="sm" tone="accent" variant="pixel" />
   if (kind === 'error') {
@@ -94,8 +99,8 @@ function SyncStatusIconGlyph({ kind }: { kind: SyncIndicatorKind }) {
     )
   }
   return (
-    <span className="flex size-4 items-center justify-center rounded-full bg-success-100/15 text-success-100">
-      <CheckIcon size={11} />
+    <span className="flex size-4 items-center justify-center text-success-100" aria-hidden="true">
+      <PixelGrid cell={3} animated={false} />
     </span>
   )
 }
