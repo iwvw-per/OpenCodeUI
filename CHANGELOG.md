@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.6.96] - 2026-09-23
+
+- fix(pane): 拖拽柄松手后显式写回 grid 模板，修复双击后分屏塌成上下布局 (fff8b92e)
+
 ## [v0.6.95] - 2026-09-23
 
 - fix(i18n,theme): 补全硬编码英文 tooltip 的翻译 + 修正 cached 配色与 dracula 文本层级 (18b39fb5)
