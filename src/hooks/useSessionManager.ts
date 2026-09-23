@@ -182,7 +182,18 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
         return
       }
 
-      messageStore.setLoadState(sid, 'loading')
+      // 已有可显示内容时，刷新走「后台替换」而不打回 loading。
+      //
+      // ChatPane 用 `loadState === 'loaded'` 决定是否挂载 ChatArea，回落成
+      // loading 会卸载已渲染的对话、闪一次全屏 loading、再重新挂载并跳回顶部
+      // ——用户看到的就是「切换主机 / 重连 / 切回前台时对话整个刷新一遍」。
+      // 保留 loaded 状态让旧内容留在屏上，数据到达后原地替换，滚动位置不丢。
+      // 只有首次加载（屏上还没有内容）才需要 loading 占位并显示骨架。
+      const hasContentToKeep =
+        !!existingState && (existingState.loadState === 'loaded' || existingState.messages.length > 0)
+      if (!hasContentToKeep) {
+        messageStore.setLoadState(sid, 'loading')
+      }
 
       try {
         // 并行加载 session 信息和消息（传递 directory）

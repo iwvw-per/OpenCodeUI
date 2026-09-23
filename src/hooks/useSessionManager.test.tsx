@@ -168,4 +168,50 @@ describe('useSessionManager', () => {
 
     expect(getSessionMessagePageMock).not.toHaveBeenCalled()
   })
+
+  it('keeps showing existing messages while force-refreshing a loaded session', async () => {
+    // 重连/host 切换后的 force 刷新不应把 loadState 打回 loading：
+    // ChatPane 用 loadState === 'loaded' 决定是否挂载 ChatArea，一旦回落，
+    // 已渲染的对话会被卸载、闪一次全屏 loading、再重挂，滚动位置丢失。
+    messageStoreMock.getSessionState.mockReturnValue({
+      messages: [{ info: { id: 'message-1', role: 'user', time: { created: 2 } }, parts: [] }],
+      loadState: 'loaded',
+      isStale: false,
+      isStreaming: false,
+      directory: '/workspace/demo',
+      hasMoreHistory: false,
+      historyCursor: undefined,
+    })
+    getSessionMessagePageMock.mockResolvedValue({
+      messages: [{ info: { id: 'message-1', role: 'user', time: { created: 2 } }, parts: [] }],
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager({ sessionId: 'session-1', directory: '/workspace/demo' }),
+    )
+
+    messageStoreMock.setLoadState.mockClear()
+
+    await act(async () => {
+      await result.current.loadSession('session-1', { force: true })
+    })
+
+    expect(messageStoreMock.setLoadState).not.toHaveBeenCalledWith('session-1', 'loading')
+    expect(messageStoreMock.setMessages).toHaveBeenCalled()
+  })
+
+  it('still shows the loading state when the session has no displayed messages yet', async () => {
+    messageStoreMock.getSessionState.mockReturnValue(null)
+    getSessionMessagePageMock.mockResolvedValue({ messages: [] })
+
+    const { result } = renderHook(() =>
+      useSessionManager({ sessionId: 'session-1', directory: '/workspace/demo' }),
+    )
+
+    await act(async () => {
+      await result.current.loadSession('session-2')
+    })
+
+    expect(messageStoreMock.setLoadState).toHaveBeenCalledWith('session-2', 'loading')
+  })
 })
