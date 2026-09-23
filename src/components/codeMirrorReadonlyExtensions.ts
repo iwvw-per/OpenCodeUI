@@ -12,6 +12,7 @@ import {
   selectMatches,
   setSearchQuery,
 } from '@codemirror/search'
+import i18n from '../i18n'
 import {
   Decoration,
   EditorView,
@@ -253,11 +254,11 @@ function createCodeMirrorSearchPanel(view: EditorView): Panel {
   const input = document.createElement('input')
   input.className = 'cm-code-search-input'
   input.type = 'text'
-  input.placeholder = 'Find'
+  input.placeholder = i18n.t('components:codeSearch.find')
   input.setAttribute('main-field', 'true')
-  input.setAttribute('aria-label', 'Find in code')
+  input.setAttribute('aria-label', i18n.t('components:codeSearch.findInCode'))
   input.spellcheck = false
-  const clearButton = createSearchButton('×', 'Clear search', () => {
+  const clearButton = createSearchButton('×', i18n.t('components:codeSearch.clearSearch'), () => {
     input.value = ''
     applyQuery()
     input.focus()
@@ -266,17 +267,17 @@ function createCodeMirrorSearchPanel(view: EditorView): Panel {
   inputWrap.append(input, clearButton)
   const nav = document.createElement('div')
   nav.className = 'cm-code-search-nav'
-  nav.append(createSearchButton('↑', 'Previous match', () => findPrevious(view)), createSearchButton('↓', 'Next match', () => findNext(view)), createSearchButton('≡', 'Select all matches', () => selectMatches(view)))
+  nav.append(createSearchButton('↑', i18n.t('components:codeSearch.previousMatch'), () => findPrevious(view)), createSearchButton('↓', i18n.t('components:codeSearch.nextMatch'), () => findNext(view)), createSearchButton('≡', i18n.t('components:codeSearch.selectAllMatches'), () => selectMatches(view)))
   const options = document.createElement('div')
   options.className = 'cm-code-search-options'
-  const caseSensitive = createSearchToggle('Aa', 'Match case')
-  const regexp = createSearchToggle('.*', 'Use regular expression')
-  const wholeWord = createSearchToggle('ab', 'Match whole word')
+  const caseSensitive = createSearchToggle('Aa', i18n.t('components:codeSearch.matchCase'))
+  const regexp = createSearchToggle('.*', i18n.t('components:codeSearch.useRegexp'))
+  const wholeWord = createSearchToggle('ab', i18n.t('components:codeSearch.matchWholeWord'))
   options.append(caseSensitive.button, regexp.button, wholeWord.button)
   const count = document.createElement('span')
   count.className = 'cm-code-search-count'
-  count.textContent = 'No results'
-  const closeButton = createSearchButton('×', 'Close search', () => {
+  count.textContent = i18n.t('components:codeSearch.noResults')
+  const closeButton = createSearchButton('×', i18n.t('components:codeSearch.closeSearch'), () => {
     closeSearchPanel(view)
     view.focus()
   })
@@ -319,7 +320,7 @@ function createCodeMirrorSearchPanel(view: EditorView): Panel {
 }
 
 function getSearchCountLabel(state: EditorState, query: SearchQuery): string {
-  if (!query.search) return 'No results'
+  if (!query.search) return i18n.t('components:codeSearch.noResults')
   const selectionFrom = state.selection.main.from
   let total = 0
   let current = 0
@@ -328,7 +329,7 @@ function getSearchCountLabel(state: EditorState, query: SearchQuery): string {
     total++
     if (next.value.from <= selectionFrom && next.value.to >= selectionFrom) current = total
   }
-  if (total === 0) return 'No results'
+  if (total === 0) return i18n.t('components:codeSearch.noResults')
   return `${current || 1} / ${total}`
 }
 

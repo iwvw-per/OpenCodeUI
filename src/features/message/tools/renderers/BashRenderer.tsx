@@ -169,7 +169,8 @@ function TerminalSurface({
   onToggleFullscreen?: () => void
   exitCodeLabel?: string
 }) {
-  const fullscreenLabel = isFullscreen ? 'Exit fullscreen' : 'Fullscreen'
+  const { t } = useTranslation(['components', 'common'])
+  const fullscreenLabel = isFullscreen ? t('components:contentBlock.exitFullscreen') : t('components:contentBlock.fullscreen')
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
@@ -251,6 +252,7 @@ function TerminalSurface({
 }
 
 function WorkingDirectoryPrompt({ cwd }: { cwd: string }) {
+  const { t } = useTranslation('common')
   const [copied, setCopied] = useState(false)
   const displayPath = useMemo(() => truncatePromptPath(cwd), [cwd])
 
@@ -272,7 +274,7 @@ function WorkingDirectoryPrompt({ cwd }: { cwd: string }) {
         className={`min-w-0 max-w-full truncate text-left font-mono transition-colors ${
           copied ? 'text-success-100' : 'text-accent-main-100 hover:bg-bg-200 hover:border-border-200 border border-transparent rounded px-1'
         }`}
-        title={copied ? 'Copied!' : `Click to copy: ${cwd}`}
+        title={copied ? t('copied') : t('clickToCopyPath', { path: cwd })}
         style={{ direction: 'rtl' }}
       >
         <bdi>{displayPath}</bdi>
@@ -302,6 +304,7 @@ function truncatePromptPath(path: string): string {
 // ============================================
 
 function ClickToCopyCommand({ command }: { command: string }) {
+  const { t } = useTranslation('common')
   const [copied, setCopied] = useState(false)
 
   const handleClick = useCallback(async () => {
@@ -318,7 +321,7 @@ function ClickToCopyCommand({ command }: { command: string }) {
     <div
       className="cursor-pointer group/cmd whitespace-pre-wrap break-all"
       onClick={handleClick}
-      title={copied ? 'Copied!' : 'Click to copy'}
+      title={copied ? t('copied') : t('clickToCopy')}
     >
       <span className="inline-block w-[1ch] text-center text-accent-main-100 select-none font-semibold">
         {copied ? '✓' : '$'}

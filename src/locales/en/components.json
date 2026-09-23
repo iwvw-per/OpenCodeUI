@@ -33,7 +33,10 @@
   },
   "diffViewer": {
     "noChanges": "No changes",
-    "linesUnchanged": "{{count}} lines unchanged"
+    "linesUnchanged": "{{count}} lines unchanged",
+    "expandUpward": "Expand upward",
+    "expandDownward": "Expand downward",
+    "expandHiddenLines": "Expand hidden lines"
   },
   "rightPanel": {
     "loadingPanel": "Loading panel...",
@@ -180,9 +183,41 @@
   },
   "contentBlock": {
     "fullscreen": "Fullscreen",
+    "exitFullscreen": "Exit fullscreen",
     "exitCode": "exit {{code}}"
   },
   "diffView": {
     "fullscreenView": "Fullscreen"
+  },
+  "markdown": {
+    "renderingDiagram": "Rendering diagram",
+    "diagramLabel": "Mermaid diagram",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "resetView": "Reset view",
+    "enablePan": "Enable diagram pan",
+    "disablePan": "Disable diagram pan",
+    "renderFailed": "Mermaid render failed",
+    "renderFailedDetail": "Failed to render Mermaid diagram",
+    "viewHtmlSource": "View HTML source",
+    "previewHtml": "Preview HTML",
+    "htmlPreview": "HTML preview",
+    "renderHtml": "Render HTML",
+    "zoomInLabel": "Zoom in diagram",
+    "zoomOutLabel": "Zoom out diagram",
+    "resetViewLabel": "Reset diagram view"
+  },
+  "codeSearch": {
+    "find": "Find",
+    "findInCode": "Find in code",
+    "clearSearch": "Clear search",
+    "previousMatch": "Previous match",
+    "nextMatch": "Next match",
+    "selectAllMatches": "Select all matches",
+    "matchCase": "Match case",
+    "useRegexp": "Use regular expression",
+    "matchWholeWord": "Match whole word",
+    "noResults": "No results",
+    "closeSearch": "Close search"
   }
 }

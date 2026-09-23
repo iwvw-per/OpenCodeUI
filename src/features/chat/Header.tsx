@@ -258,7 +258,7 @@ export function Header({
         <div className="flex items-center gap-1 pointer-events-auto shrink-0 z-20">
             {onTogglePaneFullscreen && (
               <IconButton
-                aria-label={isPaneFullscreen ? 'Exit fullscreen pane' : 'Fullscreen pane'}
+                aria-label={isPaneFullscreen ? t('header.exitFullscreenPane') : t('header.enterFullscreenPane')}
                 onClick={onTogglePaneFullscreen}
                 className={cn(
                   isPaneFullscreen ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
@@ -271,7 +271,7 @@ export function Header({
 
             {onSplitPane && (
               <IconButton
-                aria-label="Split pane"
+                aria-label={t('header.splitPane')}
                 onClick={onSplitPane}
                 className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
               >
@@ -394,7 +394,7 @@ export function Header({
         <div className="flex items-center gap-0.5">
           {onTogglePaneFullscreen && (
             <IconButton
-              aria-label={isPaneFullscreen ? 'Exit fullscreen pane' : 'Fullscreen pane'}
+              aria-label={isPaneFullscreen ? t('header.exitFullscreenPane') : t('header.enterFullscreenPane')}
               onClick={onTogglePaneFullscreen}
               className={cn(
                 isPaneFullscreen ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
@@ -407,7 +407,7 @@ export function Header({
 
           {onSplitPane && (
             <IconButton
-              aria-label="Split pane"
+              aria-label={t('header.splitPane')}
               onClick={onSplitPane}
               className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
             >
