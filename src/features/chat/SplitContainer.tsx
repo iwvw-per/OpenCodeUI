@@ -39,9 +39,11 @@ const SPLIT_GAP = 1
  *  not present on the top/bottom panes of a vertical split, so 4px is safe. */
 const HIT_EXTEND_VERTICAL = 4
 const HIT_EXTEND_HORIZONTAL = 1
-/** Minimum ratio to prevent a pane from collapsing to zero */
-const MIN_RATIO = 0.1
-const MAX_RATIO = 0.9
+/** Minimum ratio to prevent a pane from collapsing to zero.
+ *  与 paneLayoutStore.setRatio 的钳制范围保持一致，否则拖到边缘预览会被
+ *  夹在 0.1/0.9、提交时又被夹到 0.15/0.85，松手瞬间出现跳动。 */
+const MIN_RATIO = 0.15
+const MAX_RATIO = 0.85
 
 interface SplitContainerProps {
   node: PaneNode
@@ -123,13 +125,16 @@ function SplitNode({ split, renderLeaf, fullscreenPaneId }: SplitNodeProps) {
         document.body.style.userSelect = ''
         if (rafId !== null) cancelAnimationFrame(rafId)
 
-        // Clear inline overrides — hand control back to React
-        container.style.gridTemplateColumns = ''
-        container.style.gridTemplateRows = ''
-
-        // Compute and commit the final ratio
+        // 提交最终 ratio，并把模板显式写回 DOM。
+        //
+        // 不能只清空 inline 样式后指望 React 重写：提交的 ratio 可能与 store 里
+        // 当前值相同（单击、或双击拖拽柄而不移动时必然如此），React 认为 style
+        // 没变、跳过写入，容器就停在「无 grid-template」状态 —— 三个子元素退化成
+        // auto-flow 排成三行，表现为「双击后变成上下分屏、拖拽柄被拉变形消失」。
         const raw = isHorizontal ? (ev.clientX - rect.left) / rect.width : (ev.clientY - rect.top) / rect.height
-        paneLayoutStore.setRatio(split.id, Math.max(MIN_RATIO, Math.min(MAX_RATIO, raw)))
+        const committed = Math.max(MIN_RATIO, Math.min(MAX_RATIO, raw))
+        paneLayoutStore.setRatio(split.id, committed)
+        applyRatio(committed)
 
         window.dispatchEvent(new CustomEvent('panel-resize-end'))
       }

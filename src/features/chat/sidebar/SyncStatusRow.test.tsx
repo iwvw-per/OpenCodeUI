@@ -77,8 +77,6 @@ describe('SyncStatusIcon', () => {
     // 只保留图标：不应渲染文案
     expect(screen.queryByText(/待同步|已同步|正在同步/)).toBeNull()
     expect(container.querySelector('[role="status"]')).toBeTruthy()
-    // 成功态用 success 语义色
-    expect(container.innerHTML).toContain('success')
   })
 
   it('renders the synced state as a fully lit pixel grid, not a check mark', () => {
@@ -88,6 +86,16 @@ describe('SyncStatusIcon', () => {
     const cells = container.querySelectorAll('.grid.grid-cols-3 > span')
     expect(cells).toHaveLength(9)
     cells.forEach(cell => expect(cell.className).not.toContain('loader-pixel-cell'))
+  })
+
+  it('uses the theme accent color for the synced grid', () => {
+    // 成功态与同步中同属一个图标的两阶段，颜色应跟随主题强调色；
+    // 曾用 success 语义色（绿），在紫色主题下与同步中的紫色不一致。
+    seedLoggedInAndEnabled()
+    const { container } = render(<SyncStatusIcon />)
+    const glyph = container.querySelector('[role="status"] > span')
+    expect(glyph?.className).toContain('text-accent-main-100')
+    expect(glyph?.className).not.toContain('text-success-100')
   })
 
   it('exposes the status via title and aria-label for accessibility', () => {
