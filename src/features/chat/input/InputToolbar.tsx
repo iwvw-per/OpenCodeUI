@@ -366,7 +366,7 @@ export function InputToolbar({
                 id={agentMenuId}
                 ref={agentMenuRef}
                 role="menu"
-                aria-label="Agent menu"
+                aria-label={t('header.agentMenu')}
                 className="flex flex-col gap-0.5"
                 onKeyDown={event =>
                   handleMenuKeyDown(event, agentMenuRef.current, () => setAgentMenuOpen(false), agentTriggerRef.current)
@@ -472,7 +472,7 @@ export function InputToolbar({
                 id={variantMenuId}
                 ref={variantMenuRef}
                 role="menu"
-                aria-label="Variant menu"
+                aria-label={t('header.variantMenu')}
                 className="flex flex-col gap-0.5"
                 onKeyDown={event =>
                   handleMenuKeyDown(event, variantMenuRef.current, () => setVariantMenuOpen(false), variantTriggerRef.current)

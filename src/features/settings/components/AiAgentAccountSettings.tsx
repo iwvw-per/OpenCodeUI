@@ -205,7 +205,7 @@ export function AiAgentAccountSettings() {
             <Button onClick={handleLogin} disabled={busy}>
               {busy ? '登录中…' : '登录'}
             </Button>
-            {error && <span className="text-xs text-red-400">{error}</span>}
+            {error && <span className="text-xs text-danger-100">{error}</span>}
           </div>
         </div>
       ) : (
@@ -245,7 +245,7 @@ export function AiAgentAccountSettings() {
                       <div className="flex items-center gap-2">
                         <span className="truncate text-sm text-text-100">{instance.label}</span>
                         <span
-                          className={`text-[10px] ${online ? 'text-green-400' : 'text-text-500'}`}
+                          className={`text-[10px] ${online ? 'text-success-100' : 'text-text-500'}`}
                           title={offlineLabel}
                         >
                           {online ? '运行中' : '离线'}
@@ -261,7 +261,7 @@ export function AiAgentAccountSettings() {
               })}
             </ul>
           )}
-          {error && <span className="text-xs text-red-400">{error}</span>}
+          {error && <span className="text-xs text-danger-100">{error}</span>}
         </div>
       )}
     </>

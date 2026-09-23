@@ -63,7 +63,6 @@ export const StepFinishPartView = memo(function StepFinishPartView({
       )}
       {show.cache && cacheHit > 0 && (
         <span
-          className="text-text-600"
           title={`${t('stepFinish.cacheRead', { read: tokens.cache.read })}, ${t('stepFinish.cacheWrite', { write: tokens.cache.write })}`}
         >
           ({t('stepFinish.cached', { count: formatNumber(cacheHit) })})

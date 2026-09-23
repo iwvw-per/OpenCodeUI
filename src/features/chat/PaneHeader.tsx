@@ -208,7 +208,7 @@ export function PaneHeader({
           {paneCount > 1 && (
             <IconButton
               size="sm"
-              aria-label="Close pane"
+              aria-label={t('header.closePane')}
               onClick={e => {
                 e.stopPropagation()
                 handleClose()
@@ -225,7 +225,7 @@ export function PaneHeader({
           {onTogglePaneFullscreen && (
             <IconButton
               size="sm"
-              aria-label={isPaneFullscreen ? 'Exit fullscreen pane' : 'Fullscreen pane'}
+              aria-label={isPaneFullscreen ? t('header.exitFullscreenPane') : t('header.enterFullscreenPane')}
               onClick={e => {
                 e.stopPropagation()
                 onTogglePaneFullscreen()
@@ -243,7 +243,7 @@ export function PaneHeader({
             <>
               <IconButton
                 size="sm"
-                aria-label="Split horizontal"
+                aria-label={t('header.splitHorizontal')}
                 onClick={e => {
                   e.stopPropagation()
                   handleSplitH()
@@ -255,7 +255,7 @@ export function PaneHeader({
 
               <IconButton
                 size="sm"
-                aria-label="Split vertical"
+                aria-label={t('header.splitVertical')}
                 onClick={e => {
                   e.stopPropagation()
                   handleSplitV()

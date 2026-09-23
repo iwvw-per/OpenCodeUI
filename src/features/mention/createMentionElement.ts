@@ -1,6 +1,7 @@
 import type { MentionItem } from './types'
 import { formatMentionLabel } from './utils'
 import { clipboardErrorHandler, copyTextToClipboard } from '../../utils'
+import i18n from '../../i18n'
 
 export function createMentionElement(item: MentionItem): { element: HTMLSpanElement; cleanup: () => void } {
   const span = document.createElement('span')
@@ -13,7 +14,7 @@ export function createMentionElement(item: MentionItem): { element: HTMLSpanElem
   span.dataset.mentionValue = item.value
   span.dataset.mentionDisplay = item.displayName
   span.textContent = label
-  span.title = `Click to copy: ${item.value}`
+  span.title = i18n.t('common:clickToCopyPath', { path: item.value })
 
   let copyTimeoutId: ReturnType<typeof setTimeout> | null = null
 

@@ -10,7 +10,15 @@
     "closePanel": "关闭面板",
     "openPanel": "打开面板",
     "openProjectDirectory": "打开项目目录",
-    "mcpStatus": "MCP 连接状态"
+    "mcpStatus": "MCP 连接状态",
+    "enterFullscreenPane": "分栏全屏",
+    "exitFullscreenPane": "退出分栏全屏",
+    "splitPane": "分栏",
+    "splitHorizontal": "水平分栏",
+    "splitVertical": "垂直分栏",
+    "closePane": "关闭分栏",
+    "agentMenu": "Agent 菜单",
+    "variantMenu": "模型变体菜单"
   },
   "chatArea": {
     "loadingSession": "加载会话中...",

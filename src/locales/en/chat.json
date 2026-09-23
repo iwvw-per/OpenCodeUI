@@ -10,7 +10,15 @@
     "closePanel": "Close panel",
     "openPanel": "Open panel",
     "openProjectDirectory": "Open project directory",
-    "mcpStatus": "MCP connection status"
+    "mcpStatus": "MCP connection status",
+    "enterFullscreenPane": "Fullscreen pane",
+    "exitFullscreenPane": "Exit fullscreen pane",
+    "splitPane": "Split pane",
+    "splitHorizontal": "Split horizontal",
+    "splitVertical": "Split vertical",
+    "closePane": "Close pane",
+    "agentMenu": "Agent menu",
+    "variantMenu": "Variant menu"
   },
   "chatArea": {
     "loadingSession": "Loading session...",
