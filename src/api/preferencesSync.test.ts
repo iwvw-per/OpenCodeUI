@@ -97,13 +97,26 @@ describe('preferences sync', () => {
     expect(isSyncableKey('opencode:update-check')).toBe(true)
 
     expect(isSyncableKey('opencode-keybindings')).toBe(true)
-    expect(isSyncableKey('opencode-panel-layout')).toBe(true)
     expect(isSyncableKey('opencode-sidebar-session-sort')).toBe(true)
-    expect(isSyncableKey('opencode-work-status-enabled')).toBe(true)
     expect(isSyncableKey('opencode-bottom-panel-height')).toBe(true)
     expect(isSyncableKey('opencode-right-panel-width')).toBe(true)
     expect(isSyncableKey('opencode-pinned-sessions')).toBe(true)
     expect(isSyncableKey('opencode-pinned-messages')).toBe(true)
+  })
+
+  it('rejects UI open/collapse state so panels do not fight across devices', async () => {
+    const { isSyncableKey } = await import('./preferencesSync')
+
+    // 侧栏、面板、工作状态板块的开合是当前这一屏的浏览状态，不是偏好：
+    // 同步会让一端展开后另一端被同步折叠，反复拉锯。
+    expect(isSyncableKey('opencode-sidebar-expanded')).toBe(false)
+    expect(isSyncableKey('opencode-sidebar-expanded-projects')).toBe(false)
+    expect(isSyncableKey('opencode-panel-layout')).toBe(false)
+    expect(isSyncableKey('opencode-work-status-enabled')).toBe(false)
+    expect(isSyncableKey('opencode-work-status-expanded')).toBe(false)
+
+    // 项目列表本身仍是偏好，继续同步
+    expect(isSyncableKey('srv:aiagent:inst_1:opencode-saved-directories')).toBe(true)
   })
 
   it('admits srv:aiagent: preferences but rejects path and stats keys', async () => {
@@ -268,28 +281,29 @@ describe('preferences sync', () => {
   })
 
   it('does not let a pull clobber a local edit made since the last push', async () => {
-    // 竞态：syncPreferences 先 pull 再 push。用户在两次同步之间改了本地值
-    // （如点开侧栏），本地戳还停在上一轮同步时间，服务端值的时间戳与之相等或
-    // 更晚，pull 就会把用户的改动覆盖掉，表现为「点了没反应/被折叠回去」。
+    // 竞态：syncPreferences 先 pull 再 push。用户在两次同步之间改了本地值，
+    // 本地戳还停在上一轮同步时间，服务端值的时间戳与之相等或更晚，pull 就会把
+    // 用户的改动覆盖掉，表现为「改了没反应」。这里用 sidebar-width 代表所有
+    // 仍在同步的标量偏好。
     const account = await seedAccount()
     const STAMP = '2026-09-22T10:00:00.000Z'
-    // 基线里记录上一轮同步后的值（false），本地此刻已被用户改成 true
-    localStorage.setItem('opencode-sidebar-expanded', 'true')
+    // 基线里记录上一轮同步后的值（260），本地此刻已被用户改成 300
+    localStorage.setItem('sidebar-width', '300')
     localStorage.setItem(
       SYNC_STAMPS_KEY,
       JSON.stringify({
-        stamps: { 'opencode-sidebar-expanded': STAMP },
-        known: { 'opencode-sidebar-expanded': 'false' },
+        stamps: { 'sidebar-width': STAMP },
+        known: { 'sidebar-width': '260' },
       }),
     )
 
-    stubPreferencesFetch([{ key: 'opencode-sidebar-expanded', value: 'false', updatedAt: STAMP }])
+    stubPreferencesFetch([{ key: 'sidebar-width', value: '260', updatedAt: STAMP }])
 
     const { pullPreferences } = await import('./preferencesSync')
     await pullPreferences(account)
 
     // 本地未推送的改动必须保住，不能被服务端的旧值盖回
-    expect(localStorage.getItem('opencode-sidebar-expanded')).toBe('true')
+    expect(localStorage.getItem('sidebar-width')).toBe('300')
   })
 
   it('pulls server preferences into localStorage', async () => {

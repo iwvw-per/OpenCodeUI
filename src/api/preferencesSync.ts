@@ -19,6 +19,12 @@
 //      opencode-auto-start-service、opencode-service-env-vars、
 //      opencode-terminal-layout、opencode-aiagent-account（登录凭证）、
 //      opencode-multi-server（多服务器订阅，含运行时状态）
+//   3b. 另排除「界面开合状态」：opencode-sidebar-expanded、
+//      opencode-sidebar-expanded-projects、opencode-panel-layout、
+//      opencode-work-status-enabled、opencode-work-status-expanded。
+//      这些是当前这一屏的浏览状态（侧栏/面板/板块此刻是否展开），不是用户
+//      偏好。跨端同步会让 A 端的开合动作把 B 端的界面折叠或弹开，用户在
+//      一端点开、另一端同步过来又给关掉，反复拉锯（详见下方「界面开合状态」）
 //   4. srv:aiagent: 前缀放行，但排除路径/统计类：last-directory、
 //      model-usage-stats、opencode-recent-projects
 //   5. srv: 其它分桶（srv:local:、srv:server-*）一律拒绝
@@ -48,6 +54,29 @@
 //   - last-directory / opencode-recent-projects：记录本机上次打开的路径
 //   - selected-project-id：记录本机当前项目；它不匹配任何准入前缀，
 //     因此落在末尾的「其它一律拒绝」分支，而不是列在排除清单里
+//
+// ============================================
+// 界面开合状态（排除，不参与同步）
+// ============================================
+//
+// 侧栏、右侧/底部面板、工作状态板块的「此刻是否展开」属于当前这一屏的浏览
+// 状态，与「用户偏好」是两回事：偏好改了应当跨端一致，而浏览状态由用户此刻
+// 正在看什么决定，各端本就应当独立。
+//
+// 把它们纳入同步的代价是持续拉锯：A 端展开侧栏 → 推送 true → B 端被弹开；
+// B 端收起 → 推送 false → A 端被折叠。用户在任何一端都难以稳定保持展开。
+// 更糟的是 pull 先于 push，本地刚写入的值会被服务端的旧值盖回（表现为
+// 「点了没反应」）。排除后各端界面互不干扰，这类竞态从根上消失。
+//
+// 排除清单：
+//   - opencode-sidebar-expanded：侧栏开合
+//   - opencode-sidebar-expanded-projects：项目行展开/收起
+//   - opencode-panel-layout：右侧/底部面板开合与面板 tab
+//   - opencode-work-status-enabled / opencode-work-status-expanded：
+//     工作状态面板开关与板块展开
+//
+// 注意「项目列表本身」（srv:aiagent:inst_X:opencode-saved-directories）不在此
+// 列：那是用户显式保存的项目，属于偏好，仍跨端同步。
 //
 // ============================================
 // 合并语义（多条目容器）
@@ -128,6 +157,12 @@ const EXCLUDED_OPENCODE_DASH_KEYS = new Set([
   'opencode-terminal-layout',
   'opencode-aiagent-account',
   'opencode-multi-server',
+  // 界面开合状态：属当前这一屏的浏览状态，跨端同步会互相折叠/弹开（见文件头）
+  'opencode-sidebar-expanded',
+  'opencode-sidebar-expanded-projects',
+  'opencode-panel-layout',
+  'opencode-work-status-enabled',
+  'opencode-work-status-expanded',
 ])
 
 const EXCLUDED_SRV_AIAGENT_SUFFIXES = ['last-directory', 'model-usage-stats', 'opencode-recent-projects']
