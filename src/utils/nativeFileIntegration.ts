@@ -42,3 +42,15 @@ export function canUseNativeFileIntegration(serverId: string | null | undefined)
 export function canUseNativeDirectoryPicker(serverId: string | null | undefined): boolean {
   return canUseNativeFileIntegration(serverId)
 }
+
+/**
+ * 是否可以使用系统文件夹选择器（不限制目标服务器）。
+ *
+ * 用于内置目录对话框里的「系统文件夹」按钮：用户主要连接云端/远程服务器时，
+ * 焦点服务器几乎总是远程，若沿用 {@link canUseNativeDirectoryPicker} 的限制，
+ * 该按钮永远不会出现。这里放宽为「桌面客户端即可」，让用户始终能通过系统
+ * 资源管理器挑一个目录；远程服务器仍可用上方的路径浏览。
+ */
+export function canUseSystemDirectoryPicker(): boolean {
+  return isTauri() && !isTauriMobile()
+}

@@ -64,12 +64,12 @@ describe('ProjectDialog', () => {
     expect(await screen.findByText('System folder')).toBeInTheDocument()
   })
 
-  it('hides the system folder picker for a remote server', async () => {
-    // 回归：系统选择器只能浏览本机磁盘，远程用它会把本机路径当成远程项目目录。
+  it('offers the system folder picker for a remote server on desktop', async () => {
+    // 云端/远程服务器是多数用户的主场景：若按「焦点服务器必须是本机」门控，
+    // 系统选择器按钮永远不会出现，用户无法从资源管理器挑目录。
     isTauriMock.mockReturnValue(true)
     render(<ProjectDialog isOpen={true} onClose={vi.fn()} onSelect={vi.fn()} serverId="aiagent:inst_remote" />)
-    expect(await screen.findByText('Add current')).toBeInTheDocument()
-    expect(screen.queryByText('System folder')).toBeNull()
+    expect(await screen.findByText('System folder')).toBeInTheDocument()
   })
 
   it('hides the system folder picker outside the desktop client', async () => {
