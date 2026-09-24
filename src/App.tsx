@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
 import { Sidebar } from './features/chat'
@@ -142,6 +142,13 @@ function App() {
   // 全局唯一 SSE 连接。所有 pane 通过 consumer 机制接收自己的 session 事件。
   useGlobalEvents(activeDirectories)
 
+  // 活动服务器：home 态下焦点服务器要跟随它（见下方 effect）
+  const activeServerId = useSyncExternalStore(
+    cb => serverStore.subscribe(cb),
+    () => serverStore.getActiveServerId(),
+    () => serverStore.getActiveServerId(),
+  )
+
   // URL -> focused pane session
   useEffect(() => {
     if (lastRouteSessionIdRef.current === routeSessionKey) return
@@ -167,6 +174,15 @@ function App() {
     // 以免清掉 session 路由）
     multiServerStore.setFocusedServerId(splitSessionKey(focusedSessionKey).serverId)
   }, [paneLayout.focusedSessionId])
+
+  // home（没有聚焦会话）时，焦点服务器跟随活动服务器。
+  //
+  // 否则在底部主机条切换主机只会改 active、不改 focus：项目列表已按新主机展示，
+  // 点「新建项目」打开的却是旧主机的目录选择器。有聚焦会话时焦点由上面的
+  // effect 跟随会话，这里不介入。
+  useEffect(() => {
+    multiServerStore.syncFocusToActiveServerWhenIdle(!!paneLayout.focusedSessionId)
+  }, [paneLayout.focusedSessionId, activeServerId])
 
   // focused pane session -> URL（路由只反映当前 focused pane）
   useEffect(() => {
