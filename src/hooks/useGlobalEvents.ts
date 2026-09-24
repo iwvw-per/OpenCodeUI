@@ -195,7 +195,7 @@ function drainPending<T>(map: Map<string, PendingRequest<T>[]>, sessionID: strin
   return arr.map(item => item.request)
 }
 
-function getScopeKey(directories?: string[]) {
+function getScopeKey(directories?: readonly string[]) {
   if (!directories || directories.length === 0) return '__global__'
   return directories.join('|')
 }
@@ -366,14 +366,25 @@ function collectActiveServerIds(): string[] {
   return Array.from(ids)
 }
 
-export function useGlobalEvents(directories?: string[]) {
-  const directoriesRef = useRef<string[] | undefined>(directories)
-  const refreshRef = useRef<((strategy?: 'replace' | 'merge') => void) | null>(null)
+export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readonly string[]>) {
+  const directoriesByServerRef = useRef(directoriesByServer)
+  const refreshRef = useRef<((strategy?: 'replace' | 'merge', onlyServerId?: string) => void) | null>(null)
   const initializedDirectoriesRef = useRef(false)
   // 已做过全量初始化的 serverId。用于区分「首次连接」（走 replace 建基线）与
   // 「effect 因服务器列表变化重跑」（走 merge，避免清掉别的服务器刚拉到的状态）。
   // 见下方 activeServerIds.forEach 处的说明。
   const initializedServersRef = useRef<Set<string>>(new Set())
+
+  /**
+   * 取指定服务器自己的目录列表（无则返回 undefined，表示全局 scope）。
+   *
+   * 目录属于各自的服务器：把 A 的路径拿去查 B 既无意义（路径在其文件系统上
+   * 不存在），又会白白多发请求。因此按 serverId 取，而不是共用一份扁平列表。
+   */
+  const directoriesFor = useCallback((serverId: string): string[] | undefined => {
+    const list = directoriesByServerRef.current?.get(serverId)
+    return list && list.length > 0 ? [...list] : undefined
+  }, [])
 
   // 活跃服务器集合：所有 pane 打开的 session 所属 server + active server
   const [activeServerIds, setActiveServerIds] = useState<string[]>(() => collectActiveServerIds())
@@ -452,7 +463,8 @@ export function useGlobalEvents(directories?: string[]) {
       const currentVersion = (fetchVersions.get(serverId) ?? 0) + 1
       fetchVersions.set(serverId, currentVersion)
       activeFetchVersions.set(serverId, currentVersion)
-      void fetchActiveScopeData(directoriesRef.current, serverId)
+      const serverDirectories = directoriesFor(serverId)
+      void fetchActiveScopeData(serverDirectories, serverId)
         .then(({ statusMap, permissions, questions, sessionMetaEntries }) => {
           if (disposed || currentVersion !== fetchVersions.get(serverId)) return
           if (effectiveStrategy === 'merge') {
@@ -462,8 +474,8 @@ export function useGlobalEvents(directories?: string[]) {
             activeSessionStore.initialize(statusMap)
             activeSessionStore.initializePendingRequests(permissions, questions)
           }
-          const currentDirectories = directoriesRef.current
-          const currentScopeKey = getScopeKey(directoriesRef.current)
+          const currentDirectories = serverDirectories
+          const currentScopeKey = getScopeKey(currentDirectories)
           for (const pending of latePendingRequests.values()) {
             // 只处理属于该 server 的 pending（复合 key 前缀）
             if (!pending.sessionId.startsWith(`${serverId}::`)) continue
@@ -505,8 +517,9 @@ export function useGlobalEvents(directories?: string[]) {
       }
     }
 
-    refreshRef.current = (strategy?: 'replace' | 'merge') => {
-      for (const serverId of activeServerIdsRef.current) {
+    refreshRef.current = (strategy?: 'replace' | 'merge', onlyServerId?: string) => {
+      const serverIds = onlyServerId ? [onlyServerId] : activeServerIdsRef.current
+      for (const serverId of serverIds) {
         fetchAndInitialize(serverId, strategy)
       }
     }
@@ -515,12 +528,12 @@ export function useGlobalEvents(directories?: string[]) {
       if (!autoApproveStore.approvePendingOnFullAuto || autoApproveStore.fullAutoMode !== 'global') return
 
       const serverIds = activeServerIdsRef.current
-      const directoriesToFetch =
-        directoriesRef.current && directoriesRef.current.length > 0 ? directoriesRef.current : [undefined]
 
       void Promise.all(
-        serverIds.flatMap(serverId =>
-          directoriesToFetch.map(async directory => {
+        serverIds.flatMap(serverId => {
+          // 每台服务器只查自己的目录；无目录时查全局 scope
+          const serverDirectories = directoriesFor(serverId) ?? [undefined]
+          return serverDirectories.map(async directory => {
             const permissions = await getPendingPermissions(undefined, directory, serverId).catch(() => [])
 
             await Promise.all(
@@ -537,8 +550,8 @@ export function useGlobalEvents(directories?: string[]) {
                 }
               }),
             )
-          }),
-        ),
+          })
+        }),
       )
     }
 
@@ -736,7 +749,7 @@ export function useGlobalEvents(directories?: string[]) {
               sessionId: scopedId,
               type: 'permission',
               description: desc,
-              scopeKey: getScopeKey(directoriesRef.current),
+              scopeKey: getScopeKey(directoriesFor(serverId)),
               directory: meta?.directory,
               timestamp: Date.now(),
             })
@@ -784,7 +797,7 @@ export function useGlobalEvents(directories?: string[]) {
               sessionId: scopedId,
               type: 'question',
               description: desc,
-              scopeKey: getScopeKey(directoriesRef.current),
+              scopeKey: getScopeKey(directoriesFor(serverId)),
               directory: meta?.directory,
               timestamp: Date.now(),
             })
@@ -925,14 +938,34 @@ export function useGlobalEvents(directories?: string[]) {
       unsubscribeAutoApprove()
       unsubscribeServerChange()
     }
-  }, [activeServerIds])
+  }, [activeServerIds, directoriesFor])
 
+  // 目录变化时只刷新「自己的目录集合真的变了」的服务器：把 A 的目录变化套用到
+  // 所有服务器会连累其它服务器做无谓重拉（且用错的路径）。
+  const lastScopeKeysRef = useRef<Map<string, string> | null>(null)
   useLayoutEffect(() => {
-    directoriesRef.current = directories
-    if (initializedDirectoriesRef.current) {
+    directoriesByServerRef.current = directoriesByServer
+    const nextKeys = new Map<string, string>()
+    for (const [serverId, list] of directoriesByServer ?? []) {
+      nextKeys.set(serverId, getScopeKey(list))
+    }
+    const prevKeys = lastScopeKeysRef.current
+    lastScopeKeysRef.current = nextKeys
+    if (!initializedDirectoriesRef.current) {
+      initializedDirectoriesRef.current = true
+      return
+    }
+    if (!prevKeys) {
       refreshRef.current?.('merge')
       return
     }
-    initializedDirectoriesRef.current = true
-  }, [directories])
+    // 新增/变化的服务器
+    for (const [serverId, key] of nextKeys) {
+      if (prevKeys.get(serverId) !== key) refreshRef.current?.('merge', serverId)
+    }
+    // 目录被移除的服务器：scope 回落到全局，同样需要重拉
+    for (const serverId of prevKeys.keys()) {
+      if (!nextKeys.has(serverId)) refreshRef.current?.('merge', serverId)
+    }
+  }, [directoriesByServer])
 }

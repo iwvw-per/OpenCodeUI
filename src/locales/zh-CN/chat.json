@@ -102,7 +102,8 @@
     "typePath": "输入路径...",
     "parent": "..（上级目录）",
     "noMatchingFolders": "没有匹配的文件夹",
-    "addCurrent": "添加当前目录"
+    "addCurrent": "添加当前目录",
+    "pickInFileManager": "系统文件夹"
   },
   "inputToolbar": {
     "default": "Default",

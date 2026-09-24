@@ -3,6 +3,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProjectDialog } from './ProjectDialog'
 import { getPath, listDirectory } from '../../api'
 
+const { isTauriMock, isTauriMobileMock } = vi.hoisted(() => ({
+  isTauriMock: vi.fn(() => false),
+  isTauriMobileMock: vi.fn(() => false),
+}))
+
+vi.mock('../../utils/tauri', () => ({
+  isTauri: () => isTauriMock(),
+  isTauriMobile: () => isTauriMobileMock(),
+}))
+
 vi.mock('../../components/ui/Dialog', () => ({
   Dialog: ({ isOpen, children }: { isOpen: boolean; children: React.ReactNode }) =>
     isOpen ? <div>{children}</div> : null,
@@ -20,6 +30,8 @@ vi.mock('../../api', () => ({
 describe('ProjectDialog', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    isTauriMock.mockReturnValue(false)
+    isTauriMobileMock.mockReturnValue(false)
   })
 
   it('initializes from path api and loads directory entries', async () => {
@@ -44,5 +56,26 @@ describe('ProjectDialog', () => {
     await waitFor(() => expect(vi.mocked(getPath).mock.calls.length).toBeGreaterThanOrEqual(2))
     await waitFor(() => expect(vi.mocked(listDirectory).mock.calls.length).toBeGreaterThanOrEqual(2))
     expect(await screen.findByText('src')).toBeInTheDocument()
+  })
+
+  it('offers the system folder picker for a local server on desktop', async () => {
+    isTauriMock.mockReturnValue(true)
+    render(<ProjectDialog isOpen={true} onClose={vi.fn()} onSelect={vi.fn()} serverId="local" />)
+    expect(await screen.findByText('System folder')).toBeInTheDocument()
+  })
+
+  it('hides the system folder picker for a remote server', async () => {
+    // 回归：系统选择器只能浏览本机磁盘，远程用它会把本机路径当成远程项目目录。
+    isTauriMock.mockReturnValue(true)
+    render(<ProjectDialog isOpen={true} onClose={vi.fn()} onSelect={vi.fn()} serverId="aiagent:inst_remote" />)
+    expect(await screen.findByText('Add current')).toBeInTheDocument()
+    expect(screen.queryByText('System folder')).toBeNull()
+  })
+
+  it('hides the system folder picker outside the desktop client', async () => {
+    isTauriMock.mockReturnValue(false)
+    render(<ProjectDialog isOpen={true} onClose={vi.fn()} onSelect={vi.fn()} serverId="local" />)
+    expect(await screen.findByText('Add current')).toBeInTheDocument()
+    expect(screen.queryByText('System folder')).toBeNull()
   })
 })

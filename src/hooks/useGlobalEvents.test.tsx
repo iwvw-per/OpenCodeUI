@@ -10,6 +10,11 @@ function createDeferred<T>() {
   return { promise, resolve }
 }
 
+/** 测试用：把扁平目录列表归到活动服务器（mock 的 getActiveServerId 返回 'local'）。 */
+function dirsFor(directories: string[], serverId = 'local'): Map<string, string[]> {
+  return new Map([[serverId, directories]])
+}
+
 const {
   subscribeToEventsMock,
   getSessionStatusMock,
@@ -307,12 +312,12 @@ describe('useGlobalEvents', () => {
     })
 
     const { rerender } = renderHook(({ directories }) => useGlobalEvents(directories), {
-      initialProps: { directories: ['/one'] as string[] | undefined },
+      initialProps: { directories: dirsFor(['/one']) },
     })
 
     await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith('/one', 'local'))
 
-    rerender({ directories: ['/two'] })
+    rerender({ directories: dirsFor(['/two']) })
 
     await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith('/two', 'local'))
 
@@ -343,7 +348,7 @@ describe('useGlobalEvents', () => {
     getPendingPermissionsMock.mockResolvedValue([])
     getPendingQuestionsMock.mockResolvedValue([])
 
-    renderHook(() => useGlobalEvents(['/workspace']))
+    renderHook(() => useGlobalEvents(dirsFor(['/workspace'])))
 
     await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith('/workspace', 'local'))
     await waitFor(() => expect(callbacks).toBeDefined())
@@ -398,7 +403,7 @@ describe('useGlobalEvents', () => {
     getPendingQuestionsMock.mockResolvedValue([])
 
     const { rerender } = renderHook(({ directories }) => useGlobalEvents(directories), {
-      initialProps: { directories: ['/one'] as string[] | undefined },
+      initialProps: { directories: dirsFor(['/one']) },
     })
 
     await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith('/one', 'local'))
@@ -411,7 +416,7 @@ describe('useGlobalEvents', () => {
       patterns: ['src/app.tsx'],
     } as never)
 
-    rerender({ directories: ['/two'] })
+    rerender({ directories: dirsFor(['/two']) })
 
     await waitFor(() => expect(getSessionStatusMock).toHaveBeenCalledWith('/two', 'local'))
 
@@ -526,7 +531,7 @@ describe('useGlobalEvents', () => {
     ])
     activeSessionStoreMock.getSessionMeta.mockReturnValue({ title: 'Background', directory: '/workspace' })
 
-    renderHook(() => useGlobalEvents(['/workspace']))
+    renderHook(() => useGlobalEvents(dirsFor(['/workspace'])))
 
     await waitFor(() => {
       expect(replyPermissionMock).toHaveBeenCalledWith(
@@ -564,7 +569,7 @@ describe('useGlobalEvents', () => {
     ])
     activeSessionStoreMock.getSessionMeta.mockReturnValue({ title: 'Background', directory: '/workspace' })
 
-    renderHook(() => useGlobalEvents(['/workspace']))
+    renderHook(() => useGlobalEvents(dirsFor(['/workspace'])))
 
     await waitFor(() => {
       expect(replyPermissionMock).toHaveBeenCalledWith(
@@ -595,7 +600,7 @@ describe('useGlobalEvents', () => {
       },
     ])
 
-    renderHook(() => useGlobalEvents(['/workspace']))
+    renderHook(() => useGlobalEvents(dirsFor(['/workspace'])))
 
     await waitFor(() => expect(getPendingPermissionsMock).toHaveBeenCalled())
     expect(replyPermissionMock).not.toHaveBeenCalled()

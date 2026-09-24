@@ -102,7 +102,8 @@
     "typePath": "Type path...",
     "parent": ".. (Parent)",
     "noMatchingFolders": "No matching folders",
-    "addCurrent": "Add current"
+    "addCurrent": "Add current",
+    "pickInFileManager": "System folder"
   },
   "inputToolbar": {
     "default": "Default",

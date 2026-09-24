@@ -30,7 +30,7 @@ import {
   canUseSplitPane,
   useChatViewportController,
 } from './features/chat/chatViewport'
-import { uiErrorHandler, isSameDirectory, collectActiveDirectories } from './utils'
+import { uiErrorHandler, isSameDirectory, collectActiveDirectoriesByServer } from './utils'
 import { makeSessionKey, sessionKeyToServerId, splitSessionKey } from './utils/sessionKey'
 import { multiServerStore } from './store/multiServerStore'
 import { serverStore } from './store/serverStore'
@@ -125,15 +125,18 @@ function App() {
 
   const activeDirectories = useMemo(
     () =>
-      collectActiveDirectories({
+      collectActiveDirectoriesByServer({
+        activeServerId: serverStore.getActiveServerId(),
+        routeServerId,
         routeDirectory,
         currentDirectory,
-        paneDirectories: paneControllers
-          .map(controller => controller.effectiveDirectory)
-          .filter((directory): directory is string => Boolean(directory)),
+        panes: paneControllers.map(controller => ({
+          serverId: controller.sessionId ? sessionKeyToServerId(controller.sessionId) : undefined,
+          directory: controller.effectiveDirectory,
+        })),
         projectDirectories: (Array.isArray(savedDirectories) ? savedDirectories : []).map(directory => directory.path),
       }),
-    [routeDirectory, currentDirectory, paneControllers, savedDirectories],
+    [routeServerId, routeDirectory, currentDirectory, paneControllers, savedDirectories],
   )
 
   // 全局唯一 SSE 连接。所有 pane 通过 consumer 机制接收自己的 session 事件。

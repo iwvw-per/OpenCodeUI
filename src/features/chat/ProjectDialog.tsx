@@ -1,8 +1,9 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FolderIcon, ArrowUpIcon, SpinnerIcon, PlusIcon } from '../../components/Icons'
+import { FolderIcon, FolderOpenIcon, ArrowUpIcon, SpinnerIcon, PlusIcon } from '../../components/Icons'
 import { listDirectory, getPath } from '../../api'
 import { fileErrorHandler } from '../../utils'
+import { canUseNativeDirectoryPicker } from '../../utils/nativeFileIntegration'
 import { scrollItemIntoView } from '../../utils/scrollUtils'
 import { Dialog } from '../../components/ui/Dialog'
 import { cn } from '../../utils/cn'
@@ -130,7 +131,7 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '', ser
       cancelled = true
       clearTimeout(timer)
     }
-  }, [isOpen, initialPath])
+  }, [isOpen, initialPath, serverId])
 
   // ==========================================
   // Load Directory
@@ -189,7 +190,7 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '', ser
       cancelled = true
       clearTimeout(timer)
     }
-  }, [isOpen, currentDir])
+  }, [isOpen, currentDir, serverId])
 
   // ==========================================
   // Scroll to Selection
@@ -249,6 +250,31 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '', ser
     onSelect(path)
     onClose()
   }, [inputValue, onSelect, onClose])
+
+  /**
+   * 用系统文件夹选择器挑目录。
+   *
+   * 只在「目标服务器就是本机」时可用：系统选择器只能浏览本机磁盘，远程服务器
+   * 的目录在其自己的文件系统上，用它会把本机路径当成远程项目的目录。远程时
+   * 该按钮不渲染，用户仍可用上方的路径浏览（走网关读远程文件系统）。
+   */
+  const canUseNativePicker = canUseNativeDirectoryPicker(serverId)
+  const handleNativePick = useCallback(async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: t('projectDialog.pickInFileManager'),
+      })
+      if (typeof selected === 'string' && selected) {
+        onSelect(selected)
+        onClose()
+      }
+    } catch (err) {
+      fileErrorHandler('open directory picker', err)
+    }
+  }, [onSelect, onClose, t])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -320,10 +346,10 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '', ser
       isOpen={isOpen}
       onClose={onClose}
       rawContent
-      width={560}
+      width={720}
       showCloseButton={false}
       allowTouchBackdropClose
-      className="h-[min(460px,100%)]"
+      className="h-[min(620px,100%)]"
     >
       {/* Header */}
       <div className="p-4 pb-2 shrink-0">
@@ -414,6 +440,20 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '', ser
         <div className="text-[length:var(--fs-xxs)] text-text-400 flex-1 min-w-0 font-mono whitespace-normal break-all leading-4">
           {inputValue}
         </div>
+        {canUseNativePicker && (
+          <button
+            type="button"
+            onClick={handleNativePick}
+            title={t('projectDialog.pickInFileManager')}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 bg-bg-000/40 border border-border-200/60 hover:border-accent-main-100/30 text-text-200 rounded-md text-[length:var(--fs-sm)] font-medium shrink-0 whitespace-nowrap',
+              interactive.subtle,
+            )}
+          >
+            <FolderOpenIcon className="w-3 h-3" />
+            {t('projectDialog.pickInFileManager')}
+          </button>
+        )}
         <button
           onClick={handleConfirmCurrent}
           className={cn(
