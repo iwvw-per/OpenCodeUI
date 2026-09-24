@@ -9,7 +9,9 @@ import { memo } from 'react'
 import { useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ApiPermissionRequest, PermissionReply } from '../../api'
-import { ContentBlock } from '../../components'
+// 深导入而非走 components barrel：barrel 会把 MarkdownRenderer/DiffView/
+// FullscreenViewer 等重链路一并拉进首屏 chunk（CodeMirror ~860KB）。
+import { ContentBlock } from '../../components/ContentBlock'
 import { ShieldIcon } from '../../components/Icons'
 import { ApprovalCard } from '../../components/ui/ApprovalCard'
 import { Spinner } from '../../components/ui/Spinner'

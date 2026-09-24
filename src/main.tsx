@@ -2,7 +2,7 @@ import { StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import 'katex/dist/katex.min.css'
 import './index.css'
-import './i18n'
+import { i18nReady } from './i18n'
 import { initOverlayScrollbars } from './lib/overlayScrollbar'
 import App from './App.tsx'
 import { TooltipProvider } from './components/ui/Tooltip'
@@ -161,7 +161,12 @@ window.addEventListener('unhandledrejection', event => {
   event.preventDefault()
 })
 
-function bootstrap() {
+/**
+ * i18n 资源现在是按语言懒加载的：en 之外的语言在初始化后才补齐。
+ * 必须等资源就绪再挂载 React，否则首帧会把翻译 key 直接渲染出来。
+ */
+async function bootstrap() {
+  await i18nReady.catch(err => globalErrorHandler('initialize i18n', err))
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <Suspense fallback={null}>
@@ -180,7 +185,8 @@ function bootstrap() {
 }
 
 function startApp() {
-  bootstrap()
+  // bootstrap 内部先等 i18n，再渲染；后续启动步骤无需阻塞在语言资源上。
+  void bootstrap().catch(err => globalErrorHandler('bootstrap app', err))
 
   void initializeNativeDesktopService()
 
