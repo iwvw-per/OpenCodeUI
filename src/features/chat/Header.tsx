@@ -19,11 +19,14 @@ import { interactive } from '../../utils/interaction'
 import { ShareDialog } from './ShareDialog'
 import { messageStore, useHeaderSessionMeta, notificationStore } from '../../store'
 import { useLayoutStore, layoutStore } from '../../store/layoutStore'
+import { serverStore } from '../../store/serverStore'
 import { workStatusStore, useWorkStatus } from '../../store/workStatusStore'
 import { useSessionContext } from '../../contexts/useSessionContext'
 import { updateSession } from '../../api'
 import { useDirectory } from '../../contexts/useDirectory'
 import { uiErrorHandler } from '../../utils'
+import { canUseNativeFileIntegration } from '../../utils/nativeFileIntegration'
+import { sessionKeyToServerId } from '../../utils/sessionKey'
 import { useChatViewport } from './chatViewport'
 import { isTauri, isTauriMobile } from '../../utils/tauri'
 
@@ -202,8 +205,18 @@ export function Header({
 
   const targetDirectory = sessionDirectory || currentDirectory
   const canOpenDirectory = isTauri() && !isTauriMobile() && !!targetDirectory
+  // 系统文件管理器只能打开本机磁盘。远程服务器（经网关访问）的目录在本机
+  // 不存在，openPath 只会打开本机同名路径或报错；远程改为在应用内右侧面板的
+  // 文件树中打开该目录（文件树走 listDirectory(serverId) 远程读取）。
+  const targetServerId = sessionId ? sessionKeyToServerId(sessionId) : serverStore.getActiveServerId()
   const handleOpenDirectory = useCallback(async () => {
     if (!targetDirectory) return
+
+    if (!canUseNativeFileIntegration(targetServerId)) {
+      layoutStore.openRightPanel('files')
+      return
+    }
+
     try {
       const { openPath } = await import('@tauri-apps/plugin-opener')
       await openPath(targetDirectory)
@@ -213,7 +226,7 @@ export function Header({
       const message = e instanceof Error ? e.message : String(e)
       notificationStore.push('error', t('header.openProjectDirectory'), message, sessionId ?? '')
     }
-  }, [targetDirectory, sessionId, t])
+  }, [targetDirectory, targetServerId, sessionId, t])
 
   const titleControl = (
     <SessionTitleControl

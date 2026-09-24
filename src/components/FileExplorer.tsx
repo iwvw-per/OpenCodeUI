@@ -45,12 +45,9 @@ import { searchText, searchFiles } from '../api/file'
 import type { FileContent, TextSearchMatch } from '../api/types'
 import { startInternalDrag } from '../lib/internalDragCore'
 import { toAbsolutePath } from '../features/mention'
-import { getDesktopPlatform, isTauri, isTauriMobile } from '../utils/tauri'
+import { getDesktopPlatform } from '../utils/tauri'
+import { canUseNativeFileIntegration } from '../utils/nativeFileIntegration'
 import type { TargetLineRange } from './codeMirrorReadonlyExtensions'
-
-function canRevealInSystemExplorer(): boolean {
-  return isTauri() && !isTauriMobile()
-}
 
 function getRevealInSystemExplorerLabel(t: (key: string) => string): string {
   switch (getDesktopPlatform()) {
@@ -148,7 +145,9 @@ export const FileExplorer = memo(function FileExplorer({
   const [fileResults, setFileResults] = useState<string[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [fileContextMenu, setFileContextMenu] = useState<{ x: number; y: number; absolutePath: string } | null>(null)
-  const canRevealFiles = canRevealInSystemExplorer()
+  // 系统文件管理器只能显示本机磁盘：远程服务器（经网关访问）的路径在本机不存在，
+  // 「在资源管理器中显示」只会打开本机同名路径或报错，因此仅本机目标才提供该项。
+  const canRevealFiles = canUseNativeFileIntegration(serverId)
   const revealInSystemExplorerLabel = useMemo(() => getRevealInSystemExplorerLabel(t), [t])
   const [searchError, setSearchError] = useState<string | null>(null)
   const {
