@@ -7,6 +7,7 @@ import { SessionSortMenu } from './SessionSortMenu'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
 import { getProjectGroupIdentity } from './projectGrouping'
+import { mergeExpandedProjectNames } from './expandedProjects'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { IconButton } from '../../../components/ui/IconButton'
 import { Tabs, TabsList, TabsTrigger } from '../../../components/ui/Tabs'
@@ -671,28 +672,35 @@ export function SidePanel({
       // 随后同步拉取又用服务端值覆盖，用户看到的展开状态就随机变化。
       if (folderProjects.length === 0) return
 
-      // 只登记当前可见项目的名字，避免已移除项目的残留名字被一直带着。
-      // 空数组要写回：否则「全部收起」无法表达，存储仍留着旧名字，下一轮又被读回来。
-      layoutStore.setSidebarExpandedProjects(nextNames)
+      // 只替换「属于当前服务器」的那部分名字，保留其它服务器的展开项。
+      // 存储是全局单键、项目列表按服务器分区：整体覆盖会清掉别的服务器的展开
+      // 状态，切回去就变成「全部收起」。
+      const currentNames = folderProjects.map(projectExpandKey)
+      layoutStore.setSidebarExpandedProjects(mergeExpandedProjectNames(expandedProjectNames, currentNames, nextNames))
     },
     [folderProjects, expandedProjectNames],
   )
 
-  // 新添加/新保存的项目自动展开
-  const prevFolderProjectIdsRef = useRef<string[] | null>(null)
+  // 新添加/新保存的项目自动展开。
+  //
+  // 基线按服务器记录：切换服务器时整份项目列表都会换掉，若只存一份 id 列表，
+  // 另一台的项目会被当成「新增项目」而全部展开（用户报的「切换服务器后全部
+  // 都展开了」）。按服务器存基线后，只有「同一台服务器内新增的项目」才自动展开。
+  const prevFolderProjectIdsRef = useRef<{ serverId: string; ids: string[] } | null>(null)
   useEffect(() => {
     const ids = folderProjects.filter(project => !project.isDerived).map(project => project.id)
     const prev = prevFolderProjectIdsRef.current
-    prevFolderProjectIdsRef.current = ids
-    if (!prev) return
-    const added = ids.filter(id => !prev.includes(id))
+    prevFolderProjectIdsRef.current = { serverId: activeServerId, ids }
+    if (!prev || prev.serverId !== activeServerId) return
+
+    const added = ids.filter(id => !prev.ids.includes(id))
     if (added.length > 0) {
       setExpandedRecentProjectIds(current => {
         const missing = added.filter(id => !current.includes(id))
         return missing.length > 0 ? [...current, ...missing] : current
       })
     }
-  }, [folderProjects, setExpandedRecentProjectIds])
+  }, [folderProjects, setExpandedRecentProjectIds, activeServerId])
 
   const workspaceDirectoriesByProjectId = useMemo(() => {
     const map = new Map<string, string[]>()
