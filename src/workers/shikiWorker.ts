@@ -243,23 +243,27 @@ function queueHighlight(request: Extract<WorkerRequest, { type: 'highlight' }>) 
   queuedHighlights.set(request.key, request)
 }
 
-const themeLoaders: Record<string, () => Promise<unknown>> = {
-  'github-dark-default': () => import('shiki/themes/github-dark-default.mjs'),
-  'github-light-default': () => import('shiki/themes/github-light-default.mjs'),
-}
-
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const msg = event.data
   if (msg.type === 'init') {
-    // 用 bundledThemesInfo 解析 init 传入的主题 id（来自用户当前选择），用静态字面量
-    // import 让 Vite 把它们打成独立 chunk。未知 id 回退到 github-dark-default。
-    const resolvedThemeSpecs = msg.themes.map(t => {
+    // 用 bundledThemesInfo 解析 init 传入的主题 id（来自用户当前选择）：每个条目的
+    // import 字段是静态字面量 import("@shikijs/themes/<id>")，Vite 据此为每个主题
+    // 生成独立 chunk 并按需加载，因此这里不需要再维护一份重复的 loader 表。
+    // 未知 id 会被过滤掉；ensureTheme() 在真正使用时再报错，避免静默渲染成别的主题。
+    const resolvedThemeSpecs = msg.themes.flatMap(t => {
       const info = bundledThemesInfo.find(b => b.id === t)
-      return info ? info.import : themeLoaders['github-dark-default']!
+      if (info) return [info.import]
+      console.warn(`[shikiWorker] unknown theme ignored: ${t}`)
+      return []
     })
+    // createHighlighterCore 要求至少一个主题；全部未知时用 github-dark-default 兜底。
+    const themeSpecs = resolvedThemeSpecs.length
+      ? resolvedThemeSpecs
+      : [bundledThemesInfo.find(b => b.id === 'github-dark-default')!.import]
+
     highlighter ??= createHighlighterCore({
       engine: createOnigurumaEngine(loadOnigWasm),
-      themes: resolvedThemeSpecs as Parameters<typeof createHighlighterCore>[0]['themes'],
+      themes: themeSpecs as Parameters<typeof createHighlighterCore>[0]['themes'],
       langs: [],
     })
     void highlighter

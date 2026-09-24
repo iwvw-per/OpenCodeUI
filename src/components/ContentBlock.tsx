@@ -7,14 +7,23 @@
  * - Loading 状态 -> Skeleton
  */
 
-import { memo, useState, useMemo, useEffect, useId, type ReactNode, type TransitionEvent } from 'react'
+import {
+  lazy,
+  memo,
+  Suspense,
+  useState,
+  useMemo,
+  useEffect,
+  useId,
+  type ReactNode,
+  type TransitionEvent,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { diffLines } from 'diff'
 import { ChevronDownIcon, ChevronRightIcon, MaximizeIcon } from './Icons'
 import { CopyButton } from './ui'
 import { Spinner } from './ui/Spinner'
 import { DiffViewer, useDiffViewerData, type ViewMode } from './DiffViewer'
-import { CodePreview } from './CodePreview'
 import { detectLanguage } from '../utils/languageUtils'
 import { ViewModeSwitch } from './FullscreenViewer'
 import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
@@ -23,6 +32,22 @@ import { useDelayedRender } from '../hooks/useDelayedRender'
 import { useResponsiveMaxHeight } from '../hooks/useResponsiveMaxHeight'
 import { useFullscreenLayer } from '../contexts'
 import { useUiDisclosureState } from '../utils/uiDisclosureState'
+
+// CodePreview 依赖 CodeMirror（@codemirror/* + @lezer/* 约 950KB 源码）。
+// ContentBlock 处在首屏消息流的必经路径上，静态导入会把整条 CodeMirror 链路
+// 打进主 chunk，因此这里改为按需加载：只有真正渲染代码内容时才拉取。
+const CodePreview = lazy(() =>
+  import('./CodePreview').then(module => ({ default: module.CodePreview })),
+)
+
+/** 惰性加载代码视图期间的占位，避免布局塌缩与闪烁。 */
+function CodePreviewFallback() {
+  return (
+    <div className="flex items-center justify-center py-6">
+      <Spinner />
+    </div>
+  )
+}
 
 // ============================================
 // Types
@@ -192,7 +217,11 @@ export const ContentBlock = memo(function ContentBlock({
       )
     }
     if (content?.trim()) {
-      return <CodePreview code={content} language={lang} />
+      return (
+        <Suspense fallback={<CodePreviewFallback />}>
+          <CodePreview code={content} language={lang} />
+        </Suspense>
+      )
     }
     return null
   }, [content, diffViewerData, fullscreenDiffViewMode, isDiff, lang, resolvedDiff, stateKey])
@@ -376,13 +405,15 @@ export const ContentBlock = memo(function ContentBlock({
                   stateKey={stateKey ? `${stateKey}:diff` : undefined}
                 />
               ) : content?.trim() ? (
-                <CodePreview
-                  code={content}
-                  language={lang}
-                  maxHeight={maxHeight}
-                  isVisible={layoutOpen}
-                  layoutVersion={contentLayoutVersion}
-                />
+                <Suspense fallback={<CodePreviewFallback />}>
+                  <CodePreview
+                    code={content}
+                    language={lang}
+                    maxHeight={maxHeight}
+                    isVisible={layoutOpen}
+                    layoutVersion={contentLayoutVersion}
+                  />
+                </Suspense>
               ) : null}
             </div>
           )}

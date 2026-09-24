@@ -41,6 +41,9 @@ export default defineConfig({
           if (!id.includes('node_modules')) return
 
           if (id.includes('@xterm/')) return 'vendor-terminal'
+          // CodeMirror 被 ContentBlock 懒加载，单独成 chunk 便于长期缓存；
+          // 缺少这条规则时它会落进主 chunk，把首屏体积抬高约 25%。
+          if (id.includes('@codemirror/') || id.includes('@lezer/')) return 'vendor-codemirror'
           // shiki core + engine + themes → 一个小 chunk；
           // 语言 grammar（@shikijs/langs/*）由 dynamic import 自动拆分
           if ((id.includes('shiki') || id.includes('@shikijs/')) && !id.includes('@shikijs/langs'))
@@ -48,6 +51,10 @@ export default defineConfig({
           if (id.includes('marked') || id.includes('dompurify') || id.includes('morphdom') || id.includes('katex')) return 'vendor-markdown'
 
           if (id.includes('@tauri-apps/')) return 'vendor-tauri'
+
+          // Radix / floating-ui 是稳定且跨页面共用的一组依赖，独立成 chunk
+          // 可避免它们随业务代码每次发版一起失效。
+          if (id.includes('@radix-ui/') || id.includes('@floating-ui/')) return 'vendor-radix'
         },
       },
     },
