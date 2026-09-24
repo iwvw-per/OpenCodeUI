@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { FolderIcon, FolderOpenIcon, ArrowUpIcon, SpinnerIcon, PlusIcon } from '../../components/Icons'
 import { listDirectory, getPath } from '../../api'
 import { fileErrorHandler } from '../../utils'
-import { canUseNativeDirectoryPicker } from '../../utils/nativeFileIntegration'
+import { canUseSystemDirectoryPicker } from '../../utils/nativeFileIntegration'
 import { scrollItemIntoView } from '../../utils/scrollUtils'
 import { Dialog } from '../../components/ui/Dialog'
 import { cn } from '../../utils/cn'
@@ -254,11 +254,11 @@ export function ProjectDialog({ isOpen, onClose, onSelect, initialPath = '', ser
   /**
    * 用系统文件夹选择器挑目录。
    *
-   * 只在「目标服务器就是本机」时可用：系统选择器只能浏览本机磁盘，远程服务器
-   * 的目录在其自己的文件系统上，用它会把本机路径当成远程项目的目录。远程时
-   * 该按钮不渲染，用户仍可用上方的路径浏览（走网关读远程文件系统）。
+   * 桌面客户端始终可用：用户大多连接云端/远程服务器，此时若按「焦点服务器必须是
+   * 本机」来门控，这个按钮就永远不会出现，只能靠上方路径浏览。所选目录会作为
+   * 本机路径写入项目列表；远程目录仍可用上方的路径浏览（走网关读远程文件系统）。
    */
-  const canUseNativePicker = canUseNativeDirectoryPicker(serverId)
+  const canUseNativePicker = canUseSystemDirectoryPicker()
   const handleNativePick = useCallback(async () => {
     try {
       const { open } = await import('@tauri-apps/plugin-dialog')

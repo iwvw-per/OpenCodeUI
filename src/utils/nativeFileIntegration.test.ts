@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { canUseNativeDirectoryPicker, canUseNativeFileIntegration, isLocalServer } from './nativeFileIntegration'
+import {
+  canUseNativeDirectoryPicker,
+  canUseNativeFileIntegration,
+  canUseSystemDirectoryPicker,
+  isLocalServer,
+} from './nativeFileIntegration'
 
 const { isTauriMock, isTauriMobileMock } = vi.hoisted(() => ({
   isTauriMock: vi.fn(),
@@ -65,5 +70,29 @@ describe('canUseNativeDirectoryPicker', () => {
     isTauriMobileMock.mockReturnValue(false)
     expect(canUseNativeDirectoryPicker('local')).toBe(true)
     expect(canUseNativeDirectoryPicker('aiagent:inst_1')).toBe(false)
+  })
+})
+
+describe('canUseSystemDirectoryPicker', () => {
+  afterEach(() => {
+    isTauriMock.mockReset()
+    isTauriMobileMock.mockReset()
+  })
+
+  it('allows the picker on desktop regardless of the focused server', () => {
+    // 用户主要连云端服务器：焦点几乎总是远程，仍应能打开系统选择器。
+    isTauriMock.mockReturnValue(true)
+    isTauriMobileMock.mockReturnValue(false)
+    expect(canUseSystemDirectoryPicker()).toBe(true)
+  })
+
+  it('never allows the picker outside the desktop client', () => {
+    isTauriMock.mockReturnValue(false)
+    isTauriMobileMock.mockReturnValue(false)
+    expect(canUseSystemDirectoryPicker()).toBe(false)
+
+    isTauriMock.mockReturnValue(true)
+    isTauriMobileMock.mockReturnValue(true)
+    expect(canUseSystemDirectoryPicker()).toBe(false)
   })
 })
