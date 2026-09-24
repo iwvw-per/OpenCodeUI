@@ -83,6 +83,18 @@ class MultiServerStore {
     this.settings.focusedServerId = serverId
     this.notify()
   }
+
+  /**
+   * home 态（没有聚焦会话）时，让焦点服务器跟随活动服务器。
+   *
+   * 否则在底部主机条切换主机只改 active、不改 focus：项目列表已按新主机展示，
+   * 点「新建项目」打开的却是旧主机的目录选择器（选了 muse 还是显示 Windows 目录）。
+   * 有聚焦会话时焦点由该会话决定，不在此处介入。
+   */
+  syncFocusToActiveServerWhenIdle(hasFocusedSession: boolean): void {
+    if (hasFocusedSession) return
+    this.setFocusedServerId(serverStore.getActiveServerId())
+  }
 }
 
 export const multiServerStore = new MultiServerStore()
