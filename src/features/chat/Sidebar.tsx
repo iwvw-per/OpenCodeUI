@@ -4,7 +4,8 @@ import { SidePanel } from './sidebar/SidePanel'
 import { ProjectDialog } from './ProjectDialog'
 import { useMultiServerStore } from '../../store/multiServerStore'
 import { useDirectory } from '../../hooks'
-import { getDesktopPlatform, isTauri, isTauriMobile } from '../../utils/tauri'
+import { canUseNativeDirectoryPicker } from './projectDirectoryPicker'
+import { getDesktopPlatform } from '../../utils/tauri'
 import { DESKTOP_TITLEBAR_HEIGHT } from '../../constants/desktopWindow'
 import { DesktopNavControls } from '../../components/DesktopNavControls'
 import { type ApiSession } from '../../api'
@@ -81,8 +82,10 @@ export const Sidebar = memo(function Sidebar({
   )
 
   const openProjectDialog = useCallback(async () => {
-    // 桌面客户端：优先弹系统文件夹选择器（Tauri dialog 插件）；浏览器/移动端/插件失败时回退内置 ProjectDialog
-    if (isTauri() && !isTauriMobile()) {
+    // 系统文件夹选择器只能浏览本机磁盘，仅当焦点服务器是本地服务器时使用；
+    // 远程服务器必须用内置 ProjectDialog 通过 listDirectory(serverId) 远程浏览，
+    // 否则会把本机路径当成远程项目的目录。
+    if (canUseNativeDirectoryPicker(focusedServerId)) {
       try {
         const { open } = await import('@tauri-apps/plugin-dialog')
         const selected = await open({
@@ -100,7 +103,7 @@ export const Sidebar = memo(function Sidebar({
     }
     setProjectDialogKey(key => key + 1)
     setIsProjectDialogOpen(true)
-  }, [handleAddProject, t])
+  }, [focusedServerId, handleAddProject, t])
 
   const closeProjectDialog = useCallback(() => {
     setIsProjectDialogOpen(false)
