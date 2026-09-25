@@ -54,3 +54,28 @@ export function canUseNativeDirectoryPicker(serverId: string | null | undefined)
 export function canUseSystemDirectoryPicker(): boolean {
   return isTauri() && !isTauriMobile()
 }
+
+/**
+ * 判断某个目录能否直接用系统文件管理器打开。
+ *
+ * 本机服务器（含未确定目标）恒可；远程服务器不能只凭 serverId 判定——AI Agent
+ * 实例可能就跑在本机，远程会话的目录路径同样存在于本机磁盘。此时向宿主查询该
+ * 路径是否为本机目录，存在则用本机能力打开，不存在才交给应用内文件树。
+ *
+ * 非桌面客户端恒返回 false（没有本机文件管理器集成）。
+ */
+export async function canOpenDirectoryNatively(
+  serverId: string | null | undefined,
+  directory: string | null | undefined,
+): Promise<boolean> {
+  if (!isTauri() || isTauriMobile()) return false
+  if (isLocalServer(serverId)) return true
+  if (!directory) return false
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return await invoke<boolean>('is_local_directory', { path: directory })
+  } catch {
+    // 旧版宿主未注册该命令：保守走应用内文件树，避免打开本机同名目录。
+    return false
+  }
+}
