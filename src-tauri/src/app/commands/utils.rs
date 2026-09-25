@@ -34,6 +34,18 @@ pub fn desktop_window_ready(window: tauri::Window) -> Result<(), String> {
     crate::app::mark_window_ready(&window).map_err(|err| err.to_string())
 }
 
+/// 判断路径是否是本机存在的目录。
+///
+/// 「打开项目目录」用它区分「目录在这台机器上」与「目录在远程主机上」：AI Agent
+/// 实例可能就跑在本机，此时远程服务器的目录路径同样存在于本机磁盘，应当用系统
+/// 文件管理器打开；只有本机不存在的远程路径才退回应用内文件树。
+#[tauri::command]
+pub fn is_local_directory(path: String) -> bool {
+    std::fs::metadata(&path)
+        .map(|metadata| metadata.is_dir())
+        .unwrap_or(false)
+}
+
 /// 获取拖入路径的基础信息，用于前端区分文件/目录并生成 @ 引用。
 #[tauri::command]
 pub fn get_dropped_paths_info(paths: Vec<String>) -> Vec<DroppedPathInfo> {

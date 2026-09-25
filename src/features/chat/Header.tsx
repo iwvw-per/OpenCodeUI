@@ -25,7 +25,7 @@ import { useSessionContext } from '../../contexts/useSessionContext'
 import { updateSession } from '../../api'
 import { useDirectory } from '../../contexts/useDirectory'
 import { uiErrorHandler } from '../../utils'
-import { canUseNativeFileIntegration } from '../../utils/nativeFileIntegration'
+import { canOpenDirectoryNatively } from '../../utils/nativeFileIntegration'
 import { sessionKeyToServerId } from '../../utils/sessionKey'
 import { useChatViewport } from './chatViewport'
 import { isTauri, isTauriMobile } from '../../utils/tauri'
@@ -205,14 +205,15 @@ export function Header({
 
   const targetDirectory = sessionDirectory || currentDirectory
   const canOpenDirectory = isTauri() && !isTauriMobile() && !!targetDirectory
-  // 系统文件管理器只能打开本机磁盘。远程服务器（经网关访问）的目录在本机
-  // 不存在，openPath 只会打开本机同名路径或报错；远程改为在应用内右侧面板的
-  // 文件树中打开该目录（文件树走 listDirectory(serverId) 远程读取）。
+  // 系统文件管理器只能打开本机磁盘。远程服务器（经网关访问）的目录通常在本机
+  // 不存在，openPath 只会打开本机同名路径或报错；但 AI Agent 实例可能就跑在本机，
+  // 此时该路径确实存在，仍应直接用资源管理器打开。故远程时向宿主确认本机是否存在，
+  // 不存在才退回应用内右侧面板的文件树（文件树走 listDirectory(serverId) 远程读取）。
   const targetServerId = sessionId ? sessionKeyToServerId(sessionId) : serverStore.getActiveServerId()
   const handleOpenDirectory = useCallback(async () => {
     if (!targetDirectory) return
 
-    if (!canUseNativeFileIntegration(targetServerId)) {
+    if (!(await canOpenDirectoryNatively(targetServerId, targetDirectory))) {
       layoutStore.openRightPanel('files')
       return
     }
