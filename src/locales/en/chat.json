@@ -300,7 +300,8 @@
     "subagent": {
       "working": "Working",
       "done": "Done",
-      "failed": "Failed"
+      "failed": "Failed",
+      "completedGroup": "Completed"
     },
     "mcp": {
       "toggle": "Toggle {{name}}",
