@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EventCallbacks } from '../types/api/event'
 import { SessionContext } from './SessionContext.shared'
 import { SessionProvider } from './SessionContext'
+import { sessionListIndexStore } from '../store/sessionListIndexStore'
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void
@@ -25,6 +26,7 @@ const {
   sessionErrorHandlerMock,
   autoDetectPathStyleMock,
   onServerChangeMock,
+  serverState,
 } = vi.hoisted(() => ({
   getSessionsMock: vi.fn(),
   createSessionMock: vi.fn(),
@@ -37,6 +39,7 @@ const {
   sessionErrorHandlerMock: vi.fn(),
   autoDetectPathStyleMock: vi.fn(),
   onServerChangeMock: vi.fn(),
+  serverState: { activeServerId: 'local', listeners: new Set<() => void>() },
 }))
 let latestEventCallbacks: Partial<EventCallbacks> = {}
 let latestContext: ContextType<typeof SessionContext> = null
@@ -74,6 +77,11 @@ vi.mock('../store/todoStore', () => ({
 vi.mock('../store/serverStore', () => ({
   serverStore: {
     onServerChange: (...args: unknown[]) => onServerChangeMock(...args),
+    getActiveServerId: () => serverState.activeServerId,
+    subscribe: (fn: () => void) => {
+      serverState.listeners.add(fn)
+      return () => serverState.listeners.delete(fn)
+    },
   },
 }))
 
@@ -109,6 +117,8 @@ function SessionContextProbe() {
 describe('SessionProvider', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    // 索引是模块级长驻 store：不清会跨用例串数据
+    sessionListIndexStore.reset()
     latestContext = null
     latestEventCallbacks = {}
     getSessionsMock.mockReset()
@@ -122,6 +132,8 @@ describe('SessionProvider', () => {
     sessionErrorHandlerMock.mockReset()
     autoDetectPathStyleMock.mockReset()
     onServerChangeMock.mockReset()
+    serverState.activeServerId = 'local'
+    serverState.listeners.clear()
     latestServerChange = undefined
     subscribeToEventsMock.mockImplementation((callbacks: EventCallbacks) => {
       latestEventCallbacks = callbacks
@@ -248,8 +260,10 @@ describe('SessionProvider', () => {
 
     expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-1', 'session-2'])
 
-    act(() => {
+    await act(async () => {
       latestEventCallbacks.onSessionDeleted?.('session-1')
+      // 非搜索态的成员删除由 useGlobalEvents 写入索引
+      sessionListIndexStore.applyDeleted('local', 'session-1')
     })
 
     expect(clearSessionRuntimeStateMock).toHaveBeenCalledWith('session-1')
@@ -277,8 +291,8 @@ describe('SessionProvider', () => {
 
     expect(latestContext?.sessions.map(session => session.id)).toEqual(['session-1', 'session-2', 'session-3'])
 
-    act(() => {
-      latestEventCallbacks.onSessionUpdated?.({
+    await act(async () => {
+      sessionListIndexStore.applySessionChanged('local', {
         id: 'session-2',
         slug: 'session-2',
         projectID: 'project-1',
@@ -286,7 +300,7 @@ describe('SessionProvider', () => {
         title: 'Two updated',
         version: '1',
         time: { created: 1, updated: 2 },
-      })
+      } as never)
     })
 
     // 内容更新了，但位置不动（并行会话交替更新时列表不能来回跳）
@@ -316,7 +330,15 @@ describe('SessionProvider', () => {
     expect(getSessionsMock).toHaveBeenCalledTimes(1)
 
     await act(async () => {
-      latestServerChange?.()
+      // 切换活动服务器：index 按 serverId 分桶，新桶为空 → 触发拉取
+      serverState.activeServerId = 'remote'
+      serverState.listeners.forEach(fn => fn())
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
       await Promise.resolve()
     })
 
@@ -336,6 +358,6 @@ describe('SessionProvider', () => {
       await Promise.resolve()
     })
 
+    // 晚归的旧响应不应覆盖新数据
     expect(latestContext?.sessions.map(session => session.id)).toEqual(['fresh'])
-  })
-})
+  })})

@@ -18,6 +18,7 @@ import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { makeSessionKey, sessionKeyToServerId, sessionKeyToSessionId } from '../utils/sessionKey'
 import { subscribeToServerEvents, getSessionStatus, getPendingPermissions, getPendingQuestions } from '../api'
 import { invalidateSessionListCache } from '../api/sessionListCache'
+import { sessionListIndexStore } from '../store/sessionListIndexStore'
 import type { EventCallbacks } from '../types/api/event'
 import { replyPermission } from '../api/permission'
 import { stripMessageSummaryDiffs, stripPartAttachments } from '../api/sanitize'
@@ -399,6 +400,11 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
   }, [])
   const activeServerIdsRef = useRef(activeServerIds)
 
+  // 已配置过的服务器 id 集合：用于在服务器被删除时清掉其列表索引桶
+  const knownServerIdsRef = useRef<Set<string>>(
+    new Set(serverStore.getEnabledServers().map(server => server.id)),
+  )
+
   useEffect(() => {
     activeServerIdsRef.current = activeServerIds
   }, [activeServerIds])
@@ -420,6 +426,13 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
     // 服务器列表变化（新增/删除/改名）也要重算：现在连接集合 = 所有已配置服务器
     const unsubscribeServers = serverStore.subscribe(() => {
       updateActiveServerIds()
+      // 已配置服务器集合缩小（删除）时，清掉被删服务器的列表索引桶，
+      // 否则那份数据永远不会再被刷新，只会白占内存。
+      const known = new Set(serverStore.getEnabledServers().map(server => server.id))
+      for (const id of knownServerIdsRef.current) {
+        if (!known.has(id)) sessionListIndexStore.dropServer(id)
+      }
+      knownServerIdsRef.current = known
     })
     return () => {
       unsubscribeLayout()
@@ -612,6 +625,8 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
           // 根会话出现会改变列表成员；子会话（parentID）频繁创建且只影响子会话列表，
           // 不做失效以免缓存被子 agent 抖动反复冲掉。
           if (!session.parentID) invalidateSessionListCache(serverId)
+          // 列表索引增量：created 的会话若属于已加载的目录桶，就地插入
+          sessionListIndexStore.applySessionChanged(serverId, session)
           // 注册子 session 关系
           if (session.parentID) {
             childSessionStore.registerChildSession(session, serverId)
@@ -679,9 +694,12 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
 
         onSessionUpdated: session => {
           const scopedId = scope(session.id)
+          // 列表索引增量：含「归档迁移」——本桶与归档桶之间移动由 store 内部处理，
+          // 因此不再需要整片失效缓存（原来注释说的 30s TTL 兜底已被索引取代）。
+          sessionListIndexStore.applySessionChanged(serverId, session)
           // 注意：此处不对归档做缓存失效。恢复后的会话 time.archived 恒为 0，
           // 用「字段存在」判断会让每次标题更新都冲掉列表缓存（流式期间高频）。
-          // 本端归档/恢复已在 updateSession 中失效；跨客户端的归档由 30s TTL 兜底。
+          // 归档迁移已由上面的索引增量精确处理。
           //
           // 但归档要清通知：归档后会话不再出现在列表，通知留着会让项目行因孤儿
           // 通知一直亮未读点（本端归档入口已清，这里覆盖其他客户端归档）。
@@ -704,6 +722,8 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
           const scopedId = scope(sessionId)
           // 删除改变列表成员，失效缓存避免切回时复活已删除项
           invalidateSessionListCache(serverId)
+          // 列表索引增量：该服务器所有桶移除 + 记墓碑（挡住晚归的在途响应）
+          sessionListIndexStore.applyDeleted(serverId, sessionId)
           const removedSessionIds = childSessionStore.getSessionAndDescendants(scopedId)
           // 清通知：会话已不在列表，通知留着会让项目行永久亮未读点
           for (const id of removedSessionIds) notificationStore.removeSessionNotifications(id)

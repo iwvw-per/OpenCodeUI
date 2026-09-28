@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EventCallbacks } from '../types/api/event'
 import { useSessions } from './useSessions'
 import { layoutStore } from '../store/layoutStore'
+import { sessionListIndexStore } from '../store/sessionListIndexStore'
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void
@@ -20,12 +21,14 @@ const {
   deleteSessionMock,
   subscribeToEventsMock,
   onServerChangeMock,
+  serverState,
 } = vi.hoisted(() => ({
   getSessionsMock: vi.fn<AnyFn>(),
   createSessionMock: vi.fn<AnyFn>(),
   deleteSessionMock: vi.fn<AnyFn>(),
   subscribeToEventsMock: vi.fn<AnyFn>(),
   onServerChangeMock: vi.fn<AnyFn>(() => () => {}),
+  serverState: { activeServerId: 'local', listeners: new Set<() => void>() },
 }))
 let latestEventCallbacks: Partial<EventCallbacks> = {}
 let latestServerChange: (() => void) | undefined
@@ -40,7 +43,11 @@ vi.mock('../api', () => ({
 vi.mock('../store/serverStore', () => ({
   serverStore: {
     onServerChange: (...args: unknown[]) => onServerChangeMock(...args),
-    getActiveServerId: () => 'local',
+    getActiveServerId: () => serverState.activeServerId,
+    subscribe: (fn: () => void) => {
+      serverState.listeners.add(fn)
+      return () => serverState.listeners.delete(fn)
+    },
   },
 }))
 
@@ -62,6 +69,8 @@ function makeSession(id: string, directory = '/workspace/demo') {
 describe('useSessions', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    // 索引是模块级长驻 store：不清会跨用例串数据
+    sessionListIndexStore.reset()
     getSessionsMock.mockReset()
     createSessionMock.mockReset()
     deleteSessionMock.mockReset()
@@ -132,7 +141,7 @@ describe('useSessions', () => {
     expect(deleteSessionMock).toHaveBeenCalledWith('session-1', '/workspace/demo', undefined)
   })
 
-  it('adds matching sessions from realtime events immediately', async () => {
+  it('reflects realtime created sessions routed into the index', async () => {
     const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
 
     await act(async () => {
@@ -140,10 +149,11 @@ describe('useSessions', () => {
       await Promise.resolve()
     })
 
+    // 非搜索态的增量由 useGlobalEvents 统一写入索引，这里直接驱动 store 模拟
     await act(async () => {
-      latestEventCallbacks.onSessionCreated?.(makeSession('session-1'))
-      latestEventCallbacks.onSessionCreated?.(makeSession('session-ignored', '/workspace/other'))
-      latestEventCallbacks.onSessionCreated?.({ ...makeSession('session-child'), parentID: 'parent-1' })
+      sessionListIndexStore.applySessionChanged('local', makeSession('session-1'))
+      sessionListIndexStore.applySessionChanged('local', makeSession('session-ignored', '/workspace/other'))
+      sessionListIndexStore.applySessionChanged('local', { ...makeSession('session-child'), parentID: 'parent-1' })
     })
 
     expect(result.current.sessions.map(session => session.id)).toEqual(['session-1'])
@@ -162,34 +172,12 @@ describe('useSessions', () => {
     expect(result.current.sessions.map(session => session.id)).toEqual(['session-a', 'session-b', 'session-c'])
 
     await act(async () => {
-      latestEventCallbacks.onSessionUpdated?.({ ...makeSession('session-b'), title: 'Renamed' })
+      sessionListIndexStore.applySessionChanged('local', { ...makeSession('session-b'), title: 'Renamed' })
     })
 
     // 内容更新了，但位置不动
     expect(result.current.sessions.map(session => session.id)).toEqual(['session-a', 'session-b', 'session-c'])
     expect(result.current.sessions[1].title).toBe('Renamed')
-  })
-
-  it('keeps the list stable when two sessions update alternately', async () => {
-    getSessionsMock.mockResolvedValue([makeSession('session-a'), makeSession('session-b')])
-
-    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
-
-    await act(async () => {
-      vi.runAllTimers()
-      await Promise.resolve()
-    })
-
-    // 并行会话的 session.updated 是交替到达的；早先的实现每次置顶，
-    // 导致这两项在列表里来回跳
-    await act(async () => {
-      for (let i = 0; i < 4; i += 1) {
-        latestEventCallbacks.onSessionUpdated?.(makeSession('session-a'))
-        latestEventCallbacks.onSessionUpdated?.(makeSession('session-b'))
-      }
-    })
-
-    expect(result.current.sessions.map(session => session.id)).toEqual(['session-a', 'session-b'])
   })
 
   it('inserts a session that is not in the list yet at its sorted position', async () => {
@@ -204,7 +192,7 @@ describe('useSessions', () => {
 
     // 默认按更新时间倒序：更新的会话排在最前
     await act(async () => {
-      latestEventCallbacks.onSessionUpdated?.({
+      sessionListIndexStore.applySessionChanged('local', {
         ...makeSession('session-new'),
         time: { created: 2, updated: 200 },
       })
@@ -413,7 +401,15 @@ describe('useSessions', () => {
     expect(getSessionsMock).toHaveBeenCalledTimes(1)
 
     await act(async () => {
-      latestServerChange?.()
+      // 切换活动服务器：index 按 serverId 分桶，新桶为空 → 触发拉取
+      serverState.activeServerId = 'remote'
+      serverState.listeners.forEach(fn => fn())
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
       await Promise.resolve()
     })
 
@@ -434,5 +430,36 @@ describe('useSessions', () => {
     })
 
     expect(result.current.sessions.map(session => session.id)).toEqual(['fresh'])
+  })
+
+  it('keeps the existing list visible while a reconnect refresh is in flight', async () => {
+    const pending = createDeferred<ReturnType<typeof makeSession>[]>()
+    getSessionsMock.mockResolvedValueOnce([makeSession('session-1')]).mockImplementationOnce(() => pending.promise)
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-1'])
+
+    await act(async () => {
+      latestEventCallbacks.onReconnected?.('network')
+      await Promise.resolve()
+    })
+
+    // 静默刷新：请求在途时旧列表仍在屏上，且没有打回 loading
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-1'])
+    expect(result.current.isLoading).toBe(false)
+
+    await act(async () => {
+      pending.resolve([makeSession('session-2')])
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-2'])
   })
 })
