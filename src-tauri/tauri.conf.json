@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "OpenCode",
-  "version": "0.6.103",
+  "version": "0.6.104",
   "identifier": "com.opencodeui.app",
   "build": {
     "frontendDist": "../dist",
@@ -34,11 +34,16 @@
     }
   },
   "plugins": {
-    "notification": null
+    "notification": null,
+    "updater": {
+      "endpoints": ["https://github.com/iwvw-per/OpenCodeUI/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNFMjlFRkU5NjIzM0RDNkEKUldScTNETmk2ZThwUHJRRnlvbHNBd0FnRzQ5SllQZ1B5QTRTNkdjTFpKdCs4TE1URVFrc0E2SUUK"
+    }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "dmg", "deb"],
+    "targets": ["nsis", "dmg", "deb", "appimage"],
+    "createUpdaterArtifacts": true,
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
     "windows": {
       "nsis": {

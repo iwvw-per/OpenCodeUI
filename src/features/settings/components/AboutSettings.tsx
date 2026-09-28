@@ -1,12 +1,17 @@
-import { useCallback, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useRef, useState, useSyncExternalStore, type ChangeEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '../../../components/ui/Button'
 import { DownloadIcon, ExternalLinkIcon, RetryIcon, UploadIcon } from '../../../components/Icons'
 import { hasUpdateAvailable, updateStore, useUpdateStore, RELEASES_PAGE_URL } from '../../../store/updateStore'
+import { desktopUpdater, isDesktopUpdaterAvailable, type UpdaterProgress } from '../../../utils/desktopUpdater'
 import { saveData } from '../../../utils/downloadUtils'
 import { exportSettingsBackup, importSettingsBackup, previewBackupMeta } from '../../../utils/settingsBackup'
 import { isTauri } from '../../../utils/tauri'
 import { SettingsSection } from './SettingsUI'
+
+function useUpdaterProgress(): UpdaterProgress {
+  return useSyncExternalStore(desktopUpdater.subscribe, desktopUpdater.getSnapshot, desktopUpdater.getSnapshot)
+}
 
 async function openExternalUrl(url: string): Promise<void> {
   if (isTauri()) {
@@ -22,6 +27,7 @@ async function openExternalUrl(url: string): Promise<void> {
 export function AboutSettings() {
   const { t } = useTranslation(['settings'])
   const updateState = useUpdateStore()
+  const updaterProgress = useUpdaterProgress()
   const hasUpdate = hasUpdateAvailable(updateState)
   const latestRelease = updateState.latestRelease
   const latestVersion = latestRelease?.tagName || t('about.unknownVersion')
@@ -30,8 +36,24 @@ export function AboutSettings() {
   const [backupBusy, setBackupBusy] = useState<'export' | 'import' | null>(null)
   const [backupError, setBackupError] = useState<string | null>(null)
 
+  const canAutoUpdate = isDesktopUpdaterAvailable()
+  const updaterBusy =
+    updaterProgress.phase === 'checking' ||
+    updaterProgress.phase === 'downloading' ||
+    updaterProgress.phase === 'installing'
+
   const handleCheckUpdates = useCallback(() => {
     void updateStore.checkForUpdates({ force: true })
+  }, [])
+
+  const handleAutoUpdate = useCallback(() => {
+    void desktopUpdater.installLatest()
+  }, [])
+
+  const handleRelaunch = useCallback(() => {
+    void desktopUpdater.relaunchApp().catch(() => {
+      // 重启失败时保持 ready 状态，用户可手动重启
+    })
   }, [])
 
   const handleOpenRelease = useCallback(() => {
@@ -88,7 +110,19 @@ export function AboutSettings() {
   )
 
   let statusText = t('about.statusIdle')
-  if (updateState.checking) {
+  if (updaterProgress.phase === 'error') {
+    statusText = t('about.autoUpdateError', { error: updaterProgress.error ?? '' })
+  } else if (updaterProgress.phase === 'ready') {
+    statusText = t('about.autoUpdateReady')
+  } else if (updaterProgress.phase === 'installing') {
+    statusText = t('about.autoUpdateInstalling')
+  } else if (updaterProgress.phase === 'downloading') {
+    statusText = t('about.autoUpdateDownloading', {
+      percent: updaterProgress.totalBytes
+        ? Math.floor((updaterProgress.downloadedBytes / updaterProgress.totalBytes) * 100)
+        : null,
+    })
+  } else if (updateState.checking) {
     statusText = t('about.statusChecking')
   } else if (updateState.error) {
     statusText = t('about.statusError', { error: updateState.error })
@@ -120,6 +154,18 @@ export function AboutSettings() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {canAutoUpdate && hasUpdate && updaterProgress.phase !== 'ready' && (
+            <Button size="sm" variant="primary" isLoading={updaterBusy} onClick={handleAutoUpdate}>
+              {!updaterBusy && <DownloadIcon size={12} />}
+              {t('about.autoUpdateNow')}
+            </Button>
+          )}
+          {canAutoUpdate && updaterProgress.phase === 'ready' && (
+            <Button size="sm" variant="primary" onClick={handleRelaunch}>
+              <RetryIcon size={12} />
+              {t('about.autoUpdateRestart')}
+            </Button>
+          )}
           <Button size="sm" variant="secondary" isLoading={updateState.checking} onClick={handleCheckUpdates}>
             {!updateState.checking && <RetryIcon size={12} />}
             {t('about.checkNow')}

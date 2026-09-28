@@ -63,39 +63,44 @@ jobs:
 
       - run: npm ci
 
-      # tauri-action 自动执行 beforeBuildCommand (npm run build) + cargo build
-      - name: Build desktop app
-        uses: tauri-apps/tauri-action@v0
-        with:
-          args: ${{ matrix.args }}
-
-      - name: Prepare artifacts
+      - name: Extract changelog
+        id: changelog
         shell: bash
         run: |
-          mkdir -p release-artifacts
-          BUNDLE_DIR="src-tauri/target/release/bundle"
-          if [[ "${{ matrix.os }}" == "macos" ]]; then
-            BUNDLE_DIR="src-tauri/target/${{ matrix.arch }}-apple-darwin/release/bundle"
+          TAG="${{ github.ref_name }}"
+          BODY=$(sed -n "/^## \[${TAG}\]/,/^## \[/{ /^## \[${TAG}\]/d; /^## \[/d; p; }" CHANGELOG.md)
+          BODY=$(echo "$BODY" | sed -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba;}')
+          if [ -z "$BODY" ]; then
+            BODY="No changelog entry found for ${TAG}."
           fi
+          printf '%s\n' "$BODY" > /tmp/release-body.md
+          printf '\n---\n\n**Desktop:** Windows (.exe), macOS (.dmg), Linux (.deb, .AppImage)\n**Mobile:** Android (.apk) — arm64, armeabi-v7a\n' >> /tmp/release-body.md
+          {
+            echo 'body<<RELEASE_BODY_EOF'
+            cat /tmp/release-body.md
+            echo 'RELEASE_BODY_EOF'
+          } >> "$GITHUB_OUTPUT"
 
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
-            find "$BUNDLE_DIR/nsis" -name "*.exe" -exec cp {} release-artifacts/ \; 2>/dev/null || true
-          elif [[ "${{ matrix.os }}" == "macos" ]]; then
-            find "$BUNDLE_DIR/dmg" -name "*.dmg" -exec cp {} release-artifacts/ \; 2>/dev/null || true
-          elif [[ "${{ matrix.os }}" == "linux" ]]; then
-            find "$BUNDLE_DIR/deb" -name "*.deb" -exec cp {} release-artifacts/ \; 2>/dev/null || true
-            find "$BUNDLE_DIR/appimage" -name "*.AppImage" -exec cp {} release-artifacts/ \; 2>/dev/null || true
-          fi
-
-          echo "Artifacts:"
-          ls -R release-artifacts
-
-      - uses: actions/upload-artifact@v7
+      # tauri-action 自动执行 beforeBuildCommand (npm run build) + cargo build，
+      # 创建/更新 Release，并上传安装包、更新包、其 .sig 签名与 latest.json。
+      # 4 个平台任务并发写同一个 Release，action 内部会重试并合并 latest.json
+      # （Tauri 多平台发布的标准做法）。
+      # createUpdaterArtifacts 需要签名私钥，缺失会导致构建失败。
+      - name: Build and publish desktop app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          name: artifacts-desktop-${{ matrix.os }}-${{ matrix.arch }}
-          path: release-artifacts
-          if-no-files-found: warn
-          retention-days: 1
+          args: ${{ matrix.args }}
+          tagName: ${{ github.ref_name }}
+          releaseName: 'OpenCodeUI ${{ github.ref_name }}'
+          releaseBody: ${{ steps.changelog.outputs.body }}
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, 'canary') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
 
   # ============================================
   # Android builds (arm64 + armv7 并行)
@@ -201,45 +206,28 @@ jobs:
           retention-days: 1
 
   # ============================================
-  # Publish Release
+  # Publish Android assets
+  #
+  # 桌面安装包、更新包、.sig 与 latest.json 由上面的 tauri-action 直接发布；
+  # 这里只把 Android APK 追加到同一个 Release。用 gh 上传（而非 action-gh-release）
+  # 以免覆盖 tauri-action 写入的 release 正文。
   # ============================================
-  publish-release:
+  publish-android:
     permissions:
       contents: write
     runs-on: ubuntu-latest
     needs: [build-desktop, build-android]
     steps:
-      - uses: actions/checkout@v6
-
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
-          pattern: artifacts-*
+          pattern: artifacts-android-*
           merge-multiple: true
 
       - name: Display artifacts
         run: ls -R artifacts
 
-      - name: Extract changelog
-        id: changelog
-        run: |
-          TAG="${{ github.ref_name }}"
-          BODY=$(sed -n "/^## \[${TAG}\]/,/^## \[/{ /^## \[${TAG}\]/d; /^## \[/d; p; }" CHANGELOG.md)
-          BODY=$(echo "$BODY" | sed -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba;}')
-          if [ -z "$BODY" ]; then
-            BODY="No changelog entry found for ${TAG}."
-          fi
-          echo "$BODY" > /tmp/release-body.md
-          printf '\n---\n\n**Desktop:** Windows (.exe), macOS (.dmg), Linux (.deb, .AppImage)\n**Mobile:** Android (.apk) — arm64, armeabi-v7a\n' >> /tmp/release-body.md
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: 'OpenCodeUI ${{ github.ref_name }}'
-          body_path: /tmp/release-body.md
-          files: artifacts/*
-          draft: false
-          prerelease: ${{ contains(github.ref_name, 'canary') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
+      - name: Upload Android APKs
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" artifacts/* --clobber

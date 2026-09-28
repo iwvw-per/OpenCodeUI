@@ -1,6 +1,6 @@
 [package]
 name = "opencodeui"
-version = "0.6.103"
+version = "0.6.104"
 description = "OpenCode UI - Tauri Mobile App"
 authors = ["lehhair"]
 license = "GPL-3.0-only"
@@ -44,3 +44,7 @@ lto = true
 panic = "abort"
 codegen-units = 1
 opt-level = "s"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
