@@ -714,7 +714,7 @@ function PinnedFolderSection({
   const [isExpanded, setIsExpanded] = useState(true)
 
   return (
-    <div className="relative transition-all duration-150 group/folder">
+    <div className="relative transition-all duration-150 group/folder mb-1.5 border-b border-border-200/40 pb-1.5">
       <div className={cn('relative flex w-full items-center rounded-md select-none', interactive.row)}>
         <button
           onClick={() => setIsExpanded(value => !value)}
@@ -731,7 +731,7 @@ function PinnedFolderSection({
       </div>
 
       <ExpandableSection show={isExpanded}>
-        <div onTouchStart={e => e.stopPropagation()}>
+        <div onTouchStart={e => e.stopPropagation()} className="flex flex-col gap-0.5 pt-1">
           {sessions.map((session, index) => {
             const isChecked = selectedSessionIds?.has(session.id) ?? false
             const prevChecked =
