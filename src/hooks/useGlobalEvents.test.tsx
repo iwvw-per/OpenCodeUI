@@ -26,6 +26,7 @@ const {
   getFocusedSessionIdMock,
   getSessionAndDescendantsMock,
   notificationPushMock,
+  notificationToastMock,
   markSessionNotificationsReadMock,
   removeSessionNotificationsMock,
   playNotificationSoundDedupedMock,
@@ -35,6 +36,7 @@ const {
   applyServerConnectedTimestampMock,
   getActiveServerIdMock,
   checkHealthMock,
+  getServerMock,
   onServerChangeMock,
   autoApproveStoreMock,
   clearSessionRuntimeStateMock,
@@ -53,12 +55,14 @@ const {
   getFocusedSessionIdMock: vi.fn<() => string | null>(() => null),
   getSessionAndDescendantsMock: vi.fn((sessionId: string) => [sessionId]),
   notificationPushMock: vi.fn(),
+  notificationToastMock: vi.fn(),
   markSessionNotificationsReadMock: vi.fn(),
   removeSessionNotificationsMock: vi.fn(),
   playNotificationSoundDedupedMock: vi.fn(),
   isSystemEnabledMock: vi.fn((type: string) => type !== 'permission'),
   applyServerConnectedTimestampMock: vi.fn(),
   getActiveServerIdMock: vi.fn(() => 'local'),
+  getServerMock: vi.fn(() => ({ id: 'local', name: 'Local', url: 'http://localhost:4242' })),
   checkHealthMock: vi.fn(() => Promise.resolve({ status: 'online' })),
   onServerChangeMock: vi.fn((_listener: (serverId: string) => void) => vi.fn()),
   clearSessionRuntimeStateMock: vi.fn(),
@@ -131,6 +135,7 @@ vi.mock('../store', () => ({
   serverStore: {
     applyServerConnectedTimestamp: applyServerConnectedTimestampMock,
     getActiveServerId: getActiveServerIdMock,
+    getServer: getServerMock,
     checkHealth: checkHealthMock,
     onServerChange: onServerChangeMock,
     // collectActiveServerIds 遍历所有「已启用」服务器并订阅其变化
@@ -146,6 +151,7 @@ vi.mock('../store/activeSessionStore', () => ({
 vi.mock('../store/notificationStore', () => ({
   notificationStore: {
     push: notificationPushMock,
+    toast: notificationToastMock,
     markSessionNotificationsRead: markSessionNotificationsReadMock,
     removeSessionNotifications: removeSessionNotificationsMock,
   },
@@ -187,6 +193,7 @@ describe('useGlobalEvents', () => {
     getFocusedSessionIdMock.mockReset()
     getSessionAndDescendantsMock.mockReset()
     notificationPushMock.mockReset()
+    notificationToastMock.mockReset()
     markSessionNotificationsReadMock.mockReset()
     removeSessionNotificationsMock.mockReset()
     playNotificationSoundDedupedMock.mockReset()
