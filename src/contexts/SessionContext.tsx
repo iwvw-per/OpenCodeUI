@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo, type ReactNode } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo, useSyncExternalStore, type ReactNode } from 'react'
 import {
   getSessions,
   createSession as apiCreateSession,
@@ -10,20 +10,35 @@ import {
 import { todoStore } from '../store/todoStore'
 import { serverStore } from '../store/serverStore'
 import { pinnedSessionsStore } from '../store/pinnedSessionsStore'
+import {
+  sessionListIndexStore,
+  type SessionListBucketKey,
+} from '../store/sessionListIndexStore'
 import { useDirectory } from './useDirectory'
-import { sessionErrorHandler, normalizeToForwardSlash, isSameDirectory, autoDetectPathStyle, sortSessions, insertSessionSorted } from '../utils'
+import { sessionErrorHandler, normalizeToForwardSlash, autoDetectPathStyle, sortSessions } from '../utils'
 import { layoutStore } from '../store/layoutStore'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { SessionContext, type SessionContextValue } from './SessionContext.shared'
 
+const DEFAULT_LIMIT = 30
+/** 索引 TTL：超过此时长再次挂载会触发一次后台静默刷新 */
+const SESSION_LIST_TTL_MS = 30_000
+const EMPTY_SESSIONS: ApiSession[] = []
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const { currentDirectory } = useDirectory()
 
-  const [sessions, setSessions] = useState<ApiSession[]>([])
+  const [search, setSearch] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const [hasMore, setHasMore] = useState(true)
-  const [search, setSearch] = useState('')
+  // 搜索态结果保存在组件内（瞬态高基数查询不入索引）
+  const [searchSessions, setSearchSessions] = useState<ApiSession[]>(EMPTY_SESSIONS)
+
+  const activeServerId = useSyncExternalStore(
+    cb => serverStore.subscribe(cb),
+    () => serverStore.getActiveServerId(),
+    () => serverStore.getActiveServerId(),
+  )
 
   const requestIdRef = useRef(0)
   const searchTimerRef = useRef<number | null>(null)
@@ -34,9 +49,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const queuedReconnectRefreshRef = useRef(false)
   const retryTimerRef = useRef<number | null>(null)
   const fetchSessionsRef = useRef<
-    (params?: SessionListParams & { append?: boolean; retryAttempt?: number; skipCache?: boolean }) => Promise<void>
+    (
+      params?: SessionListParams & { append?: boolean; retryAttempt?: number; skipCache?: boolean; silent?: boolean },
+    ) => Promise<void>
   >(() => Promise.resolve())
-  const currentLimitRef = useRef(30) // 当前 limit，loadMore 时递增
+  const currentLimitRef = useRef(DEFAULT_LIMIT) // 当前 limit，loadMore 时递增
 
   // 保持 ref 同步
   useEffect(() => {
@@ -47,7 +64,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     searchRef.current = search
   }, [search])
 
-  // 排序偏好：从 layoutStore 读（拉取时应用；偏好变化时就地重排）
+  // 排序偏好：搜索态用它就地排序；常规列表由 index store 负责排序。
+  // 直接读当前值（不进 effect/ref，避免偏好变化那一帧用到旧值）
   const getSortPreference = useCallback(
     () => ({
       field: layoutStore.getState().sidebarSessionSortField,
@@ -55,31 +73,51 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }),
     [],
   )
-  useEffect(() => {
-    return layoutStore.subscribe(() => {
-      setSessions(prev => (prev.length > 0 ? sortSessions(prev, getSortPreference()) : prev))
-    })
-  }, [getSortPreference])
+
+  const targetDir = normalizeToForwardSlash(currentDirectory) || undefined
+  const searching = search !== ''
+  const indexable = !searching
+
+  const bucket: SessionListBucketKey = {
+    serverId: activeServerId,
+    directory: targetDir,
+    view: 'active',
+    // 上下条导航按 30 条分页，与侧栏项目列表（5 条）分开存
+    scope: 'navigation',
+  }
+  const bucketIdKey = `${activeServerId}\u0000${targetDir ?? ''}`
+
+  // 索引快照（同步、引用稳定）：切回旧主机/旧目录首帧即有内容
+  const indexSessions = useSyncExternalStore(
+    cb => sessionListIndexStore.subscribe(cb),
+    () => (indexable ? sessionListIndexStore.getSnapshot(bucket) : EMPTY_SESSIONS),
+    () => (indexable ? sessionListIndexStore.getSnapshot(bucket) : EMPTY_SESSIONS),
+  )
+  const loadedLimit = indexable ? sessionListIndexStore.getLoadedLimit(bucket) : 0
 
   // 核心获取逻辑
   // 注意：directory 传给 getSessions 时使用正斜杠格式
   // http 层的 fetchWithBothSlashesAndMerge 会处理两种斜杠格式的兼容
   const fetchSessions = useCallback(
-    async (params: SessionListParams & { append?: boolean; retryAttempt?: number; skipCache?: boolean } = {}) => {
-      const { append = false, retryAttempt = 0, ...queryParams } = params
+    async (
+      params: SessionListParams & { append?: boolean; retryAttempt?: number; skipCache?: boolean; silent?: boolean } = {},
+    ) => {
+      const { append = false, retryAttempt = 0, silent = false, ...queryParams } = params
       const requestId = ++requestIdRef.current
       isFetchingRef.current = true
 
+      const isSearch = Boolean(queryParams.search ?? searchRef.current)
+      const hasIndexContent = sessionListIndexStore.has(bucket)
+
+      // silent（后台静默刷新）：不动 loading 态、不清已有内容，拿到新数据后原地替换。
+      // 回前台/重连时用，避免列表先空白再出现。
       if (append) {
         setIsLoadingMore(true)
-      } else {
+      } else if (!silent && (isSearch || !hasIndexContent)) {
         setIsLoading(true)
       }
 
       try {
-        // 使用正斜杠格式传给 API（http 层会处理兼容）
-        const targetDir = normalizeToForwardSlash(currentDirectory) || undefined
-
         // 多取一条用于判断是否还有更多：仅凭 data.length >= limit 无法区分
         // 「刚好这么多」和「还有更多」——会话数正好等于 pageSize 时会多出一个
         // 点了没反应的「展开更多会话」按钮（取回同样条数后 hasMore 立刻变 false）。
@@ -99,32 +137,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           autoDetectPathStyle(data[0].directory)
         }
 
-        const page = data.slice(0, requestedLimit)
-
-        if (append) {
-          // 去重：过滤掉已存在的 session
-          setSessions(prev => {
-            const existingIds = new Set(prev.map(s => s.id))
-            const newSessions = page.filter(s => !existingIds.has(s.id))
-            return [...prev, ...newSessions]
-          })
+        if (isSearch) {
+          setSearchSessions(sortSessions(data.slice(0, requestedLimit), getSortPreference()))
         } else {
-          // 与侧栏列表保持同一排序：上/下一个会话快捷键按位置取值，
-          // 两边顺序不一致会让导航目标与用户看到的不符
-          setSessions(sortSessions(page, getSortPreference()))
+          // 索引存全量页数据（含多取的那条），读取侧按 loadedLimit 切片
+          sessionListIndexStore.replace(bucket, data, {
+            limit: requestedLimit,
+            hasMore: data.length > requestedLimit,
+          })
         }
-        setHasMore(data.length > requestedLimit)
       } catch (e) {
         if (requestId === requestIdRef.current && !append) {
           if (retryAttempt < 3) {
             if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
             retryTimerRef.current = window.setTimeout(() => {
               if (requestId !== requestIdRef.current) return
-              void fetchSessions({ ...queryParams, retryAttempt: retryAttempt + 1 })
+              void fetchSessions({ ...queryParams, silent, retryAttempt: retryAttempt + 1 })
             }, [500, 1500, 3000][retryAttempt])
-          } else {
-            setSessions([])
-            setHasMore(false)
+          } else if (isSearch) {
+            setSearchSessions(EMPTY_SESSIONS)
+          } else if (!silent) {
+            sessionListIndexStore.replace(bucket, [], { limit: 0, hasMore: false })
           }
         }
         sessionErrorHandler('fetch sessions', e)
@@ -135,20 +168,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setIsLoadingMore(false)
           if (queuedReconnectRefreshRef.current) {
             queuedReconnectRefreshRef.current = false
-            setSessions([])
-            void fetchSessionsRef.current({ search: searchRef.current || undefined })
+            // 静默补拉：不清空列表，旧内容留在屏上直到新数据到达
+            void fetchSessionsRef.current({ search: searchRef.current || undefined, skipCache: true, silent: true })
           }
         }
       }
     },
-    [currentDirectory, search, getSortPreference],
+    // bucket 每帧新建，用它做依赖会无限重跑；用稳定 id 字符串代替
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [targetDir, search, bucketIdKey],
   )
 
-  // 保持 fetchSessions ref 同步（用于 SSE onReconnected 回调）
+  // 保持 ref 同步（用于 SSE onReconnected / 目录变化的补拉）
   fetchSessionsRef.current = fetchSessions
 
   const matchesCurrentDirectory = useCallback((session: ApiSession) => {
-    return !currentDirectoryRef.current || isSameDirectory(currentDirectoryRef.current, session.directory)
+    const target = currentDirectoryRef.current
+    return !target || isSameDirectory(target, session.directory)
   }, [])
 
   // 监听 directory 和 search 变化
@@ -156,77 +192,61 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
 
     // 切换目录或搜索时重置 limit
-    currentLimitRef.current = 30
+    currentLimitRef.current = DEFAULT_LIMIT
 
-    searchTimerRef.current = window.setTimeout(
-      () => {
-        fetchSessions()
-      },
-      search ? 300 : 0,
-    )
+    const run = () => {
+      if (searching) {
+        void fetchSessionsRef.current({ search: search || undefined })
+        return
+      }
+      // 索引有内容：先上屏，再按需后台刷新（陈旧才拉）
+      if (sessionListIndexStore.has(bucket)) {
+        setIsLoading(false)
+        const age = Date.now() - sessionListIndexStore.getFetchedAt(bucket)
+        if (age > SESSION_LIST_TTL_MS) {
+          void fetchSessionsRef.current({ search: undefined, skipCache: true, silent: true })
+        }
+        return
+      }
+      void fetchSessionsRef.current({ search: undefined })
+    }
+
+    searchTimerRef.current = window.setTimeout(run, searching ? 300 : 0)
 
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
     }
-  }, [fetchSessions, search, currentDirectory])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, searching, fetchSessions, bucketIdKey])
 
-  // 订阅 SSE 事件，实时更新 session 列表
+  // 订阅 SSE 事件，实时更新 session 列表。
+  // 非搜索态：索引由 useGlobalEvents 统一增量维护，避免两处写入产生分歧。
+  // 搜索态仍在此就地过滤。
   useEffect(() => {
     const unsubscribe = subscribeToEvents({
       onSessionCreated: session => {
         // 忽略子 session（有 parentID 的是子 agent 创建的）
         if (session.parentID) return
-
+        if (!searchRef.current) return
         if (!matchesCurrentDirectory(session)) return
-
         // 搜索态下交给服务端重新给出结果，避免本地过滤和服务端逻辑不一致
-        if (searchRef.current) {
-          fetchSessionsRef.current()
-          return
-        }
-
-        setSessions(prev => {
-          if (prev.some(s => s.id === session.id)) return prev
-          return insertSessionSorted(prev, session, getSortPreference())
-        })
+        void fetchSessionsRef.current({ search: searchRef.current || undefined })
       },
       onSessionUpdated: session => {
         if (session.parentID) return
+        if (!searchRef.current) return
 
-        // 归档会话直接从列表移除：session.updated 若不处理会把刚归档的会话插回列表
         if (session.time?.archived) {
-          setSessions(prev => prev.filter(s => s.id !== session.id))
+          setSearchSessions(prev => prev.filter(s => s.id !== session.id))
           return
         }
 
-        if (searchRef.current) {
-          if (matchesCurrentDirectory(session)) {
-            fetchSessionsRef.current()
-          } else {
-            setSessions(prev => prev.filter(s => s.id !== session.id))
-          }
-          return
+        if (matchesCurrentDirectory(session)) {
+          void fetchSessionsRef.current({ search: searchRef.current || undefined })
+        } else {
+          setSearchSessions(prev => prev.filter(s => s.id !== session.id))
         }
-
-        setSessions(prev => {
-          const index = prev.findIndex(s => s.id === session.id)
-
-          if (!matchesCurrentDirectory(session)) {
-            return index === -1 ? prev : prev.filter(s => s.id !== session.id)
-          }
-
-          if (index === -1) {
-            return insertSessionSorted(prev, session, getSortPreference())
-          }
-
-          // 就地替换：更新不改变位置。并行会话的 session.updated 会交替到达，
-          // 每次置顶会让列表来回跳；上/下一个会话快捷键（useChatSession）按位置取值，
-          // 重排还会让导航目标乱跳。
-          const next = prev.slice()
-          next[index] = session
-          return next
-        })
       },
       onTodoUpdated: data => {
         // 更新 todoStore
@@ -234,7 +254,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       onSessionDeleted: sessionId => {
         clearSessionRuntimeState(sessionId)
-        setSessions(prev => prev.filter(s => s.id !== sessionId))
+        if (searchRef.current) {
+          setSearchSessions(prev => prev.filter(s => s.id !== sessionId))
+        }
       },
       onReconnected: reason => {
         if (reason === 'server-switch') return
@@ -242,26 +264,29 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           queuedReconnectRefreshRef.current = true
           return
         }
-        setSessions([])
-        fetchSessionsRef.current()
+        // 网络重连/回前台：保留屏上旧列表，静默拉最新覆盖（stale-while-revalidate）
+        void fetchSessionsRef.current({ skipCache: true, silent: true })
       },
     })
 
     return unsubscribe
-  }, [matchesCurrentDirectory, getSortPreference])
-
-  useEffect(() => {
-    return serverStore.onServerChange(() => {
-      currentLimitRef.current = 30
-      // 仍然清空：避免短暂显示另一台服务器的会话。
-      // 列表缓存在 API 层命中时是同 tick 返回，网络往返已被省掉。
-      setSessions([])
-      void fetchSessionsRef.current()
-    })
-  }, [])
+  }, [matchesCurrentDirectory])
 
   // Actions
   const refresh = useCallback(() => fetchSessions({ skipCache: true }), [fetchSessions])
+
+  // 读取侧：按 loadedLimit 切片 + 排序。
+  // 索引里存的是「多取一条」的原始页数据，切片后才是调用方要的条数。
+  const sessions = useMemo(() => {
+    if (searching) return searchSessions
+    const limit = loadedLimit || DEFAULT_LIMIT
+    // 排序由 index store 负责；这里只按已加载条数切片
+    return indexSessions.slice(0, limit)
+  }, [searching, searchSessions, indexSessions, loadedLimit])
+
+  const hasMore = searching
+    ? searchSessions.length >= currentLimitRef.current
+    : sessionListIndexStore.getHasMore(bucket)
 
   const loadMore = useCallback(async () => {
     // 使用 ref 检查，防止并发请求
@@ -277,31 +302,33 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       isLoadingMoreRef.current = false
       setIsLoadingMore(false)
     }
-  }, [hasMore, sessions, fetchSessions])
+  }, [hasMore, sessions.length, fetchSessions])
 
   const createSession = useCallback(
     async (title?: string) => {
       // 使用正斜杠格式传给后端
-      const targetDir = normalizeToForwardSlash(currentDirectory) || undefined
-
       const newSession = await apiCreateSession({
         title,
         directory: targetDir,
       })
       return newSession
     },
-    [currentDirectory],
+    [targetDir],
   )
 
   const deleteSession = useCallback(
     async (id: string) => {
-      const targetDir = normalizeToForwardSlash(currentDirectory) || undefined
       await apiDeleteSession(id, targetDir)
       pinnedSessionsStore.unpin(id)
       clearSessionRuntimeState(id)
-      setSessions(prev => prev.filter(s => s.id !== id))
+      if (searchRef.current) {
+        setSearchSessions(prev => prev.filter(s => s.id !== id))
+      } else {
+        sessionListIndexStore.remove(bucket, id)
+      }
     },
-    [currentDirectory],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [targetDir, bucketIdKey],
   )
 
   // 稳定化 Provider value，避免每次渲染创建新对象导致子组件不必要重渲染

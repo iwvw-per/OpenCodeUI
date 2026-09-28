@@ -5,9 +5,13 @@
 // archived 查询参数把归档会话单独取回（服务端语义：archived=true 表示
 // "也包含归档"，客户端再收窄到 time.archived 为真），并按归档时间倒序，
 // 供「已归档对话」面板展示与恢复。
+//
+// 列表数据存在 sessionListIndexStore 的 archived 视图桶里：
+//   - 重开面板首帧即有内容，不转圈
+//   - 归档/恢复/删除由 useGlobalEvents 的 SSE 增量维护
 // ============================================
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, useSyncExternalStore } from 'react'
 import {
   getArchivedSessions,
   restoreSession,
@@ -16,6 +20,10 @@ import {
   subscribeToServerEvents,
   type ApiSession,
 } from '../api'
+import {
+  sessionListIndexStore,
+  type SessionListBucketKey,
+} from '../store/sessionListIndexStore'
 import { pinnedSessionsStore } from '../store/pinnedSessionsStore'
 import { serverStore } from '../store/serverStore'
 import { resolveSessionTarget, splitSessionKey } from '../utils/sessionKey'
@@ -42,45 +50,72 @@ interface UseArchivedSessionsResult {
   removeMany: (sessionIds: string[]) => Promise<string[]>
 }
 
+const EMPTY_SESSIONS: ApiSession[] = []
+
+function sortArchived(sessions: ApiSession[]): ApiSession[] {
+  return [...sessions].sort((a, b) => (b.time?.archived ?? 0) - (a.time?.archived ?? 0))
+}
+
 export function useArchivedSessions(options: UseArchivedSessionsOptions = {}): UseArchivedSessionsResult {
   const { enabled = true, serverId, limit = 200 } = options
 
-  const [sessions, setSessions] = useState<ApiSession[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const requestIdRef = useRef(0)
   const isFetchingRef = useRef(false)
 
-  const fetchArchived = useCallback(async () => {
-    if (!enabled) return
-    const requestId = ++requestIdRef.current
-    isFetchingRef.current = true
-    setIsLoading(true)
-    setError(null)
-    try {
-      const data = await getArchivedSessions({ roots: false, limit }, serverId)
-      if (requestId !== requestIdRef.current) return
-      setSessions(data)
-    } catch (e) {
-      if (requestId !== requestIdRef.current) return
-      setError(e instanceof Error ? e : new Error('Failed to fetch archived sessions'))
-      setSessions([])
-    } finally {
-      if (requestId === requestIdRef.current) {
-        isFetchingRef.current = false
-        setIsLoading(false)
+  const resolvedServerId = serverId ?? serverStore.getActiveServerId()
+  // 归档面板是全局列表（不带目录）
+  const bucket: SessionListBucketKey = { serverId: resolvedServerId, directory: undefined, view: 'archived' }
+  const bucketIdKey = `${resolvedServerId}\u0000archived`
+
+  const indexSessions = useSyncExternalStore(
+    cb => sessionListIndexStore.subscribe(cb),
+    () => (enabled ? sessionListIndexStore.getSnapshot(bucket) : EMPTY_SESSIONS),
+    () => (enabled ? sessionListIndexStore.getSnapshot(bucket) : EMPTY_SESSIONS),
+  )
+
+  const fetchArchived = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      if (!enabled) return
+      const requestId = ++requestIdRef.current
+      isFetchingRef.current = true
+      // silent：回前台/重连时的后台刷新，不转圈、不清空已有列表
+      if (!options.silent) {
+        setIsLoading(true)
+        setError(null)
       }
-    }
-  }, [enabled, serverId, limit])
+      try {
+        const data = await getArchivedSessions({ roots: false, limit }, serverId)
+        if (requestId !== requestIdRef.current) return
+        sessionListIndexStore.replace(bucket, data, { limit: data.length, hasMore: data.length >= limit })
+      } catch (e) {
+        if (requestId !== requestIdRef.current) return
+        setError(e instanceof Error ? e : new Error('Failed to fetch archived sessions'))
+        if (!options.silent) sessionListIndexStore.replace(bucket, [], { limit: 0, hasMore: false })
+      } finally {
+        if (requestId === requestIdRef.current) {
+          isFetchingRef.current = false
+          setIsLoading(false)
+        }
+      }
+    },
+    // bucket 每帧新建，用稳定 id 代替
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [enabled, serverId, limit, bucketIdKey],
+  )
 
   useEffect(() => {
-    if (!enabled) {
-      setSessions([])
-      setIsLoading(false)
+    if (!enabled) return
+    // 索引有内容：先上屏，陈旧才后台刷新
+    if (sessionListIndexStore.has(bucket)) {
+      const age = Date.now() - sessionListIndexStore.getFetchedAt(bucket)
+      if (age > ARCHIVED_TTL_MS) void fetchArchived({ silent: true })
       return
     }
     void fetchArchived()
-  }, [enabled, fetchArchived])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, fetchArchived, bucketIdKey])
 
   useEffect(() => {
     if (!enabled) return
@@ -90,34 +125,13 @@ export function useArchivedSessions(options: UseArchivedSessionsOptions = {}): U
       : subscribeToEvents
 
     return subscribe({
-      onSessionUpdated: session => {
-        const isArchived = Boolean(session.time?.archived)
-        setSessions(prev => {
-          const exists = prev.some(item => item.id === session.id)
-          if (isArchived) {
-            if (!exists) return [session, ...prev]
-            return prev.map(item => (item.id === session.id ? session : item))
-          }
-          return exists ? prev.filter(item => item.id !== session.id) : prev
-        })
-      },
-      onSessionDeleted: sessionId => {
-        setSessions(prev => prev.filter(item => item.id !== sessionId))
-      },
+      // 归档态变化与删除由 useGlobalEvents 写入索引，这里只负责重连后的静默补拉
       onReconnected: reason => {
         if (reason === 'server-switch') return
         if (isFetchingRef.current) return
-        setSessions([])
-        void fetchArchived()
+        // 静默刷新：保留已有归档列表，不转圈、不清空
+        void fetchArchived({ silent: true })
       },
-    })
-  }, [enabled, serverId, fetchArchived])
-
-  useEffect(() => {
-    if (!enabled || serverId) return
-    return serverStore.onServerChange(() => {
-      setSessions([])
-      void fetchArchived()
     })
   }, [enabled, serverId, fetchArchived])
 
@@ -127,21 +141,23 @@ export function useArchivedSessions(options: UseArchivedSessionsOptions = {}): U
 
   const restore = useCallback(
     async (sessionId: string) => {
-      const session = sessions.find(item => item.id === sessionId)
+      const session = indexSessions.find(item => item.id === sessionId)
       await restoreSession(sessionId, session?.directory, serverId)
-      setSessions(prev => prev.filter(item => item.id !== sessionId))
+      sessionListIndexStore.remove(bucket, sessionId)
     },
-    [sessions, serverId],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [indexSessions, serverId, bucketIdKey],
   )
 
   const remove = useCallback(
     async (sessionId: string) => {
-      const session = sessions.find(item => item.id === sessionId)
+      const session = indexSessions.find(item => item.id === sessionId)
       await deleteSession(sessionId, session?.directory, serverId)
       pinnedSessionsStore.unpin(sessionId)
-      setSessions(prev => prev.filter(item => item.id !== sessionId))
+      sessionListIndexStore.remove(bucket, sessionId)
     },
-    [sessions, serverId],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [indexSessions, serverId, bucketIdKey],
   )
 
   const removeMany = useCallback(
@@ -151,7 +167,7 @@ export function useArchivedSessions(options: UseArchivedSessionsOptions = {}): U
       // 请求都带上正确的 directory，否则服务端可能定位不到会话。
       const groups = new Map<string, { serverId: string; directory?: string; ids: string[] }>()
       for (const sessionKey of sessionIds) {
-        const session = sessions.find(item => item.id === sessionKey)
+        const session = indexSessions.find(item => item.id === sessionKey)
         const target = resolveSessionTarget(sessionKey, serverId)
         if (!target.sessionId) continue
         const groupKey = `${target.serverId}\u0000${session?.directory ?? ''}`
@@ -176,16 +192,22 @@ export function useArchivedSessions(options: UseArchivedSessionsOptions = {}): U
       )
 
       const failedRawIds = new Set(failed)
-      setSessions(prev => prev.filter(item => failedRawIds.has(splitSessionKey(item.id).sessionId)))
       for (const sessionKey of sessionIds) {
         const { sessionId: rawId } = splitSessionKey(sessionKey)
         if (failedRawIds.has(rawId)) continue
+        sessionListIndexStore.remove(bucket, sessionKey)
         pinnedSessionsStore.unpin(sessionKey)
       }
       return failed
     },
-    [sessions, serverId],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [indexSessions, serverId, bucketIdKey],
   )
+
+  const sessions = useMemo(() => sortArchived(indexSessions), [indexSessions])
 
   return { sessions, isLoading, error, refresh, restore, remove, removeMany }
 }
+
+/** 归档索引 TTL：超过此时长重开会触发一次后台静默刷新 */
+const ARCHIVED_TTL_MS = 30_000

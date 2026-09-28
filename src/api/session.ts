@@ -109,6 +109,9 @@ export async function getLastTurnDiff(sessionId: string, directory?: string, ser
  * 默认不返回归档会话（time.archived），避免归档后回显到侧栏/搜索/会话切换。
  * 传 includeArchived 时透传服务端 archived 参数（服务端语义为"也包含归档"），
  * 并在归档视图下按 time.archived 收窄，供「已归档」列表使用。
+ *
+ * 纯拉取：不碰 sessionListIndexStore。索引的读写由 hook（useSessions 等）
+ * 负责，SSE 增量由 useGlobalEvents 负责——职责单一，避免多处双写。
  */
 export async function getSessions(
   params: SessionListParams & { includeArchived?: boolean; archivedOnly?: boolean; skipCache?: boolean } = {},
