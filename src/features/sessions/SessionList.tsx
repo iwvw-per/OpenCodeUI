@@ -380,7 +380,8 @@ export interface SessionListItemProps {
   isSelected: boolean
   onSelect: () => void
   onDelete: () => void
-  onRename: (newTitle: string) => void
+  /** 重命名保存。返回 Promise 时行内显示保存中态，失败则留在编辑态 */
+  onRename: (newTitle: string) => void | Promise<void>
   /** 归档按钮（项目模式会话行尾部）；缺省不显示。可返回 Promise 以便按钮显示归档中动画 */
   onArchive?: () => void | Promise<void>
   preferTouchUi: boolean
@@ -419,6 +420,7 @@ export function SessionListItem({
 }: SessionListItemProps) {
   const { t } = useTranslation(['commands', 'common', 'chat'])
   const [isEditing, setIsEditing] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
   const [editTitle, setEditTitle] = useState(session.title || '')
   const [showActions, setShowActions] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -485,12 +487,25 @@ export function SessionListItem({
     }
   }
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     const trimmed = editTitle.trim()
-    if (trimmed && trimmed !== session.title) {
-      onRename(trimmed)
+    if (!trimmed) {
+      setIsEditing(false)
+      return
     }
-    setIsEditing(false)
+    if (trimmed === session.title) {
+      setIsEditing(false)
+      return
+    }
+    setIsSaving(true)
+    try {
+      await onRename(trimmed)
+      setIsEditing(false)
+    } catch {
+      // 保存失败：留在编辑态，用户可重试（错误提示由调用方 toast）
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   // 归档：调用方负责 updateSession({ time: { archived } })，返回 Promise 以便失败时复位动画态
@@ -513,8 +528,10 @@ export function SessionListItem({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      handleSaveEdit()
+      if (isSaving) return
+      void handleSaveEdit()
     } else if (e.key === 'Escape') {
+      if (isSaving) return
       handleCancelEdit()
     }
   }
@@ -633,10 +650,14 @@ export function SessionListItem({
           type="text"
           value={editTitle}
           onChange={e => setEditTitle(e.target.value)}
-          onBlur={handleSaveEdit}
+          onBlur={() => {
+            if (!isSaving) void handleSaveEdit()
+          }}
           onKeyDown={handleKeyDown}
           onClick={e => e.stopPropagation()}
-          className={`w-full bg-bg-000 border border-accent-main-100/50 rounded px-2 text-text-100 focus:outline-none focus:ring-1 focus:ring-accent-main-100/30 ${
+          disabled={isSaving}
+          aria-busy={isSaving}
+          className={`w-full bg-bg-000 border border-accent-main-100/50 rounded px-2 text-text-100 focus:outline-none focus:ring-1 focus:ring-accent-main-100/30 disabled:opacity-60 ${
             isMinimal
               ? 'py-0.5 text-[length:var(--fs-sm)] leading-normal'
               : 'py-1.5 text-[length:var(--fs-base)] leading-relaxed'

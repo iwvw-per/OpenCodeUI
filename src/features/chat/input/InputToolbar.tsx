@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDownIcon, SendIcon, StopIcon, PaperclipIcon, AgentIcon, ThinkingIcon } from '../../../components/Icons'
 import { DropdownMenu, MenuItem, IconButton, AnimatedPresence } from '../../../components/ui'
+import { Spinner } from '../../../components/ui/Spinner'
 import { ModelSelector, type ModelSelectorHandle } from '../ModelSelector'
 import { useChatViewport } from '../chatViewport'
 import { isTauri, isTauriMobile, extToMime } from '../../../utils/tauri'
@@ -541,7 +542,7 @@ export function InputToolbar({
             disabled={!canSend || isSending}
             onClick={onSend}
           >
-            <SendIcon />
+            {isSending ? <Spinner size="xs" tone="current" variant="ring" /> : <SendIcon />}
           </IconButton>
         )}
       </div>

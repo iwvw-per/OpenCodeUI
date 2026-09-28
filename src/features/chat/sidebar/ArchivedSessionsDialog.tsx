@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog, Button, Checkbox, ConfirmDialog } from '../../../components/ui'
 import { ArchiveIcon, FolderIcon, TrashIcon, UndoIcon } from '../../../components/Icons'
+import { Spinner } from '../../../components/ui/Spinner'
 import { useArchivedSessions } from '../../../hooks'
 import { splitSessionKey } from '../../../utils/sessionKey'
 import { getDirectoryName } from '../../../utils/directoryUtils'
@@ -124,7 +125,12 @@ function ArchivedSessionsBody({ serverId }: { serverId?: string }) {
   }
 
   if (isLoading && sorted.length === 0) {
-    return <div className="py-10 text-center text-[length:var(--fs-sm)] text-text-400">{t('common:loading')}</div>
+    return (
+      <div className="flex items-center justify-center gap-2 py-10 text-[length:var(--fs-sm)] text-text-400">
+        <Spinner size="sm" tone="muted" variant="ring" />
+        {t('common:loading')}
+      </div>
+    )
   }
 
   if (error && sorted.length === 0) {
@@ -261,7 +267,7 @@ function ArchivedSessionsBody({ serverId }: { serverId?: string }) {
                       isBusy && 'opacity-50',
                     )}
                   >
-                    <UndoIcon size={13} />
+                    {isBusy ? <Spinner size="xs" tone="current" variant="ring" /> : <UndoIcon size={13} />}
                     <span>{t('chat:archived.restore', { defaultValue: 'Restore' })}</span>
                   </button>
                   <button
