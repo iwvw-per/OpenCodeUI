@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.6.106] - 2026-09-28
+
+- fix(update): bundle.targets 补 app，macOS 才会产出 .app.tar.gz 更新包，latest.json 才有 darwin 条目
+- fix(ci): publish-android 补回 checkout (57a3d5af)
+
 ## [v0.6.105] - 2026-09-28
 
 - fix(update): 固定 @tauri-apps/plugin-updater 与 plugin-process 版本，与 Rust crate 对齐（CLI 拒绝 major/minor 不一致）
