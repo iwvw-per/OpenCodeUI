@@ -11,13 +11,16 @@ import { DirectoryProvider } from './DirectoryContext'
  * 这些状态必须在 vi.hoisted 中初始化：vi.mock 的工厂会被提升到文件顶部，
  * 工厂执行时普通 const 还没初始化（Cannot access before initialization）。
  */
-const { buckets, serverChangeListeners, serverState, setJSONForMock, setJSONMock } = vi.hoisted(() => ({
-  buckets: new Map<string, string>(),
-  serverChangeListeners: [] as Array<(id: string, reason: string) => void>,
-  serverState: { activeServerId: 'aiagent:inst_work' },
-  setJSONForMock: vi.fn(),
-  setJSONMock: vi.fn(),
-}))
+const { buckets, serverChangeListeners, serverState, setJSONForMock, setJSONMock, setDirectoryMock, routeState } =
+  vi.hoisted(() => ({
+    buckets: new Map<string, string>(),
+    serverChangeListeners: [] as Array<(id: string, reason: string) => void>,
+    serverState: { activeServerId: 'aiagent:inst_work' },
+    setJSONForMock: vi.fn(),
+    setJSONMock: vi.fn(),
+    setDirectoryMock: vi.fn(),
+    routeState: { directory: undefined as string | undefined, sessionId: null as string | null },
+  }))
 
 
 function makeKey(key: string, serverId?: string) {
@@ -84,8 +87,9 @@ vi.mock('../store/multiServerStore', () => ({
 
 vi.mock('../hooks/useRouter', () => ({
   useRouter: () => ({
-    directory: undefined,
-    setDirectory: vi.fn(),
+    directory: routeState.directory,
+    sessionId: routeState.sessionId,
+    setDirectory: setDirectoryMock,
     navigateToSession: vi.fn(),
     replaceSession: vi.fn(),
   }),
@@ -111,6 +115,9 @@ describe('DirectoryContext across a server switch', () => {
     serverState.activeServerId = 'aiagent:inst_work'
     setJSONForMock.mockReset()
     setJSONMock.mockReset()
+    setDirectoryMock.mockReset()
+    routeState.directory = undefined
+    routeState.sessionId = null
   })
 
   it('keeps a project added on server A after switching to B and back to A', async () => {
@@ -165,5 +172,40 @@ describe('DirectoryContext across a server switch', () => {
     // B 桶没有被写入 A 的内容
     const laptopBucket = buckets.get('srv:aiagent:inst_laptop:opencode-saved-directories')
     expect(JSON.parse(laptopBucket || '[]')).toEqual([])
+  })
+
+  it('clears the directory param on switch while on home', async () => {
+    render(
+      <DirectoryProvider>
+        <Probe />
+      </DirectoryProvider>,
+    )
+
+    serverState.activeServerId = 'aiagent:inst_laptop'
+    await act(async () => {
+      serverChangeListeners.forEach(fn => fn('aiagent:inst_laptop', 'server-switch'))
+    })
+
+    expect(setDirectoryMock).toHaveBeenCalledWith(undefined)
+  })
+
+  it('keeps the session route when switching servers with a session open', async () => {
+    // 会话打开时切服：不能清目录参数。setDirectory 会把 sessionId 写成 null，
+    // 当前会话会被路由同步 effect 卸载、退回首页。
+    routeState.sessionId = 'aiagent:inst_work::session-1'
+    routeState.directory = 'D:/Code/OnWork'
+
+    render(
+      <DirectoryProvider>
+        <Probe />
+      </DirectoryProvider>,
+    )
+
+    serverState.activeServerId = 'aiagent:inst_laptop'
+    await act(async () => {
+      serverChangeListeners.forEach(fn => fn('aiagent:inst_laptop', 'server-switch'))
+    })
+
+    expect(setDirectoryMock).not.toHaveBeenCalled()
   })
 })
