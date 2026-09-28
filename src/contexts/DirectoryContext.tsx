@@ -58,7 +58,14 @@ function readRecentProjects(): RecentProjects {
 
 export function DirectoryProvider({ children }: { children: ReactNode }) {
   // 从 URL 获取 directory（替代 localStorage）
-  const { directory: urlDirectory, setDirectory: setUrlDirectory } = useRouter()
+  const { directory: urlDirectory, setDirectory: setUrlDirectory, sessionId: routeSessionId } = useRouter()
+
+  // 会话路由存在时不能清 dir 参数：setDirectory 会把 sessionId 一并写成 null，
+  // 当前会话会被路由同步 effect 卸载、退回首页（表现为「切服务器就把正在进行的会话关了」）。
+  const routeSessionIdRef = useRef(routeSessionId)
+  useEffect(() => {
+    routeSessionIdRef.current = routeSessionId
+  }, [routeSessionId])
 
   // 从 layoutStore 获取 sidebarExpanded
   const { sidebarExpanded } = useLayoutStore()
@@ -94,7 +101,10 @@ export function DirectoryProvider({ children }: { children: ReactNode }) {
         // 连同 serverId 一起换：写回时才知道这份列表属于哪台服务器。
         setSavedState({ serverId: serverStore.getActiveServerId(), directories: readSavedDirectories() })
         setRecentState({ serverId: serverStore.getActiveServerId(), projects: readRecentProjects() })
-        setUrlDirectory(undefined)
+        // 仅在 home 态清掉目录参数（新服务器不一定有旧目录）。
+        // 会话打开时不动路由：setDirectory 会把 sessionId 写成 null，
+        // 当前会话随即被卸载并退回首页。
+        if (!routeSessionIdRef.current) setUrlDirectory(undefined)
       }
       setPathInfo(null)
       getPath(multiServerStore.getFocusedServerId())
