@@ -15,7 +15,7 @@ import {
   type SessionListBucketKey,
 } from '../store/sessionListIndexStore'
 import { useDirectory } from './useDirectory'
-import { sessionErrorHandler, normalizeToForwardSlash, autoDetectPathStyle, sortSessions } from '../utils'
+import { sessionErrorHandler, normalizeToForwardSlash, autoDetectPathStyle, sortSessions, isSameDirectory } from '../utils'
 import { layoutStore } from '../store/layoutStore'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { SessionContext, type SessionContextValue } from './SessionContext.shared'

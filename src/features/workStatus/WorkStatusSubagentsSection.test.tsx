@@ -18,6 +18,16 @@ function register(id: string, status?: 'running' | 'idle' | 'error') {
   childSessionStore.registerChildSession(makeChild(id, 'parent-1') as never, 'server-a', status)
 }
 
+function renderSection() {
+  return render(
+    <WorkStatusSubagentsSection
+      sessionId={PARENT}
+      contextLimit={200_000}
+      onScrollToMessage={() => {}}
+    />,
+  )
+}
+
 describe('WorkStatusSubagentsSection', () => {
   beforeEach(() => {
     childSessionStore.clearAll()
@@ -27,7 +37,7 @@ describe('WorkStatusSubagentsSection', () => {
   })
 
   it('renders nothing without child sessions', () => {
-    const { container } = render(<WorkStatusSubagentsSection sessionId={PARENT} />)
+    const { container } = renderSection()
     expect(container).toBeEmptyDOMElement()
   })
 
@@ -36,7 +46,7 @@ describe('WorkStatusSubagentsSection', () => {
     register('c2', 'idle')
     register('c3', 'idle')
 
-    render(<WorkStatusSubagentsSection sessionId={PARENT} />)
+    renderSection()
 
     // 运行中的子代理直接平铺可见
     expect(screen.getByText('c1')).toBeInTheDocument()
@@ -50,7 +60,7 @@ describe('WorkStatusSubagentsSection', () => {
     register('c1', 'running')
     register('c2', 'idle')
 
-    render(<WorkStatusSubagentsSection sessionId={PARENT} />)
+    renderSection()
 
     const groupToggle = screen.getByText('workStatus.subagent.completedGroup').closest('button')!
     expect(groupToggle).toHaveAttribute('aria-expanded', 'false')
@@ -63,7 +73,7 @@ describe('WorkStatusSubagentsSection', () => {
   it('keeps failed subagents visible instead of folding them away', () => {
     register('c1', 'error')
 
-    render(<WorkStatusSubagentsSection sessionId={PARENT} />)
+    renderSection()
 
     expect(screen.getByText('c1')).toBeInTheDocument()
     expect(screen.queryByText('workStatus.subagent.completedGroup')).not.toBeInTheDocument()
@@ -72,7 +82,7 @@ describe('WorkStatusSubagentsSection', () => {
   it('moves a subagent into the completed group when it goes idle', () => {
     register('c1', 'running')
 
-    render(<WorkStatusSubagentsSection sessionId={PARENT} />)
+    renderSection()
     expect(screen.getByText('c1')).toBeInTheDocument()
     expect(screen.queryByText('workStatus.subagent.completedGroup')).not.toBeInTheDocument()
 

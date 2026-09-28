@@ -31,7 +31,6 @@ const {
   serverState: { activeServerId: 'local', listeners: new Set<() => void>() },
 }))
 let latestEventCallbacks: Partial<EventCallbacks> = {}
-let latestServerChange: (() => void) | undefined
 
 vi.mock('../api', () => ({
   getSessions: (...args: unknown[]) => getSessionsMock(...args),
@@ -80,13 +79,8 @@ describe('useSessions', () => {
     createSessionMock.mockResolvedValue(makeSession('new'))
     deleteSessionMock.mockResolvedValue(true)
     latestEventCallbacks = {}
-    latestServerChange = undefined
     subscribeToEventsMock.mockImplementation((callbacks: EventCallbacks) => {
       latestEventCallbacks = callbacks
-      return vi.fn()
-    })
-    onServerChangeMock.mockImplementation((listener: () => void) => {
-      latestServerChange = listener
       return vi.fn()
     })
   })
