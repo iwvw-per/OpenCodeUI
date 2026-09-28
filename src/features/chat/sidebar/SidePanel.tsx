@@ -26,6 +26,7 @@ import {
   GlobeIcon,
 } from '../../../components/Icons'
 import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog } from '../../../hooks'
+import { Spinner } from '../../../components/ui/Spinner'
 import { useProjectLastUsedAt } from '../../../hooks/useProjectLastUsedAt'
 import { useSessionContext } from '../../../contexts/useSessionContext'
 import { useLayoutStore, childSessionStore } from '../../../store'
@@ -314,7 +315,7 @@ export function SidePanel({
     return subscribeToConnectionState(setConnectionState)
   }, [])
 
-  const { sessions, search, setSearch, refresh } = useSessionContext()
+  const { sessions, search, setSearch, refresh, isLoading } = useSessionContext()
 
   const pinnedEntries = useSyncExternalStore(
     pinnedSessionsStore.subscribe,
@@ -804,6 +805,8 @@ export function SidePanel({
         }
       } catch (e) {
         uiErrorHandler('rename session', e)
+        // 重新抛出让行内编辑态保持打开，用户可以原地重试
+        throw e
       }
     },
     [currentDirectory, refresh],
@@ -1054,15 +1057,24 @@ export function SidePanel({
               spellCheck={false}
               className="h-8 w-full appearance-none rounded-lg border-0 bg-transparent pl-[34px] pr-[26px] text-[length:var(--fs-base)] text-text-100 shadow-none outline-none ring-0 placeholder:text-text-300 transition-shadow focus-visible:ring-1 focus-visible:ring-accent-main-100/30"
             />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="absolute right-[6px] top-1/2 flex size-[14px] -translate-y-1/2 items-center justify-center text-text-400 hover:text-text-100"
-                aria-label={t('sidebar.clearSearch')}
+            {search && isLoading ? (
+              <span
+                className="absolute right-[6px] top-1/2 flex size-[14px] -translate-y-1/2 items-center justify-center"
+                aria-label={t('sidebar.searchingChats', { defaultValue: 'Searching' })}
               >
-                <CloseIcon size={14} />
-              </button>
+                <Spinner size="xs" tone="accent" variant="pixel" />
+              </span>
+            ) : (
+              search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-[6px] top-1/2 flex size-[14px] -translate-y-1/2 items-center justify-center text-text-400 hover:text-text-100"
+                  aria-label={t('sidebar.clearSearch')}
+                >
+                  <CloseIcon size={14} />
+                </button>
+              )
             )}
           </div>
         ) : (
@@ -1204,14 +1216,17 @@ export function SidePanel({
 
           {/* 主机 tab：切换后端 */}
           {sidebarTab === 'hosts' ? (
-            <div ref={recentsSelectionRootRef} className="flex-1 overflow-hidden">
+            <div ref={recentsSelectionRootRef} className="flex-1 overflow-hidden animate-in fade-in duration-150">
               <HostList onActivate={() => setSidebarTab('projects')} onOpenSettings={onOpenSettings} />
             </div>
           ) : (
             /* 项目 tab：已保存项目文件夹树（统一按目录查询）。
                列表为空时由 FolderRecentList 渲染空状态；工作区解析的等待用文件夹内
                的局部 spinner 过渡，不做整列表转圈，避免打开会话导致侧栏整体重载。 */
-            <div ref={recentsSelectionRootRef} className={`flex-1 overflow-hidden ${isEditMode ? 'select-none' : ''}`}>
+            <div
+              ref={recentsSelectionRootRef}
+              className={`flex-1 overflow-hidden animate-in fade-in duration-150 ${isEditMode ? 'select-none' : ''}`}
+            >
               <FolderRecentList
                 projects={sortedFolderProjects}
                 {...commonFolderRecentListProps}

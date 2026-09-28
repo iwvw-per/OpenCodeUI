@@ -212,7 +212,12 @@ export const WorkStatusSubagentsSection = memo(function WorkStatusSubagentsSecti
       label={child.title}
       value={
         child.status === 'running' ? (
-          <WorkStatusValue tone="info">{t('workStatus.subagent.working')}</WorkStatusValue>
+          <WorkStatusValue tone="info">
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner size="xs" tone="current" variant="ring" />
+              {t('workStatus.subagent.working')}
+            </span>
+          </WorkStatusValue>
         ) : child.status === 'error' ? (
           <WorkStatusValue tone="error">{t('workStatus.subagent.failed')}</WorkStatusValue>
         ) : (
