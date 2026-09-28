@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "桌面端自更新权限。tauri-plugin-updater 仅支持 Windows/macOS/Linux，移动端不注册该插件，因此这里按平台限定，避免 Android 构建校验缺失的权限。",
+  "windows": ["main", "win-*"],
+  "platforms": ["macOS", "windows", "linux"],
+  "permissions": ["updater:default", "process:default"]
+}
