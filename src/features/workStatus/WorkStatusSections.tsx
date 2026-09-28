@@ -26,7 +26,7 @@ import { Switch } from '../../components/ui/Switch'
 import { getDirectoryName } from '../../utils/directoryUtils'
 import { formatCost, formatDuration } from '../../utils/formatUtils'
 import { useTodos } from '../../store/todoStore'
-import { useChildSessions } from '../../store/childSessionStore'
+import { useChildSessions, type ChildSessionInfo } from '../../store/childSessionStore'
 import { pinnedMessagesStore, usePinnedMessages } from '../../store/pinnedMessagesStore'
 import { useSessionStatsFor } from '../../hooks/useSessionStatsFor'
 import { useSessionTurnStats } from '../../hooks/useSessionTurnStats'
@@ -189,33 +189,58 @@ export const WorkStatusSubagentsSection = memo(function WorkStatusSubagentsSecti
 }: WorkStatusSectionContext) {
   const { t } = useTranslation('chat')
   const children = useChildSessions(sessionId)
+
+  // 已完成（idle）折叠成一组：跑完的子代理会不断堆积，平铺会把进行中的挤下去。
+  // error 留在进行中组：失败是需要被看见的，不藏进收起的组里。
+  const { active, completed } = useMemo(() => {
+    const active: ChildSessionInfo[] = []
+    const completed: ChildSessionInfo[] = []
+    for (const child of children) {
+      if (child.status === 'idle') completed.push(child)
+      else active.push(child)
+    }
+    return { active, completed }
+  }, [children])
+
   if (children.length === 0) return null
 
-  const busyCount = children.filter(child => child.status === 'running').length
+  const runningCount = active.filter(child => child.status === 'running').length
+
+  const renderRow = (child: ChildSessionInfo) => (
+    <WorkStatusRow
+      key={child.id}
+      label={child.title}
+      value={
+        child.status === 'running' ? (
+          <WorkStatusValue tone="info">{t('workStatus.subagent.working')}</WorkStatusValue>
+        ) : child.status === 'error' ? (
+          <WorkStatusValue tone="error">{t('workStatus.subagent.failed')}</WorkStatusValue>
+        ) : (
+          <WorkStatusValue tone="muted">{t('workStatus.subagent.done')}</WorkStatusValue>
+        )
+      }
+    />
+  )
 
   return (
     <WorkStatusCollapsibleSection
       title={t('workStatus.section.subagents')}
       icon={<UsersIcon size={14} />}
       id="subagents"
-      summary={busyCount > 0 ? `${busyCount}/${children.length}` : String(children.length)}
+      summary={runningCount > 0 ? `${runningCount}/${children.length}` : String(children.length)}
     >
       <WorkStatusRows className="max-h-56 overflow-y-auto">
-        {children.map(child => (
-          <WorkStatusRow
-            key={child.id}
-            label={child.title}
-            value={
-              child.status === 'running' ? (
-                <WorkStatusValue tone="info">{t('workStatus.subagent.working')}</WorkStatusValue>
-              ) : child.status === 'error' ? (
-                <WorkStatusValue tone="error">{t('workStatus.subagent.failed')}</WorkStatusValue>
-              ) : (
-                <WorkStatusValue tone="muted">{t('workStatus.subagent.done')}</WorkStatusValue>
-              )
-            }
-          />
-        ))}
+        {active.map(renderRow)}
+        {completed.length > 0 ? (
+          // 默认收起（workStatusStore 对未登记的 id 缺省为 false），展开态照常持久化
+          <WorkStatusCollapsibleSection
+            id="subagents-completed"
+            title={t('workStatus.subagent.completedGroup')}
+            summary={String(completed.length)}
+          >
+            <WorkStatusRows>{completed.map(renderRow)}</WorkStatusRows>
+          </WorkStatusCollapsibleSection>
+        ) : null}
       </WorkStatusRows>
     </WorkStatusCollapsibleSection>
   )
