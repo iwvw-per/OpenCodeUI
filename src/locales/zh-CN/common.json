@@ -1,5 +1,6 @@
 {
   "loading": "加载中...",
+  "reconnected": "已重新连接 {{serverName}}",
   "cancel": "取消",
   "close": "关闭",
   "closeAllTabs": "关闭全部标签",

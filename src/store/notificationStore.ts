@@ -299,6 +299,35 @@ class NotificationStore {
   // Toast 管理
   // ============================================
 
+  /**
+   * 纯 toast 轻提示：不进通知历史、不产生未读点、点击不跳转。
+   * 用于「已重连」「操作完成」这类系统级提示（push 会把系统提示写进会话通知，
+   * 残留孤儿未读点；这类提示不该出现在通知历史里）。
+   */
+  toast(type: NotificationType, title: string, body?: string) {
+    if (!this.toastEnabled) return
+    const entry: NotificationEntry = {
+      id: `sys_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      type,
+      title,
+      body: body ?? '',
+      sessionId: '',
+      directory: undefined,
+      timestamp: Date.now(),
+      read: true,
+    }
+
+    const toasts = [...this.state.toasts]
+    if (toasts.length >= MAX_TOASTS) {
+      const oldest = toasts.pop()
+      if (oldest) this.clearToastTimer(oldest.notification.id)
+    }
+    toasts.unshift({ notification: entry, exiting: false })
+    this.state = { ...this.state, toasts }
+    this.notify()
+    this.scheduleToastDismiss(entry.id)
+  }
+
   private scheduleToastDismiss(id: string) {
     this.clearToastTimer(id)
     const timer = setTimeout(() => this.dismissToast(id), TOAST_DURATION)

@@ -9,6 +9,7 @@
 // 4. 与具体 session 无关，处理所有 session 的事件
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import i18n from '../i18n'
 import { messageStore, childSessionStore, paneLayoutStore, serverStore } from '../store'
 import { activeSessionStore } from '../store/activeSessionStore'
 import { notificationStore } from '../store/notificationStore'
@@ -907,6 +908,13 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
         onReconnected: reason => {
           if (import.meta.env.DEV) {
             console.log(`[GlobalEvents] SSE reconnected (${serverId}, reason: ${reason}), notifying for data refresh`)
+          }
+          // 网络抖动恢复后给用户一个明确的「已重连」提示：断网期间无任何界面
+          // 反馈，恢复也只能靠藏在 Footer 菜单里的状态点，用户感知不到。
+          // server-switch 是用户主动切换，不需要提示。
+          if (reason !== 'server-switch') {
+            const serverName = serverStore.getServer(serverId)?.name || serverId
+            notificationStore.toast('completed', i18n.t('common:reconnected', { serverName }), undefined)
           }
           refreshServerHealth(serverId)
           // 重连后重新拉取全量状态 + pending requests

@@ -1,5 +1,6 @@
 {
   "loading": "Loading...",
+  "reconnected": "Reconnected to {{serverName}}",
   "cancel": "Cancel",
   "close": "Close",
   "closeAllTabs": "Close all tabs",
