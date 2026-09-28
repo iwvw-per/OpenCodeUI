@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.6.105] - 2026-09-28
+
+- fix(update): 固定 @tauri-apps/plugin-updater 与 plugin-process 版本，与 Rust crate 对齐（CLI 拒绝 major/minor 不一致）
+
 ## [v0.6.104] - 2026-09-28
 
 - feat(update): 更新检查指向本仓库 + 桌面端一键自更新（tauri-plugin-updater，签名校验 + 应用内下载安装重启）
