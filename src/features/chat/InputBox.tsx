@@ -29,6 +29,7 @@ import {
   compressImageFile,
 } from './input/inputUtils'
 import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
+import { inputDraftStore } from '../../store/inputDraftStore'
 import { themeStore } from '../../store/themeStore'
 import { notificationStore } from '../../store/notificationStore'
 import { useLayoutStore } from '../../store/layoutStore'
@@ -335,6 +336,32 @@ function InputBoxComponent({
     }
   }, [revertedText, revertedAttachments, isSubmitting])
 
+  // 会话切换：草稿按会话分桶，互不串台。
+  // - 切走：把当前输入保存到旧会话的桶
+  // - 切回：恢复该会话自己的草稿（新会话没有桶 → 空输入，不会被上一个会话带过去）
+  // 与 revert/undo 的 text 同步错开：revert 恢复的是「已发送消息」，草稿桶存的是「未发送预输入」。
+  const draftSessionIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const current = sessionId ?? null
+    const prev = draftSessionIdRef.current
+    draftSessionIdRef.current = current
+    if (prev === current) return
+
+    // 切走时保存旧会话草稿（总是覆盖桶：手动清空后切回也保持空）
+    if (prev !== null) {
+      inputDraftStore.save(prev, {
+        text: latestDraftRef.current.text,
+        attachments: latestDraftRef.current.attachments,
+      })
+    }
+    // 恢复新会话草稿（无桶则为空输入）
+    const draft = current !== null ? inputDraftStore.load(current) : undefined
+    latestDraftRef.current = draft ?? { text: '', attachments: [] }
+    setText(draft?.text ?? '')
+    setAttachments(draft?.attachments ?? [])
+    resetHistoryIndex()
+  }, [sessionId, resetHistoryIndex])
+
   useEffect(
     () => () => {
       if (compositionEndTimerRef.current !== null) {
@@ -549,6 +576,8 @@ function InputBoxComponent({
         }),
       () => {
         onClearRevert?.()
+        // 发送成功：清掉该会话的草稿桶，切回来不会显示已发送的旧预输入
+        if (sessionId) inputDraftStore.clear(sessionId)
       },
       () => {
         const currentDraft = latestDraftRef.current
@@ -569,6 +598,7 @@ function InputBoxComponent({
     runSubmit,
     selectedAgent,
     selectedVariant,
+    sessionId,
     submitCommandOptimistically,
     text,
   ])
