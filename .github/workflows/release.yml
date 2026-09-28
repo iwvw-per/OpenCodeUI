@@ -14,6 +14,8 @@ jobs:
   # Desktop builds (Windows, macOS, Linux)
   # ============================================
   build-desktop:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -68,13 +70,20 @@ jobs:
         shell: bash
         run: |
           TAG="${{ github.ref_name }}"
-          BODY=$(sed -n "/^## \[${TAG}\]/,/^## \[/{ /^## \[${TAG}\]/d; /^## \[/d; p; }" CHANGELOG.md)
-          BODY=$(echo "$BODY" | sed -e '/./,$!d' -e :a -e '/^\n*$/{$d;N;ba;}')
+          # 用 awk 而非 GNU sed：该步骤现在跑在各平台任务里，macOS 是 BSD sed，
+          # GNU 的 `:a;N;ba` 循环会直接报 unexpected EOF。
+          BODY=$(awk -v tag="## [${TAG}]" '
+            index($0, tag) == 1 { found = 1; next }
+            found && index($0, "## [") == 1 { exit }
+            found { print }
+          ' CHANGELOG.md | awk 'NF { started = 1 } started')
           if [ -z "$BODY" ]; then
             BODY="No changelog entry found for ${TAG}."
           fi
-          printf '%s\n' "$BODY" > /tmp/release-body.md
-          printf '\n---\n\n**Desktop:** Windows (.exe), macOS (.dmg), Linux (.deb, .AppImage)\n**Mobile:** Android (.apk) — arm64, armeabi-v7a\n' >> /tmp/release-body.md
+          {
+            printf '%s\n' "$BODY"
+            printf '\n---\n\n**Desktop:** Windows (.exe), macOS (.dmg), Linux (.deb, .AppImage)\n**Mobile:** Android (.apk) — arm64, armeabi-v7a\n'
+          } > /tmp/release-body.md
           {
             echo 'body<<RELEASE_BODY_EOF'
             cat /tmp/release-body.md
@@ -99,9 +108,8 @@ jobs:
           releaseBody: ${{ steps.changelog.outputs.body }}
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, 'canary') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
-          uploadUpdaterJson: true
+          includeUpdaterJson: true
           updaterJsonPreferNsis: true
-
   # ============================================
   # Android builds (arm64 + armv7 并行)
   # ============================================
