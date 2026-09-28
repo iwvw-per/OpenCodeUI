@@ -10,7 +10,7 @@
 // ============================================
 
 import { useCallback, useSyncExternalStore } from 'react'
-import { useServerStore } from '../../../hooks/useServerStore'
+import { useServerStore, type ServerHealth } from '../../../hooks/useServerStore'
 import { subscribeToServerConnectionState, getServerConnectionInfo, type ConnectionState } from '../../../api/events'
 import { cn } from '../../../utils/cn'
 import { interactive } from '../../../utils/interaction'
@@ -28,16 +28,22 @@ function useServerConnectionState(serverId: string): ConnectionState {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
-function statusDotClass(state: ConnectionState): string {
-  switch (state) {
-    case 'connected':
+// 状态点颜色以健康探测为准（真实可达性），SSE 仅补充 connecting 过渡态——
+// 进程死后 SSE 长连接可能还挂着，health 是 5s 超时的真实探测，能立刻判离线。
+function statusDotClass(health: ServerHealth | null, state: ConnectionState): string {
+  switch (health?.status) {
+    case 'online':
       return 'bg-success-100'
-    case 'connecting':
+    case 'checking':
+      return 'bg-warning-100 animate-pulse'
+    case 'unauthorized':
       return 'bg-warning-100'
+    case 'offline':
     case 'error':
-      return 'bg-error-100'
+      return 'bg-danger-100'
     default:
-      return 'bg-text-500/50'
+      // 从未探测过：fallback 到 SSE 连接态（connecting 用黄点提示正在握手）
+      return state === 'connecting' ? 'bg-warning-100 animate-pulse' : 'bg-text-500/50'
   }
 }
 
@@ -93,6 +99,8 @@ function HostQuickHostRow({
   onSelect: (id: string) => void
 }) {
   const state = useServerConnectionState(serverId)
+  const { getHealth } = useServerStore()
+  const health = getHealth(serverId)
   return (
     <button
       type="button"
@@ -106,7 +114,7 @@ function HostQuickHostRow({
         interactive.focusRingCompact,
       )}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass(state)}`} />
+      <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass(health, state)}`} />
       <span className="max-w-[12ch] truncate">{name}</span>
     </button>
   )
