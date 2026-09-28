@@ -76,7 +76,11 @@ vi.mock('../store/serverStore', () => ({
 }))
 
 vi.mock('../store/layoutStore', () => ({
-  layoutStore: { setSidebarExpanded: vi.fn() },
+  layoutStore: {
+    setSidebarExpanded: vi.fn(),
+    subscribe: () => () => {},
+    getState: () => ({ sidebarSessionSortField: 'updated', sidebarSessionSortDesc: true }),
+  },
   useLayoutStore: () => ({ sidebarExpanded: true }),
 }))
 
