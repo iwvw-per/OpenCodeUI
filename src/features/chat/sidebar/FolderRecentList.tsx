@@ -418,6 +418,7 @@ export function FolderRecentList({
   const { preferTouchUi } = useInputCapabilities()
   const { sidebarFolderRecentsShowDiff } = useLayoutStore()
   const [pendingDelete, setPendingDelete] = useState<PendingDeleteSession | null>(null)
+  const [isDeletingSession, setIsDeletingSession] = useState(false)
   const allBusySessions = useBusySessions()
   const allNotifications = useNotifications()
   // 项目行状态按服务器收窄：缺省用活动服务器（多服务器模式由 SidePanel 显式传入）
@@ -656,11 +657,19 @@ export function FolderRecentList({
 
       <ConfirmDialog
         isOpen={!!pendingDelete}
-        onClose={() => setPendingDelete(null)}
+        onClose={() => {
+          if (isDeletingSession) return
+          setPendingDelete(null)
+        }}
         onConfirm={async () => {
           if (pendingDelete) {
-            await onDeleteSession(pendingDelete.session)
-            pendingDelete.removeLocal()
+            setIsDeletingSession(true)
+            try {
+              await onDeleteSession(pendingDelete.session)
+              pendingDelete.removeLocal()
+            } finally {
+              setIsDeletingSession(false)
+            }
           }
           setPendingDelete(null)
         }}
@@ -668,6 +677,7 @@ export function FolderRecentList({
         description={t('sidebar.deleteChatConfirm')}
         confirmText={t('common:delete')}
         variant="danger"
+        isLoading={isDeletingSession}
       />
     </>
   )
@@ -955,7 +965,18 @@ function FolderRecentSection({
     }
   }, [isExpanded, inView])
 
-  const { sessions, isLoading, isLoadingMore, hasMore, loadMore, collapse, patchLocalSession, removeLocalSession } =
+  const {
+    sessions,
+    isLoading,
+    isLoadingMore,
+    error,
+    hasMore,
+    loadMore,
+    collapse,
+    refresh,
+    patchLocalSession,
+    removeLocalSession,
+  } =
   useSessions({
     directory: project.worktree,
     pageSize: DIRECTORY_PAGE_SIZE,
@@ -1257,6 +1278,20 @@ function FolderRecentSection({
                   <span className="reasoning-shimmer-text text-[length:var(--fs-xs)]">
                     {t('sidebar.loadingChats')}
                   </span>
+                </div>
+              ) : !hasWorkspaceTree && error && filteredSessions.length === 0 ? (
+                <div className="flex items-center gap-2 px-2 py-1" role="alert">
+                  <span className="size-5 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate text-[length:var(--fs-xs)] text-danger-100">
+                    {t('sidebar.loadingChatsFailed')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void refresh()}
+                    className="shrink-0 rounded px-1.5 py-0.5 text-[length:var(--fs-xs)] text-text-300 hover:bg-bg-200"
+                  >
+                    {t('common:retry', { defaultValue: 'Retry' })}
+                  </button>
                 </div>
               ) : hasWorkspaceTree ? (
                 <WorkspaceFolderList

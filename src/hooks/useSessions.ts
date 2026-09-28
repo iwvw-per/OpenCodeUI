@@ -76,6 +76,8 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
   const [search, setSearch] = useState(initialSearch)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [searchState, setSearchState] = useState<SearchState>({ sessions: EMPTY_SESSIONS, isLoading: false, error: null })
+  // 非搜索态（索引桶）的加载失败：重试耗尽后置位，供列表区展示错误态
+  const [listError, setListError] = useState<Error | null>(null)
 
   // 缺省跟随活动服务器时要响应切换：用订阅而非一次性读取
   const activeServerId = useSyncExternalStore(
@@ -165,56 +167,59 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
         else if (!hasIndexContent) setIsLoading(true)
       }
 
-      try {
-        // 多取一条用于判断是否还有更多：仅凭 data.length >= limit 无法区分
-        // 「刚好这么多」和「还有更多」——会话数正好等于 pageSize 时会多出一个
-        // 点了没反应的「展开更多会话」按钮（取回同样条数后 hasMore 立刻变 false）。
-        const requestedLimit = currentLimitRef.current
-        const data = await getSessions(
-          {
-            roots: rootsOnly,
-            limit: requestedLimit + 1,
-            directory: normalizedDirectory,
-            ...queryParams,
-          },
-          serverId,
-        )
+try {
+          // 多取一条用于判断是否还有更多：仅凭 data.length >= limit 无法区分
+          // 「刚好这么多」和「还有更多」——会话数正好等于 pageSize 时会多出一个
+          // 点了没反应的「展开更多会话」按钮（取回同样条数后 hasMore 立刻变 false）。
+          const requestedLimit = currentLimitRef.current
+          const data = await getSessions(
+            {
+              roots: rootsOnly,
+              limit: requestedLimit + 1,
+              directory: normalizedDirectory,
+              ...queryParams,
+            },
+            serverId,
+          )
 
-        // 检查是否是最新的请求
-        if (requestId !== requestIdRef.current) return
+          // 检查是否是最新的请求
+          if (requestId !== requestIdRef.current) return
 
-        if (data.length > 0 && data[0].directory) {
-          // 按服务器记录路径风格（多服务器连接不同操作系统时互不干扰）
-          autoDetectPathStyle(data[0].directory, serverId)
-        }
-
-        if (isSearch) {
-          setSearchState({ sessions: sortSessions(data.slice(0, requestedLimit), getSortPreference()), isLoading: false, error: null })
-        } else {
-          // 索引存全量页数据（含多取的那条），由读取侧按 loadedLimit 切片
-          sessionListIndexStore.replace(bucket, data, {
-            limit: requestedLimit,
-            hasMore: data.length > requestedLimit,
-          })
-        }
-      } catch (e) {
-        if (requestId !== requestIdRef.current) return
-        const error = e instanceof Error ? e : new Error('Failed to fetch sessions')
-        if (!append) {
-          if (retryAttempt < 3) {
-            if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
-            retryTimerRef.current = window.setTimeout(() => {
-              if (requestId !== requestIdRef.current) return
-              void fetchSessions({ ...queryParams, silent, retryAttempt: retryAttempt + 1 })
-            }, [500, 1500, 3000][retryAttempt])
-          } else if (isSearch) {
-            setSearchState({ sessions: EMPTY_SESSIONS, isLoading: false, error })
-          } else if (!silent) {
-            // 非静默且索引为空才留下空列表；索引有内容时保留旧数据
-            sessionListIndexStore.replace(bucket, [], { limit: 0, hasMore: false })
+          if (data.length > 0 && data[0].directory) {
+            // 按服务器记录路径风格（多服务器连接不同操作系统时互不干扰）
+            autoDetectPathStyle(data[0].directory, serverId)
           }
-        }
-      } finally {
+
+          if (isSearch) {
+            setSearchState({ sessions: sortSessions(data.slice(0, requestedLimit), getSortPreference()), isLoading: false, error: null })
+          } else {
+            // 索引存全量页数据（含多取的那条），由读取侧按 loadedLimit 切片
+            sessionListIndexStore.replace(bucket, data, {
+              limit: requestedLimit,
+              hasMore: data.length > requestedLimit,
+            })
+            // 拉取成功：清掉失败态（列表有内容后错误不再展示）
+            setListError(null)
+          }
+        } catch (e) {
+          if (requestId !== requestIdRef.current) return
+          const error = e instanceof Error ? e : new Error('Failed to fetch sessions')
+          if (!append) {
+            if (retryAttempt < 3) {
+              if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+              retryTimerRef.current = window.setTimeout(() => {
+                if (requestId !== requestIdRef.current) return
+                void fetchSessions({ ...queryParams, silent, retryAttempt: retryAttempt + 1 })
+              }, [500, 1500, 3000][retryAttempt])
+            } else if (isSearch) {
+              setSearchState({ sessions: EMPTY_SESSIONS, isLoading: false, error })
+            } else if (!silent) {
+              // 非静默且索引为空才留下空列表；索引有内容时保留旧数据
+              sessionListIndexStore.replace(bucket, [], { limit: 0, hasMore: false })
+              setListError(error)
+            }
+          }
+        } finally {
         if (requestId === requestIdRef.current) {
           isFetchingRef.current = false
           setIsLoading(false)
@@ -432,7 +437,7 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
     sessions,
     isLoading: searching ? searchState.isLoading : isLoading,
     isLoadingMore,
-    error: searching ? searchState.error : null,
+    error: searching ? searchState.error : listError,
     hasMore,
     search,
     setSearch,
