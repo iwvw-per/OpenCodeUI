@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.6.109] - 2026-10-01
+
+- feat(settings): Local 服务器放开编辑入口，支持自定义端口 (af0ae919)
+
 ## [v0.6.106] - 2026-09-28
 
 - fix(update): bundle.targets 补 app，macOS 才会产出 .app.tar.gz 更新包，latest.json 才有 darwin 条目
