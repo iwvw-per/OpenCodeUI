@@ -145,33 +145,34 @@ function ServerItem({
           >
             {statusIcon()}
           </IconButton>
+          {/* Local（默认服务器）也允许编辑：它是本机 opencode serve 的连接信息，
+              桌面端会从 URL 里解析端口固定监听，用户可据此自定义端口。
+              但默认服务器不可删除，故删除按钮仍对 Local 隐藏。 */}
+          <IconButton
+            size="sm"
+            className={cn('hover:text-accent-main-100', interactive.accent)}
+            onClick={e => {
+              e.stopPropagation()
+              setEditing(true)
+            }}
+            title={t('servers.editServer')}
+            aria-label={t('servers.editServer')}
+          >
+            <PencilIcon size={13} />
+          </IconButton>
           {!server.isDefault && (
-            <>
-              <IconButton
-                size="sm"
-                className={cn('hover:text-accent-main-100', interactive.accent)}
-                onClick={e => {
-                  e.stopPropagation()
-                  setEditing(true)
-                }}
-                title={t('servers.editServer')}
-                aria-label={t('servers.editServer')}
-              >
-                <PencilIcon size={13} />
-              </IconButton>
-              <IconButton
-                size="sm"
-                variant="danger"
-                onClick={e => {
-                  e.stopPropagation()
-                  setConfirmDelete(true)
-                }}
-                title={t('common:remove')}
-                aria-label={t('common:remove')}
-              >
-                <TrashIcon size={13} />
-              </IconButton>
-            </>
+            <IconButton
+              size="sm"
+              variant="danger"
+              onClick={e => {
+                e.stopPropagation()
+                setConfirmDelete(true)
+              }}
+              title={t('common:remove')}
+              aria-label={t('common:remove')}
+            >
+              <TrashIcon size={13} />
+            </IconButton>
           )}
           {/* 启用/停用放最后：它是"这台主机要不要用"的总开关，
               与其他行内操作（检测/编辑/删除）性质不同，独立在末尾更清楚。
