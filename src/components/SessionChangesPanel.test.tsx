@@ -5,16 +5,16 @@ import { changeScopeStore } from '../store/changeScopeStore'
 import { layoutStore } from '../store/layoutStore'
 import { FullscreenProvider } from '../contexts'
 
-const { getCurrentProject, initGitProject, getSessionDiff, getLastTurnDiff, getVcsInfo, getVcsDiff } = vi.hoisted(
-  () => ({
+const { getCurrentProject, initGitProject, getSessionDiff, getLastTurnDiff, getVcsInfo, getVcsDiff, listDirectory } =
+  vi.hoisted(() => ({
     getCurrentProject: vi.fn(),
     initGitProject: vi.fn(),
     getSessionDiff: vi.fn(),
     getLastTurnDiff: vi.fn(),
     getVcsInfo: vi.fn(),
     getVcsDiff: vi.fn(),
-  }),
-)
+    listDirectory: vi.fn(),
+  }))
 
 vi.mock('../api/client', () => ({
   getCurrentProject,
@@ -29,6 +29,10 @@ vi.mock('../api/vcs', () => ({
 vi.mock('../api/session', () => ({
   getSessionDiff,
   getLastTurnDiff,
+}))
+
+vi.mock('../api/file', () => ({
+  listDirectory,
 }))
 
 vi.mock('./DiffViewer', () => ({
@@ -126,6 +130,7 @@ describe('SessionChangesPanel', () => {
       time: { created: 0, updated: 0 },
       sandboxes: [],
     })
+    listDirectory.mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -150,7 +155,6 @@ describe('SessionChangesPanel', () => {
     expect(screen.getByRole('button', { name: /Change mode: Last turn changes/ })).toBeInTheDocument()
     expect(screen.getAllByText('turn.ts').length).toBeGreaterThan(0)
   })
-
   it('switches to session changes on demand', async () => {
     renderSessionChangesPanel()
 
@@ -179,6 +183,39 @@ describe('SessionChangesPanel', () => {
     expect(changeScopeStore.getMode('session-1')).toBe('session')
     expect(screen.getByText('2f')).toBeInTheDocument()
     expect(screen.getAllByText('app.ts').length).toBeGreaterThan(0)
+  })
+
+  it('passes serverId in the 3rd argument slot when loading session diffs', async () => {
+    // 回归：getSessionDiff 的第 3 参曾是 messageId，调用方传 serverId 会被当成
+    // messageID 发给服务端，导致 session 模式恒为空。这里用真实 serverId 锁死顺序。
+    render(
+      <FullscreenProvider>
+        <SessionChangesPanel sessionId="session-1" directory="/repo" serverId="srv-remote" />
+      </FullscreenProvider>,
+    )
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Change mode:/ }))
+
+    await act(async () => {
+      vi.advanceTimersByTime(48)
+      await Promise.resolve()
+    })
+
+    fireEvent.click(screen.getByText('Session changes'))
+
+    await act(async () => {
+      vi.advanceTimersByTime(240)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(getSessionDiff).toHaveBeenCalledWith('session-1', '/repo', 'srv-remote')
   })
 
   it('switches to branch changes when available', async () => {
@@ -299,6 +336,33 @@ describe('SessionChangesPanel', () => {
 
     expect(initGitProject).toHaveBeenCalledWith('/repo', undefined)
     expect(getLastTurnDiff).toHaveBeenCalledWith('session-1', '/repo', undefined)
+  })
+
+  it('lists workspace files instead of blocking when the project is not a git repository', async () => {
+    getCurrentProject.mockResolvedValue({
+      id: 'global',
+      worktree: '/repo',
+      time: { created: 0, updated: 0 },
+      sandboxes: [],
+    })
+    listDirectory.mockResolvedValue([
+      { name: 'src', path: 'src', absolute: '/repo/src', type: 'directory', ignored: false },
+      { name: 'README.md', path: 'README.md', absolute: '/repo/README.md', type: 'file', ignored: false },
+    ])
+
+    renderSessionChangesPanel()
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(listDirectory).toHaveBeenCalledWith('', '/repo', undefined)
+    expect(screen.getByText('README.md')).toBeInTheDocument()
+    expect(screen.getByText('src')).toBeInTheDocument()
+    // 仍保留初始化入口
+    expect(screen.getByRole('button', { name: 'Initialize Git repository' })).toBeInTheDocument()
   })
 
   it('opens the selected change file in the files panel from the context menu', async () => {

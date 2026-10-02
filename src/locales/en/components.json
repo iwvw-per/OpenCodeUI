@@ -72,6 +72,8 @@
     "noGitHint": "Initialize Git to start tracking session and current-turn changes",
     "initGit": "Initialize Git repository",
     "initializingGit": "Initializing...",
+    "filesScope": "Files",
+    "emptyDirectory": "Empty directory",
     "fileCount_one": "{{count}} file",
     "fileCount_other": "{{count}} files",
     "fileCountCompact": "{{count}}f",
