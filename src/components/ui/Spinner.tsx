@@ -4,7 +4,7 @@ import { cn } from '../../utils/cn'
 
 export type SpinnerSize = 'xs' | 'sm' | 'md' | 'lg'
 export type SpinnerTone = 'muted' | 'accent' | 'current'
-export type SpinnerVariant = 'ring' | 'pixel' | 'dots' | 'orbit'
+export type SpinnerVariant = 'ring' | 'pixel' | 'dots' | 'orbit' | 'grid-orbit'
 
 const sizeMap: Record<SpinnerSize, number> = {
   xs: 10,
@@ -22,7 +22,7 @@ const toneStyles: Record<SpinnerTone, string> = {
 interface SpinnerProps extends Omit<React.SVGProps<SVGSVGElement>, 'children'> {
   size?: SpinnerSize
   tone?: SpinnerTone
-  /** ring（默认圆环）/ pixel（网格）/ dots（三点）/ orbit（轨道） */
+  /** ring（默认圆环）/ pixel（网格）/ dots（三点）/ orbit（轨道）/ grid-orbit（网格绕行） */
   variant?: SpinnerVariant
   className?: string
 }
@@ -50,6 +50,7 @@ export const Spinner = forwardRef<SVGSVGElement, SpinnerProps>(
         {variant === 'pixel' && <PixelGrid cell={size === 'lg' ? 4 : 3} />}
         {variant === 'dots' && <Dots cell={size === 'lg' ? 4 : 3} />}
         {variant === 'orbit' && <Orbit box={size === 'lg' ? 16 : 12} />}
+        {variant === 'grid-orbit' && <GridOrbit cell={size === 'lg' ? 4 : 3} />}
       </span>
     )
   },
@@ -112,6 +113,39 @@ function Orbit({ box }: { box: number }) {
         className="absolute left-1/2 -translate-x-1/2 rounded-full bg-current"
         style={{ top: -dot / 2, width: dot, height: dot }}
       />
+    </span>
+  )
+}
+
+/**
+ * 3x3 网格绕行：一颗光点沿网格外圈 8 格依次点亮（顺时针），
+ * 中心格保持暗态，视觉上像彗星绕网格跑一圈。
+ * 每格错开 110ms，动画周期 0.95s，共 8 格刚好首尾相接。
+ */
+const GRID_ORBIT_ORDER = [0, 1, 2, 5, 8, 7, 6, 3]
+
+function GridOrbit({ cell }: { cell: number }) {
+  const delayByIndex = new Map<number, number>()
+  GRID_ORBIT_ORDER.forEach((gridIndex, order) => delayByIndex.set(gridIndex, order * 110))
+
+  return (
+    <span className="grid grid-cols-3" style={{ gap: 1.5 }}>
+      {Array.from({ length: 9 }, (_, i) => {
+        const delay = delayByIndex.get(i)
+        const isOrbitCell = delay !== undefined
+        return (
+          <span
+            key={i}
+            className={cn('rounded-[1px] bg-current', isOrbitCell && 'loader-grid-orbit-cell')}
+            style={{
+              width: cell,
+              height: cell,
+              opacity: isOrbitCell ? 0.12 : 0.07,
+              ...(isOrbitCell ? { animationDelay: `${delay}ms` } : null),
+            }}
+          />
+        )
+      })}
     </span>
   )
 }

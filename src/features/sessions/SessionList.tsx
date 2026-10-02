@@ -708,7 +708,7 @@ export function SessionListItem({
             }`}
           >
             {isWorking ? (
-              <SpinnerIcon size={12} className="animate-spin text-accent-main-100" />
+              <Spinner size="sm" tone="accent" variant="grid-orbit" />
             ) : activeStatus ? (
               <>
                 <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot}`} />

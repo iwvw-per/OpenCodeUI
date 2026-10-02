@@ -1177,10 +1177,29 @@ h6 {
   animation: loader-orbit 1.1s linear infinite;
 }
 
+/* grid-orbit：3x3 网格上，一颗彗星沿外圈 8 格绕行。
+   每格是「暗→亮→暗」的平滑脉冲（0%/100% 暗、中间最亮），8 格各错开 110ms，
+   相邻格亮度叠加成一段移动的光带，视觉上就是光点绕网格外圈跑一圈。
+   若改成「从最亮开始衰减」，每格会在延迟开始时瞬跳最亮，且末尾留空档，观感会卡顿。 */
+@keyframes loader-grid-orbit {
+  0%,
+  100% {
+    opacity: 0.12;
+  }
+  45% {
+    opacity: 1;
+  }
+}
+
+.loader-grid-orbit-cell {
+  animation: loader-grid-orbit 0.95s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .loader-pixel-cell,
   .loader-dot-cell,
-  .loader-orbit-ring {
+  .loader-orbit-ring,
+  .loader-grid-orbit-cell {
     animation: none !important;
   }
   .loader-pixel-cell {
@@ -1188,6 +1207,9 @@ h6 {
   }
   .loader-dot-cell {
     opacity: 0.6;
+  }
+  .loader-grid-orbit-cell {
+    opacity: 0.5;
   }
 }
 
