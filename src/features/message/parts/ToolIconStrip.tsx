@@ -1,5 +1,6 @@
 import { memo } from 'react'
-import { getToolIcon } from '../tools'
+import { getToolIcon, getToolColorClass } from '../tools'
+import { TaskDoneIcon } from '../../../components/Icons'
 import { cn } from '../../../utils/cn'
 import type { ToolPart } from '../../../types/message'
 
@@ -30,6 +31,10 @@ export const ToolIconStrip = memo(function ToolIconStrip({ parts, className }: T
           const isError = part.state.status === 'error'
           const isActive = part.state.status === 'running' || part.state.status === 'pending'
           const isTask = part.tool.toLowerCase() === 'task'
+          // 子代理完成：折叠条里也用绿色对勾，与展开后的行图标保持一致
+          const isTaskDone = isTask && part.state.status === 'completed'
+          // 已完成的中性态按工具类别着色（多彩）；运行中/失败用语义色
+          const neutralColorClass = !isActive && !isError && !isTaskDone ? getToolColorClass(part.tool) : ''
           return (
             <span
               key={part.id}
@@ -39,11 +44,13 @@ export const ToolIconStrip = memo(function ToolIconStrip({ parts, className }: T
                   ? 'text-accent-main-100'
                   : isError
                     ? 'text-danger-100'
-                    : 'text-text-500 opacity-70',
+                    : isTaskDone
+                      ? 'text-success-100'
+                      : neutralColorClass,
                 isActive && isTask && 'animate-spin',
               )}
             >
-              {getToolIcon(part.tool)}
+              {isTaskDone ? <TaskDoneIcon size={13} /> : getToolIcon(part.tool)}
             </span>
           )
         })}

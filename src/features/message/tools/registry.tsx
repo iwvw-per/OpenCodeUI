@@ -272,6 +272,7 @@ export const toolRegistry: ToolRegistry = [
   {
     match: (name: string) => includes('bash', 'cmd', 'terminal', 'shell')(name) || exact('sh')(name),
     icon: <TerminalIcon />,
+    colorClass: 'tool-color-exec',
     extractData: bashExtractData,
     renderer: BashRenderer,
   },
@@ -280,18 +281,21 @@ export const toolRegistry: ToolRegistry = [
   {
     match: includes('todo'),
     icon: <ChecklistIcon />,
+    colorClass: 'tool-color-todo',
   },
 
   // Task (子 agent)
   {
     match: exact('task'),
     icon: <TaskIcon />,
+    colorClass: 'tool-color-task',
   },
 
   // Read file
   {
     match: includes('read', 'cat'),
     icon: <FileReadIcon />,
+    colorClass: 'tool-color-read',
     extractData: readExtractData,
   },
 
@@ -299,6 +303,7 @@ export const toolRegistry: ToolRegistry = [
   {
     match: includes('write', 'save'),
     icon: <FileWriteIcon />,
+    colorClass: 'tool-color-write',
     extractData: writeExtractData,
   },
 
@@ -306,6 +311,7 @@ export const toolRegistry: ToolRegistry = [
   {
     match: includes('edit', 'replace', 'patch'),
     icon: <FileWriteIcon />,
+    colorClass: 'tool-color-write',
     extractData: editExtractData,
   },
 
@@ -313,24 +319,28 @@ export const toolRegistry: ToolRegistry = [
   {
     match: includes('search', 'find', 'grep', 'glob'),
     icon: <SearchIcon />,
+    colorClass: 'tool-color-search',
   },
 
   // Web / Network
   {
     match: includes('web', 'fetch', 'http', 'browse', 'network', 'exa'),
     icon: <GlobeIcon />,
+    colorClass: 'tool-color-network',
   },
 
   // Think / Reasoning
   {
     match: includes('think', 'reason', 'plan'),
     icon: <BrainIcon />,
+    colorClass: 'tool-color-think',
   },
 
   // Question
   {
     match: includes('question', 'ask'),
     icon: <QuestionIcon />,
+    colorClass: 'tool-color-question',
     renderer: QuestionRenderer,
   },
 ]
@@ -352,6 +362,15 @@ export function getToolConfig(toolName: string): ToolConfig | undefined {
 export function getToolIcon(toolName: string): ReactNode {
   const config = getToolConfig(toolName)
   return config?.icon ?? <WrenchIcon />
+}
+
+/**
+ * 获取工具图标的配色 class（见 index.css 的 .tool-color-*）。
+ * 未登记的工具回退到中性灰。
+ */
+export function getToolColorClass(toolName: string): string {
+  const config = getToolConfig(toolName)
+  return config?.colorClass ?? 'tool-color-default'
 }
 
 /**

@@ -1,7 +1,7 @@
 import { memo, useCallback, useRef, useEffect, type RefCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ContentBlock } from '../../../../components'
-import { ExternalLinkIcon, StopIcon, UsersIcon } from '../../../../components/Icons'
+import { ExternalLinkIcon, StopIcon, UsersIcon, TaskDoneIcon } from '../../../../components/Icons'
 import { Chip } from '../../../../components/ui/Chip'
 import { DisclosureRow } from '../../../../components/ui/DisclosureRow'
 import { Spinner } from '../../../../components/ui/Spinner'
@@ -81,8 +81,10 @@ export const TaskBody = memo(function TaskBody({
 
   return (
     <div className="pt-2 space-y-3">
-      {/* Prompt */}
-      {prompt && (
+      {/* Prompt：有子会话时不再外显——派发给子代理的消息已在子会话框内作为
+          用户消息展示，外面再重复一遍既冗余又占地方。只有拿不到子会话
+          （旧数据 / 尚未创建）时才在外层兜底显示，避免信息丢失。 */}
+      {prompt && !targetSessionId && (
         <div className="text-[length:var(--fs-xs)] text-text-500 leading-relaxed whitespace-nowrap overflow-hidden text-ellipsis">
           {prompt}
         </div>
@@ -90,10 +92,11 @@ export const TaskBody = memo(function TaskBody({
 
       {/* 子会话内容 */}
       {targetSessionId && (
-        <>
-          {prompt && <hr className="border-border-200/30" />}
-          <SubSessionView sessionId={targetSessionId} serverId={taskServerId} isParentRunning={state.status === 'running' || state.status === 'pending'} />
-        </>
+        <SubSessionView
+          sessionId={targetSessionId}
+          serverId={taskServerId}
+          isParentRunning={state.status === 'running' || state.status === 'pending'}
+        />
       )}
 
       {/* 完成时的输出 */}
@@ -201,7 +204,15 @@ export const TaskHeader = memo(function TaskHeader({
       className="group/header gap-2.5 pl-2 pr-0"
       truncateLabel={false}
       labelTone={isRunning ? 'active' : isError ? 'error' : 'idle'}
-      icon={isRunning ? <Spinner size="sm" tone="muted" /> : <UsersIcon size={13} className="text-text-500" />}
+      icon={
+        isRunning ? (
+          <Spinner size="sm" tone="muted" />
+        ) : isCompleted ? (
+          <TaskDoneIcon size={13} className="text-success-100" />
+        ) : (
+          <UsersIcon size={13} className="text-text-500" />
+        )
+      }
       label={
         <span className="flex items-center gap-2">
           <TaskAgentBadge agentType={agentType} tone={agentBadgeTone} sessionId={sessionId} />

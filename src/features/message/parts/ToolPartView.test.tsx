@@ -73,11 +73,13 @@ vi.mock('../../chat/InlineQuestion', () => ({
 
 vi.mock('../tools', () => ({
   getToolIcon: () => <span data-testid="tool-icon">icon</span>,
+  getToolColorClass: () => 'tool-color-default',
   extractToolData: () => ({}),
   getToolConfig: () => undefined,
   DefaultRenderer: () => null,
   TodoRenderer: () => null,
   TaskRenderer: () => null,
+  TaskAgentBadge: () => null,
   hasTodos: () => false,
 }))
 
@@ -154,5 +156,42 @@ describe('ToolPartView running duration', () => {
 
     rerender(<ToolPartView part={part} descriptive />)
     expect(container.firstElementChild?.className).toContain('pt-1')
+  })
+})
+
+describe('ToolPartView task completion icon', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function createTaskPart(status: 'running' | 'completed'): ToolPart {
+    return {
+      id: 'tool-task',
+      sessionID: 'session-1',
+      messageID: 'message-1',
+      type: 'tool',
+      callID: 'call-task',
+      tool: 'task',
+      state:
+        status === 'running'
+          ? { status: 'running', title: 'explore', time: { start: 1 } }
+          : { status: 'completed', title: 'explore', output: 'done', time: { start: 1, end: 2 } },
+    }
+  }
+
+  it('shows the outlined check icon when a task is completed', () => {
+    const { container } = render(<ToolPartView part={createTaskPart('completed')} />)
+
+    // 完成态不再用通用工具图标，而是绿色空心圆对勾
+    expect(screen.queryByTestId('tool-icon')).not.toBeInTheDocument()
+    const svg = container.querySelector('svg')
+    expect(svg?.querySelector('circle')).not.toBeNull()
+    // 空心：svg 不填充
+    expect(svg?.getAttribute('fill')).toBe('none')
+  })
+
+  it('keeps the tool icon (spinner) while the task is running', () => {
+    render(<ToolPartView part={createTaskPart('running')} />)
+    expect(screen.getByTestId('tool-icon')).toBeInTheDocument()
   })
 })

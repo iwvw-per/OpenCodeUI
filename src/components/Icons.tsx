@@ -197,6 +197,33 @@ export const PinIcon = wrap(Pin)
 export const ComposeIcon = wrap(SquarePen)
 export const CogIcon = wrap(Settings)
 
+/**
+ * 绿色空心圆 + 对勾：用于「子任务已完成」的状态图标。
+ * 描边风格（圆不填充），与运行中的旋转图标形成「进行/完成」的对比。
+ */
+export function TaskDoneIcon({ size = 14, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="8" cy="8" r="6.6" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M5.1 8.2l1.9 1.9 3.9-4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 // ============================================
 // Icons with custom defaults (lucide-backed)
 // ============================================

@@ -354,6 +354,23 @@ body,
   --color-info-bg: hsl(var(--info-bg));
 
   /* ============================================
+   * Tool category colors — 工具调用图标的多彩配色
+   * ============================================
+   * 固定色相（不随主题预设变化），明暗模式下各取一套，保证可读性。
+   * 由 .tool-color-* 工具类使用，见文件末尾。
+   */
+  --color-tool-read: hsl(var(--tool-read));
+  --color-tool-write: hsl(var(--tool-write));
+  --color-tool-exec: hsl(var(--tool-exec));
+  --color-tool-search: hsl(var(--tool-search));
+  --color-tool-network: hsl(var(--tool-network));
+  --color-tool-task: hsl(var(--tool-task));
+  --color-tool-think: hsl(var(--tool-think));
+  --color-tool-todo: hsl(var(--tool-todo));
+  --color-tool-question: hsl(var(--tool-question));
+  --color-tool-default: hsl(var(--tool-default));
+
+  /* ============================================
    * Border colors
    * ============================================ */
   --color-border-100: hsl(var(--border-100));
@@ -440,6 +457,17 @@ body,
 
 :root[data-mode='dark'] {
   color-scheme: dark;
+  /* Tool category hues (dark) — 提高明度保证在深色底上可读 */
+  --tool-read: 200 75% 62%;
+  --tool-write: 265 65% 70%;
+  --tool-exec: 165 55% 55%;
+  --tool-search: 38 85% 60%;
+  --tool-network: 190 70% 60%;
+  --tool-task: 280 65% 70%;
+  --tool-think: 320 65% 68%;
+  --tool-todo: 140 50% 58%;
+  --tool-question: 45 85% 60%;
+  --tool-default: 220 10% 62%;
 }
 
 :root[data-mode='light'] {
@@ -449,6 +477,16 @@ body,
 @media (prefers-color-scheme: dark) {
   :root:not([data-mode]) {
     color-scheme: dark;
+    --tool-read: 200 75% 62%;
+    --tool-write: 265 65% 70%;
+    --tool-exec: 165 55% 55%;
+    --tool-search: 38 85% 60%;
+    --tool-network: 190 70% 60%;
+    --tool-task: 280 65% 70%;
+    --tool-think: 320 65% 68%;
+    --tool-todo: 140 50% 58%;
+    --tool-question: 45 85% 60%;
+    --tool-default: 220 10% 62%;
   }
 }
 
@@ -508,6 +546,18 @@ body,
   --info-100: 200 50% 50%;
   --info-200: 200 45% 60%;
   --info-bg: 200 40% 95%;
+
+  /* Tool category hues (light) — 固定色相，工具图标多彩用 */
+  --tool-read: 200 65% 45%;
+  --tool-write: 265 55% 55%;
+  --tool-exec: 165 55% 38%;
+  --tool-search: 35 85% 45%;
+  --tool-network: 190 70% 42%;
+  --tool-task: 280 55% 55%;
+  --tool-think: 320 55% 52%;
+  --tool-todo: 140 50% 40%;
+  --tool-question: 45 80% 45%;
+  --tool-default: 220 8% 55%;
 
   /* Border */
   --border-100: 160 10% 86%;
@@ -1036,6 +1086,43 @@ h6 {
     background: none;
     -webkit-text-fill-color: currentColor;
   }
+}
+
+/* ============================================
+ * Tool category colors — 工具调用图标的多彩配色
+ * ============================================
+ * 按工具类别给图标着色，让消息流里不同工具一眼可辨。
+ * 运行中/失败态仍由调用方的语义色（accent/danger）覆盖，这里只管「已完成」的中性态。
+ */
+.tool-color-read {
+  color: hsl(var(--tool-read));
+}
+.tool-color-write {
+  color: hsl(var(--tool-write));
+}
+.tool-color-exec {
+  color: hsl(var(--tool-exec));
+}
+.tool-color-search {
+  color: hsl(var(--tool-search));
+}
+.tool-color-network {
+  color: hsl(var(--tool-network));
+}
+.tool-color-task {
+  color: hsl(var(--tool-task));
+}
+.tool-color-think {
+  color: hsl(var(--tool-think));
+}
+.tool-color-todo {
+  color: hsl(var(--tool-todo));
+}
+.tool-color-question {
+  color: hsl(var(--tool-question));
+}
+.tool-color-default {
+  color: hsl(var(--tool-default));
 }
 
 /* ============================================

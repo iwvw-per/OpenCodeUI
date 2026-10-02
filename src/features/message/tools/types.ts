@@ -73,6 +73,12 @@ export interface ToolConfig {
   icon: ReactNode
 
   /**
+   * 图标配色类别（对应 index.css 的 .tool-color-* 工具类）。
+   * 仅用于「已完成」的中性态；运行中/失败态由调用方语义色覆盖。
+   */
+  colorClass?: string
+
+  /**
    * 自定义渲染器（可选）
    * 如果不提供，使用默认的 Input/Output 渲染
    */
