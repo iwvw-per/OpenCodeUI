@@ -12,8 +12,10 @@
 // 只有下列键允许参与同步，其余一律拒绝：
 //
 //   1. 全局外观/布局裸键（SYNCABLE_EXACT 集合，逐个人工登记）
-//   2. opencode: 前缀全部放行（notifications / sound-settings /
-//      update-check / toast-enabled）
+//   2. opencode: 前缀放行（sound-settings / update-check / toast-enabled /
+//      notification-event-settings），但排除本机运行时状态：
+//      opencode:notifications（通知历史含逐条已读标志，跨端同步会让已读被
+//      另一端的旧未读覆盖，表现为「点过已读，过一会儿又变未读」）
 //   3. opencode- 前缀放行，但排除本机专属键：opencode-servers、
 //      opencode-active-server、opencode-binary-path、
 //      opencode-auto-start-service、opencode-service-env-vars、
@@ -148,6 +150,13 @@ const SYNCABLE_EXACT = new Set([
 
 const SYNC_METADATA_KEYS = new Set([SYNC_ENABLED_KEY, SYNC_META_KEY, SYNC_STAMPS_KEY, TOMBSTONES_KEY])
 
+const EXCLUDED_OPENCODE_COLON_KEYS = new Set([
+  // 通知历史含逐条已读标志。它是本机运行时状态，不是跨端偏好：整键 last-write-wins
+  // 会让另一端的旧未读数组覆盖本地已读，而 notificationStore 不监听外部写入，
+  // 表现为「点过已读，过一会儿又变未读」。与界面开合状态同属应排除的一类。
+  'opencode:notifications',
+])
+
 const EXCLUDED_OPENCODE_DASH_KEYS = new Set([
   'opencode-servers',
   'opencode-active-server',
@@ -177,7 +186,7 @@ export function isSyncableKey(key: string): boolean {
   if (!key) return false
   if (SYNC_METADATA_KEYS.has(key)) return false
   if (SYNCABLE_EXACT.has(key)) return true
-  if (key.startsWith('opencode:')) return true
+  if (key.startsWith('opencode:')) return !EXCLUDED_OPENCODE_COLON_KEYS.has(key)
   if (key.startsWith('opencode-')) return !EXCLUDED_OPENCODE_DASH_KEYS.has(key)
   if (key.startsWith('srv:aiagent:')) {
     return !EXCLUDED_SRV_AIAGENT_SUFFIXES.some(suffix => key.endsWith(`:${suffix}`))
