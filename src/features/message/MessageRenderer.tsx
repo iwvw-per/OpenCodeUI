@@ -1278,6 +1278,8 @@ function buildDescriptiveToolStepsSummary(
     }
     if (part.state.status === 'completed') doneMap.set(cat, (doneMap.get(cat) || 0) + 1)
     else if (part.state.status === 'error') failedMap.set(cat, (failedMap.get(cat) || 0) + 1)
+    // 中断态（后端未回传完成、由前端对账落定）也算已结束，避免从摘要里凭空消失
+    else if (part.state.status === 'interrupted') doneMap.set(cat, (doneMap.get(cat) || 0) + 1)
     else if (isToolPartActive(part)) activeMap.set(cat, (activeMap.get(cat) || 0) + 1)
   }
 

@@ -69,6 +69,18 @@ export interface ServerConnectedPayload {
   timestamp?: unknown
 }
 
+/**
+ * session.next.tool.success/failed / session.next.shell.ended 归一后的载荷。
+ * callID 用于定位对应 tool part；output/error 仅作兜底展示。
+ */
+export interface NextToolSettledPayload {
+  sessionID: string
+  callID: string
+  status: 'completed' | 'error'
+  output?: string
+  error?: string
+}
+
 // ============================================
 // Global Event Type
 // ============================================
@@ -95,6 +107,17 @@ export const EventTypes = {
   MESSAGE_PART_UPDATED: 'message.part.updated',
   MESSAGE_PART_DELTA: 'message.part.delta',
   MESSAGE_PART_REMOVED: 'message.part.removed',
+
+  // Session "next" 事件流：新一代工具/命令生命周期事件。
+  // 正常情况下工具状态已由 message.part.updated 承载，这里只做防御性对账：
+  // 若后端改用 next.* 描述工具结束而不补发 part.updated，前端仍能把悬空的
+  // running/pending part 落定，避免永久转圈。
+  SESSION_NEXT_TOOL_CALLED: 'session.next.tool.called',
+  SESSION_NEXT_TOOL_PROGRESS: 'session.next.tool.progress',
+  SESSION_NEXT_TOOL_SUCCESS: 'session.next.tool.success',
+  SESSION_NEXT_TOOL_FAILED: 'session.next.tool.failed',
+  SESSION_NEXT_SHELL_STARTED: 'session.next.shell.started',
+  SESSION_NEXT_SHELL_ENDED: 'session.next.shell.ended',
 
   // Permission events
   PERMISSION_ASKED: 'permission.asked',
@@ -168,6 +191,11 @@ export interface EventCallbacks {
   onQuestionReplied?: (data: QuestionRepliedPayload) => void
   onQuestionRejected?: (data: QuestionRejectedPayload) => void
   onTodoUpdated?: (data: TodoUpdatedPayload) => void
+  /**
+   * session.next.tool.success/failed、session.next.shell.ended 归一后的工具落定事件。
+   * 用于对账：若后端未补发 message.part.updated，仍能把 running/pending 的 part 收尾。
+   */
+  onNextToolSettled?: (data: NextToolSettledPayload) => void
   onProjectUpdated?: (project: Project) => void
   onWorktreeReady?: (data: WorktreeReadyPayload) => void
   onWorktreeFailed?: (data: WorktreeFailedPayload) => void

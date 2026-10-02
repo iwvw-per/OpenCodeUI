@@ -766,14 +766,53 @@ class MessageStore {
     this.notify([data.sessionID])
   }
 
-  handleSessionIdle(sessionId: string) {
+  /**
+   * 会话已结束（idle/error）时，把仍处于 running/pending 的 tool part 落定为
+   * interrupted。
+   *
+   * 后端 bash 工具子进程卡死或事件丢失时，服务端可能永远不补发该 part 的
+   * message.part.updated，工具卡片就会永久转圈——即使会话状态已变 idle、侧栏
+   * 状态点已熄灭。这里以会话结束信号为准做一次对账，把悬空的 part 收尾。
+   *
+   * 只改内存副本：服务端后续若补发权威 completed/error，会被 handlePartUpdated
+   * 正常覆盖。running 态的输出已在 metadata.output 中，标记 interrupted 后由
+   * 渲染层继续展示（registry 的 interruptedOutput 分支）。
+   */
+  private reconcileInFlightTools(state: SessionState, now: number): boolean {
+    let changed = false
+    state.messages = state.messages.map(message => {
+      let partsChanged = false
+      const parts = message.parts.map(part => {
+        if (part.type !== 'tool') return part
+        const status = part.state.status
+        if (status !== 'running' && status !== 'pending') return part
+        partsChanged = true
+        changed = true
+        const start = part.state.time?.start ?? now
+        return {
+          ...part,
+          state: {
+            ...part.state,
+            status: 'interrupted' as const,
+            metadata: { ...(part.state.metadata ?? {}), interrupted: true },
+            time: { ...(part.state.time ?? {}), start, end: now },
+          },
+        }
+      })
+      return partsChanged ? { ...message, parts } : message
+    })
+    return changed
+  }
+
+  /** 会话结束的公共收尾：清 streaming、补 completed、对账悬空工具。 */
+  private finalizeSession(sessionId: string) {
     const state = this.sessions.get(sessionId)
     if (!state) return
 
     state.isStreaming = false
+    const completedAt = Date.now()
     const hasStreamingMessage = state.messages.some(m => m.isStreaming)
     if (hasStreamingMessage) {
-      const completedAt = Date.now()
       state.messages = state.messages.map(m => {
         if (!m.isStreaming) return m
         return {
@@ -789,33 +828,70 @@ class MessageStore {
         }
       })
     }
+    this.reconcileInFlightTools(state, completedAt)
     this.notify([sessionId])
   }
 
+  handleSessionIdle(sessionId: string) {
+    this.finalizeSession(sessionId)
+  }
+
   handleSessionError(sessionId: string) {
+    this.finalizeSession(sessionId)
+  }
+
+  /**
+   * 按 callID 落定某个工具 part（next.* 事件流的防御性对账）。
+   *
+   * 正常情况下工具终态由 message.part.updated 承载；若后端改用
+   * session.next.tool.success/failed 或 session.next.shell.ended 描述结束，
+   * 这里保证仍处于 running/pending 的对应 part 不会悬空。已有权威终态的
+   * part 不覆盖（避免用不完整信息盖掉服务端结果）。
+   */
+  settleToolByCallID(
+    sessionId: string,
+    callID: string,
+    outcome: { status: 'completed' | 'error'; output?: string; error?: string },
+  ): void {
     const state = this.sessions.get(sessionId)
     if (!state) return
 
-    state.isStreaming = false
-    const hasStreamingMessage = state.messages.some(m => m.isStreaming)
-    if (hasStreamingMessage) {
-      const completedAt = Date.now()
-      state.messages = state.messages.map(m => {
-        if (!m.isStreaming) return m
-        return {
-          ...m,
-          isStreaming: false,
-          info: {
-            ...m.info,
-            time: {
-              ...m.info.time,
-              completed: m.info.time.completed ?? completedAt,
+    const now = Date.now()
+    let changed = false
+    state.messages = state.messages.map(message => {
+      let partsChanged = false
+      const parts = message.parts.map(part => {
+        if (part.type !== 'tool' || part.callID !== callID) return part
+        const status = part.state.status
+        if (status !== 'running' && status !== 'pending') return part
+        partsChanged = true
+        changed = true
+        const start = part.state.time?.start ?? now
+        if (outcome.status === 'error') {
+          return {
+            ...part,
+            state: {
+              ...part.state,
+              status: 'error' as const,
+              error: outcome.error ?? part.state.error ?? 'Tool failed',
+              time: { ...(part.state.time ?? {}), start, end: now },
             },
+          }
+        }
+        return {
+          ...part,
+          state: {
+            ...part.state,
+            status: 'completed' as const,
+            output: outcome.output ?? part.state.output ?? '',
+            time: { ...(part.state.time ?? {}), start, end: now },
           },
         }
       })
-    }
-    this.notify([sessionId])
+      return partsChanged ? { ...message, parts } : message
+    })
+
+    if (changed) this.notify([sessionId])
   }
 
   // ============================================

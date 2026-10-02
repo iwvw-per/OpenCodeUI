@@ -617,6 +617,16 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
           messageStore.handlePartRemoved({ ...data, sessionID: scope(data.sessionID) })
         },
 
+        // session.next.* 事件流兜底：后端若只发 next 工具事件、不补 message.part.updated，
+        // 也把悬空的 running/pending part 落定，避免永久转圈。
+        onNextToolSettled: data => {
+          messageStore.settleToolByCallID(scope(data.sessionID), data.callID, {
+            status: data.status,
+            output: data.output,
+            error: data.error,
+          })
+        },
+
         // ============================================
         // Session Events → childSessionStore
         // ============================================

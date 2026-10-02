@@ -40,7 +40,10 @@
   },
   "toolPart": {
     "running": "运行中",
-    "failed": "失败"
+    "failed": "失败",
+    "interrupted": "已中断",
+    "maybeStuck": "可能已卡住",
+    "abortStuck": "中止会话"
   },
   "toolSteps": {
     "separator": "，",

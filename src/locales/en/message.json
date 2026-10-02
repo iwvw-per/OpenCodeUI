@@ -40,7 +40,10 @@
   },
   "toolPart": {
     "running": "Running",
-    "failed": "Failed"
+    "failed": "Failed",
+    "interrupted": "Interrupted",
+    "maybeStuck": "Possibly stuck",
+    "abortStuck": "Abort session"
   },
   "toolSteps": {
     "separator": ", ",

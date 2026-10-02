@@ -176,7 +176,12 @@ export type ToolStateStrict = ToolStatePending | ToolStateRunning | ToolStateCom
 
 // 宽松的 ToolState 类型，用于实际渲染（API 返回的数据可能不完全符合严格类型）
 export interface ToolState {
-  status: 'pending' | 'running' | 'completed' | 'error'
+  /**
+   * interrupted：前端对账出来的兜底态。后端未回传完成事件（进程卡死/事件丢失），
+   * 会话已 idle/error 时把仍 running/pending 的 part 落定为该状态，避免永久转圈。
+   * 服务端后续若补发权威完成事件，会被正常覆盖。
+   */
+  status: 'pending' | 'running' | 'completed' | 'error' | 'interrupted'
   input?: Record<string, unknown>
   output?: string
   title?: string
