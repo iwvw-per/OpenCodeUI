@@ -24,6 +24,9 @@ import { keybindingStore } from '../store/keybindingStore'
 const TERMINAL_FONT_FALLBACK =
   "'Fira Code', 'Noto Sans Mono CJK SC', 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', 'SF Mono', Menlo, Consolas, 'Liberation Mono', 'Noto Sans Mono', 'Ubuntu Mono', 'WenQuanYi Micro Hei Mono', 'DejaVu Sans Mono', 'Noto Sans CJK SC', ui-monospace, monospace"
 
+/** 非活动 tab 释放 WebGL 前的延迟：避免快速切 tab 时反复销毁/重建 GPU 上下文 */
+const WEBGL_RELEASE_DELAY_MS = 2000
+
 // ============================================
 // 终端主题 - 与应用主题配合
 // ============================================
@@ -352,6 +355,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, serverId, isA
   const [stickyModifiers, setStickyModifiers] = useState<StickyModifiers>(() => createStickyModifiers())
   const terminalRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const webglAddonRef = useRef<WebglAddon | null>(null)
   const stickyModifiersRef = useRef<StickyModifiers>(createStickyModifiers())
   const cursorRef = useRef(0)
   const transportSendRef = useRef<((data: string) => void) | null>(null)
@@ -474,7 +478,9 @@ export const Terminal = memo(function Terminal({ ptyId, directory, serverId, isA
       cursorStyle: 'block',
       smoothScrollDuration: touchUi ? 100 : 0,
       allowProposedApi: true,
-      scrollback: 10000,
+      // 每个终端实例最多缓存 3000 行。原值 10000 在多终端常驻时占用可观，
+      // 3000 行足以覆盖日常回溯，同时显著降低每个实例的缓冲区内存。
+      scrollback: 3000,
       convertEol: true,
       allowTransparency: true, // 开启透明背景
       ...(touchUi
@@ -501,20 +507,6 @@ export const Terminal = memo(function Terminal({ ptyId, directory, serverId, isA
     terminal.loadAddon(webLinksAddon)
 
     terminal.open(containerRef.current)
-
-    // WebGL 渲染器: GPU 加速，大幅提升 TUI 渲染性能
-    // 若 WebGL 不可用则静默回退到内置 DOM 渲染器
-    const webglAddon = new WebglAddon()
-    webglAddon.onContextLoss(() => {
-      webglAddon.dispose()
-      logger.log('[Terminal] WebGL context lost, falling back to DOM renderer')
-    })
-    try {
-      terminal.loadAddon(webglAddon)
-    } catch {
-      webglAddon.dispose()
-      logger.log('[Terminal] WebGL not available, using DOM renderer')
-    }
 
     const textarea = terminal.textarea
     const handleTextareaBlur = () => clearStickyModifiers()
@@ -817,7 +809,8 @@ export const Terminal = memo(function Terminal({ ptyId, directory, serverId, isA
       fitAddon.dispose()
       serializeAddon.dispose()
       webLinksAddon.dispose()
-      webglAddon.dispose()
+      webglAddonRef.current?.dispose()
+      webglAddonRef.current = null
       terminal.dispose()
       terminalRef.current = null
       fitAddonRef.current = null
@@ -1003,6 +996,52 @@ export const Terminal = memo(function Terminal({ ptyId, directory, serverId, isA
       }
     }
   }, [isActive])
+
+  // WebGL 渲染器按需加载：只有活动 tab 持有 GPU 上下文。
+  // 非活动 tab 保持挂载时延迟释放 WebGL，避免多终端各自占用一份 GPU 资源，
+  // 又不会因快速切 tab 反复销毁/重建上下文。切回活动时立即重新加载。
+  useEffect(() => {
+    const terminal = terminalRef.current
+    if (!terminal) return
+
+    let releaseTimer: number | null = null
+
+    if (!isActive) {
+      releaseTimer = window.setTimeout(() => {
+        releaseTimer = null
+        webglAddonRef.current?.dispose()
+        webglAddonRef.current = null
+      }, WEBGL_RELEASE_DELAY_MS)
+      return () => {
+        if (releaseTimer !== null) {
+          clearTimeout(releaseTimer)
+          releaseTimer = null
+        }
+      }
+    }
+
+    if (webglAddonRef.current) return
+
+    const webglAddon = new WebglAddon()
+    webglAddon.onContextLoss(() => {
+      webglAddon.dispose()
+      if (webglAddonRef.current === webglAddon) webglAddonRef.current = null
+      logger.log('[Terminal] WebGL context lost, falling back to DOM renderer')
+    })
+    try {
+      terminal.loadAddon(webglAddon)
+      webglAddonRef.current = webglAddon
+    } catch {
+      webglAddon.dispose()
+      logger.log('[Terminal] WebGL not available, using DOM renderer')
+    }
+
+    return () => {
+      if (releaseTimer !== null) clearTimeout(releaseTimer)
+      webglAddonRef.current?.dispose()
+      webglAddonRef.current = null
+    }
+  }, [isActive, hasBeenActive, ptyId])
 
   useEffect(() => {
     if (!isActive) {

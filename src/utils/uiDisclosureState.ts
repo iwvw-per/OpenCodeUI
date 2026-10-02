@@ -5,18 +5,45 @@ type DisclosureState = {
   touched: boolean
 }
 
+/**
+ * 展开/折叠状态缓存上限。key 由 messageId / tool part id 拼接，随浏览过的
+ * 消息与工具卡单调增长；不设上限就是一条只增不减的泄漏。超出后按插入顺序
+ * 淘汰最旧项（Map 的插入序天然支持），用户最近操作的项会因再次写入而排到末尾。
+ */
+const MAX_DISCLOSURE_ENTRIES = 2000
+const MAX_UI_STATE_ENTRIES = 2000
+
+function setBounded<T>(cache: Map<string, T>, key: string, value: T, max: number) {
+  cache.delete(key)
+  cache.set(key, value)
+  while (cache.size > max) {
+    const oldest = cache.keys().next().value
+    if (oldest === undefined) break
+    cache.delete(oldest)
+  }
+}
+
+/** 读命中时把该项移到插入序末尾，保证「最近被读取」的项不被淘汰（真 LRU 语义） */
+function touchBounded<T>(cache: Map<string, T>, key: string, value: T) {
+  cache.delete(key)
+  cache.set(key, value)
+}
+
 const disclosureStateCache = new Map<string, DisclosureState>()
 
 export function getUiDisclosureState(key: string, fallback: boolean): DisclosureState {
   const cached = disclosureStateCache.get(key)
-  if (cached) return cached
+  if (cached) {
+    touchBounded(disclosureStateCache, key, cached)
+    return cached
+  }
   const initial = { value: fallback, touched: false }
-  disclosureStateCache.set(key, initial)
+  setBounded(disclosureStateCache, key, initial, MAX_DISCLOSURE_ENTRIES)
   return initial
 }
 
 export function setUiDisclosureState(key: string, value: boolean, touched = true) {
-  disclosureStateCache.set(key, { value, touched })
+  setBounded(disclosureStateCache, key, { value, touched }, MAX_DISCLOSURE_ENTRIES)
 }
 
 export function hasUserTouchedUiDisclosure(key: string): boolean {
@@ -27,14 +54,16 @@ const uiStateCache = new Map<string, unknown>()
 
 export function getUiState<T>(key: string, fallback: T): T {
   if (!uiStateCache.has(key)) {
-    uiStateCache.set(key, fallback)
+    setBounded(uiStateCache, key, fallback, MAX_UI_STATE_ENTRIES)
     return fallback
   }
-  return (uiStateCache.get(key) as T) ?? fallback
+  const value = (uiStateCache.get(key) as T) ?? fallback
+  touchBounded(uiStateCache, key, value)
+  return value
 }
 
 export function setUiState<T>(key: string, value: T) {
-  uiStateCache.set(key, value)
+  setBounded(uiStateCache, key, value, MAX_UI_STATE_ENTRIES)
 }
 
 export function useUiState<T>(key: string | undefined, fallback: T) {
@@ -69,7 +98,7 @@ export function useUiDisclosureState(key: string, fallback: boolean) {
           typeof next === 'function' ? (next as (prev: boolean) => boolean)(previousState.value) : next
         const touched = options?.touched ?? true
         const nextState = { value: resolved, touched: previousState.touched || touched }
-        disclosureStateCache.set(key, nextState)
+        setBounded(disclosureStateCache, key, nextState, MAX_DISCLOSURE_ENTRIES)
         return { key, state: nextState }
       })
     },

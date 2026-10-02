@@ -17,6 +17,20 @@ export interface FileTreeNode extends FileNode {
   isLoaded?: boolean
 }
 
+/** 预览缓存条数上限：文件全文可能很大（日志/打包产物/大 JSON），不能无界保留 */
+const MAX_PREVIEW_CACHE_ENTRIES = 12
+
+/** LRU 写入：先删再设使该项移到末尾，超出上限时淘汰最旧条目 */
+function setPreviewCache(cache: Map<string, FileContent>, path: string, content: FileContent) {
+  cache.delete(path)
+  cache.set(path, content)
+  while (cache.size > MAX_PREVIEW_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value
+    if (oldest === undefined) break
+    cache.delete(oldest)
+  }
+}
+
 export interface UseFileExplorerOptions {
   directory?: string
   autoLoad?: boolean
@@ -290,6 +304,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
       const cached = previewCacheRef.current.get(path)
       if (cached) {
         if (loadId === previewLoadIdRef.current) {
+          setPreviewCache(previewCacheRef.current, path, cached)
           setPreviewContent(cached)
           setPreviewLoading(false)
         }
@@ -299,7 +314,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
       try {
         const content = await getFileContent(path, effectiveDirectory, serverId)
         if (loadId !== previewLoadIdRef.current) return
-        previewCacheRef.current.set(path, content)
+        setPreviewCache(previewCacheRef.current, path, content)
         setPreviewContent(content)
       } catch (e) {
         if (loadId !== previewLoadIdRef.current) return

@@ -22,7 +22,7 @@ import { invalidateSessionListCache } from '../api/sessionListCache'
 import { sessionListIndexStore } from '../store/sessionListIndexStore'
 import type { EventCallbacks } from '../types/api/event'
 import { replyPermission } from '../api/permission'
-import { stripMessageSummaryDiffs, stripPartAttachments } from '../api/sanitize'
+import { stripMessageSummaryDiffs, sanitizeStreamPart } from '../api/sanitize'
 import { autoApproveStore } from '../store/autoApproveStore'
 import type { ApiMessage, ApiPart, ApiPermissionRequest, ApiQuestionRequest } from '../api/types'
 import type { SessionStatusMap } from '../types/api/session'
@@ -598,7 +598,7 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
           if ('sessionID' in apiPart && 'messageID' in apiPart) {
             const scopedId = scope(apiPart.sessionID)
             messageStore.handlePartUpdated(
-              stripPartAttachments({
+              sanitizeStreamPart({
                 ...(apiPart as ApiPart & { sessionID: string; messageID: string }),
                 sessionID: scopedId,
               }),

@@ -30,6 +30,16 @@ const MAX_CACHED_SESSIONS_PER_SERVER = 16
 /** 全局硬上限，防止服务器数量很多时内存无界增长（超出时优先淘汰非活动服务器） */
 const MAX_CACHED_SESSIONS_TOTAL = 48
 
+/**
+ * 单个会话在内存中保留的消息条数上限。
+ *
+ * 消息列表已虚拟化，DOM 节点数受控，但 JS 堆里的消息对象不会自动释放：
+ * 长会话（大量工具调用 + 长输出）会把整段历史常驻。这里给出硬上限，超出时
+ * 从最旧端裁剪。裁剪只丢内存副本，不重置 historyCursor —— 该游标始终指向
+ * 「比当前最旧一条更早」的位置，继续上滑加载不会与裁剪窗口重叠，因此不会死循环。
+ */
+const MAX_MESSAGES_PER_SESSION = 500
+
 /** 从复合 key 提取 serverId（`${serverId}::${sessionId}`）；无分隔符时归为活动服务器 */
 function serverIdOfSessionKey(sessionId: string): string {
   const idx = sessionId.indexOf('::')
@@ -396,6 +406,32 @@ class MessageStore {
     this.protectedSessions.delete(sessionId)
   }
 
+  /**
+   * 单会话消息条数上限：超出时从最旧端裁剪。
+   *
+   * 裁剪会丢掉内存里最旧的消息。为了让被裁历史仍可恢复，裁剪发生时强制
+   * `hasMoreHistory = true` 并清空 `historyCursor`：这样上滑时会走「按当前
+   * 条数重新拉取最新一页」的路径，把被裁掉的消息补回来，避免出现永久缺口。
+   * （若保留旧游标，它会指向被裁窗口之前，上滑只会拉到更早的内容，中间这段
+   * 就再也回不来。）
+   *
+   * revertState 指向的消息若被裁掉，会一并清空，避免撤销点悬空。
+   */
+  private capSessionMessages(state: SessionState) {
+    const overflow = state.messages.length - MAX_MESSAGES_PER_SESSION
+    if (overflow <= 0) return
+    const kept = state.messages.slice(overflow)
+    if (state.revertState) {
+      const revert = state.revertState
+      const revertIndex = kept.findIndex(m => m.info.id === revert.messageId)
+      if (revertIndex === -1) state.revertState = null
+    }
+    state.messages = kept
+    // 被裁掉的历史仍在服务端，标记为可继续加载并让游标失效，走重拉路径恢复
+    state.hasMoreHistory = true
+    state.historyCursor = undefined
+  }
+
   updateSessionMetadata(
     sessionId: string,
     options: {
@@ -435,6 +471,7 @@ class MessageStore {
         const bCreated = b.info.time?.created ?? 0
         return aCreated - bCreated
       })
+      this.capSessionMessages(state)
     }
 
     this.notify([message.info.sessionID])
@@ -529,6 +566,8 @@ class MessageStore {
     state.shareUrl = options?.shareUrl
     state.isStale = false
 
+    this.capSessionMessages(state)
+
     // Revert 状态
     if (options?.revertState?.messageID) {
       const revertIndex = state.messages.findIndex(m => m.info.id === options.revertState!.messageID)
@@ -547,6 +586,9 @@ class MessageStore {
             }
           }),
         }
+      } else {
+        // 撤销点已被裁剪掉（消息不在内存窗口内），清空以免悬空
+        state.revertState = null
       }
     } else {
       state.revertState = null
@@ -568,6 +610,13 @@ class MessageStore {
     this.notify([sessionId])
   }
 
+  /**
+   * 上滑加载历史：把更早的一页前插。
+   *
+   * 这里有意不调用 capSessionMessages —— 用户主动上滑就是为了看更早的内容，
+   * 刚拉回来就裁掉会让上滑「拉不动」。单会话条数上限只在 append/SSE 增长路径
+   * 作为内存兜底，历史加载路径的规模由用户滚动行为决定。
+   */
   prependMessages(sessionId: string, apiMessages: ApiMessageWithParts[], hasMore: boolean, historyCursor?: string) {
     const state = this.sessions.get(sessionId)
     if (!state) return
@@ -636,6 +685,7 @@ class MessageStore {
         isStreaming: apiMsg.role === 'assistant',
       }
       state.messages = [...state.messages, newMsg]
+      this.capSessionMessages(state)
       if (apiMsg.role === 'assistant') {
         state.isStreaming = true
       }

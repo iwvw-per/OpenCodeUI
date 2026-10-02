@@ -361,6 +361,53 @@ describe('messageStore', () => {
     expect(afterMessage?.parts[1]).toMatchObject({ text: 'live text' })
   })
 
+  it('caps a session at the maximum message count, dropping the oldest', () => {
+    const total = 520
+    const messages = Array.from({ length: total }, (_, i) => createMessageWithParts(`message-${i}`, `text-${i}`))
+
+    messageStore.setMessages('session-1', messages)
+
+    const state = messageStore.getSessionState('session-1')
+    expect(state?.messages.length).toBe(500)
+    expect(state?.messages[0].info.id).toBe(`message-${total - 500}`)
+    expect(state?.messages[state.messages.length - 1].info.id).toBe(`message-${total - 1}`)
+  })
+
+  it('marks history as reloadable after capping so dropped messages can be restored', () => {
+    const total = 520
+    const messages = Array.from({ length: total }, (_, i) => createMessageWithParts(`message-${i}`, `text-${i}`))
+
+    messageStore.setMessages('session-1', messages, { hasMoreHistory: false, historyCursor: undefined })
+
+    const state = messageStore.getSessionState('session-1')
+    expect(state?.messages.length).toBe(500)
+    // 裁剪后必须标记为可继续加载，并让旧游标失效，避免历史出现永久缺口
+    expect(messageStore.getHasMoreHistory('session-1')).toBe(true)
+    expect(messageStore.getHistoryCursor('session-1')).toBeUndefined()
+  })
+
+  it('clears revert state when its target message is capped away', () => {
+    const total = 520
+    const messages = Array.from({ length: total }, (_, i) => createMessageWithParts(`message-${i}`, `text-${i}`))
+
+    messageStore.setMessages('session-1', messages, {
+      revertState: { messageID: 'message-0' } as never,
+    })
+
+    const state = messageStore.getSessionState('session-1')
+    expect(state?.messages.length).toBe(500)
+    expect(state?.revertState).toBeNull()
+  })
+
+  it('does not cap or mark history when appending within the limit', () => {
+    messageStore.setMessages('session-1', [createMessageWithParts('message-1', 'one')], {
+      hasMoreHistory: false,
+    })
+
+    expect(messageStore.getHasMoreHistory('session-1')).toBe(false)
+    expect(messageStore.getHistoryCursor('session-1')).toBeUndefined()
+  })
+
   it('notifies only subscribers for changed sessions', () => {
     const session1Subscriber = vi.fn()
     const session2Subscriber = vi.fn()
