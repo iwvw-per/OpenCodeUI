@@ -330,7 +330,6 @@ describe('LayoutStore reloadFromStorage', () => {
     expect(store.getState().sidebarSessionSortField).toBe('created')
     expect(store.getState().sidebarSessionSortDesc).toBe(false)
   })
-
   it('picks up sidebar toggles written externally', () => {
     const store = new LayoutStore()
     store.setSidebarFolderRecents(false)
@@ -339,6 +338,27 @@ describe('LayoutStore reloadFromStorage', () => {
     store.reloadFromStorage()
 
     expect(store.getState().sidebarFolderRecents).toBe(true)
+  })
+
+  it('persists and restores the project sort mode', () => {
+    const store = new LayoutStore()
+    expect(store.getState().sidebarProjectSortMode).toBe('auto')
+
+    store.setSidebarProjectSortMode('manual')
+    expect(localStorage.getItem('opencode-sidebar-project-sort-mode')).toBe('manual')
+
+    const restored = new LayoutStore()
+    expect(restored.getState().sidebarProjectSortMode).toBe('manual')
+  })
+
+  it('picks up an externally written project sort mode', () => {
+    const store = new LayoutStore()
+    expect(store.getState().sidebarProjectSortMode).toBe('auto')
+
+    localStorage.setItem('opencode-sidebar-project-sort-mode', 'manual')
+    store.reloadFromStorage()
+
+    expect(store.getState().sidebarProjectSortMode).toBe('manual')
   })
 
   it('notifies subscribers only when something actually changed', () => {

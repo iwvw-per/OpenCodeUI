@@ -22,6 +22,8 @@ export function SessionSortMenu() {
 
   const apply = (field: SessionSortField, desc: boolean) => {
     layoutStore.setSidebarSessionSort(field, desc)
+    // 用户在排序菜单显式选择字段/方向 = 想按时间重新排，退出拖拽手动顺序
+    layoutStore.setSidebarProjectSortMode('auto')
     setIsOpen(false)
   }
 

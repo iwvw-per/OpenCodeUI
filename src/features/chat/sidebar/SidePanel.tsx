@@ -6,7 +6,7 @@ import { HostQuickSwitcher } from './HostQuickSwitcher'
 import { SessionSortMenu } from './SessionSortMenu'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
-import { getProjectGroupIdentity } from './projectGrouping'
+import { getProjectGroupIdentity, sortProjectsByMode } from './projectGrouping'
 import { mergeExpandedProjectNames } from './expandedProjects'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { IconButton } from '../../../components/ui/IconButton'
@@ -171,7 +171,7 @@ export function SidePanel({
   // 这样多端看到的是同一份，用户不必在每台设备上重复隐藏噪音目录。
   const activeServerId = activeServer?.id ?? 'local'
   const { catalog: gitWorkspaceCatalog } = useGitWorkspaceCatalog(catalogDirectories, catalogServerId)
-  const { sidebarChildSessions, sidebarSessionSortDesc } = useLayoutStore()
+  const { sidebarChildSessions, sidebarSessionSortDesc, sidebarProjectSortMode } = useLayoutStore()
   // all = 始终列出全部子会话；active = 只列活跃/正在查看；off = 不额外列出
   const showAllChildSessions = sidebarChildSessions === 'all'
   const showActiveChildSessions = sidebarChildSessions !== 'off'
@@ -734,27 +734,20 @@ export function SidePanel({
   /**
    * 项目（文件夹）的最终显示顺序。
    *
+   * auto 模式：按「最后使用时间」实时排序，方向跟随侧栏排序偏好；
+   * manual 模式：保持用户拖拽保存的顺序（folderProjects 本身即 saved-directories 顺序）。
+   *
    * 排序菜单此前只管项目内会话，项目本身是"当前项目置顶 + 保存顺序 + 发现顺序"
    * 的混排，看起来就像"排序没生效"。这里让同一套方向偏好也作用于项目。
    *
    * 数据限制：ProjectItem 没有创建时间字段，因此「创建时间」与「更新时间」
    * 都只能用 projectLastUsedAt（会话最后活跃时间）—— 差异只在方向。
    * 缺省视作 0；同名时按名称兜底，保证顺序稳定不抖动。
-   *
-   * 注意：这里对全列表统一排序，会覆盖 folderProjects 里「当前激活项目置顶」
-   * 的初始顺序 —— 那是刻意的，否则置顶项会永远不参与排序。
    */
-  const sortedFolderProjects = useMemo(() => {
-    const lastUsed = (project: ProjectItem): number =>
-      projectLastUsedAt[normalizeToForwardSlash(project.worktree || '')] ?? 0
-
-    return [...folderProjects].sort((a, b) => {
-      const ta = lastUsed(a)
-      const tb = lastUsed(b)
-      if (ta !== tb) return sidebarSessionSortDesc ? tb - ta : ta - tb
-      return a.name.localeCompare(b.name)
-    })
-  }, [folderProjects, projectLastUsedAt, sidebarSessionSortDesc])
+  const sortedFolderProjects = useMemo(
+    () => sortProjectsByMode(folderProjects, sidebarProjectSortMode, projectLastUsedAt, sidebarSessionSortDesc),
+    [folderProjects, projectLastUsedAt, sidebarSessionSortDesc, sidebarProjectSortMode],
+  )
 
   // 需求 3：点击项目目录/名称不跳转（只展开/收起），只有点击会话才导航。
   // 保持签名兼容 FolderRecentList 的 onSelectProject 调用，但不再 setCurrentDirectory。
@@ -779,6 +772,8 @@ export function SidePanel({
       const targetReorderPath = folderProjects[targetIdx].reorderPath
       if (!draggedReorderPath || !targetReorderPath) return
       reorderDirectories(draggedReorderPath, targetReorderPath)
+      // 拖拽即切换到手动顺序：否则下一次自动排序会把刚拖的结果覆盖掉
+      layoutStore.setSidebarProjectSortMode('manual')
     },
     [folderProjects, reorderDirectories],
   )
