@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.6.111] - 2026-10-02
+
+- chore(sidebar): 删除已弃用的 HostList 组件 (1caf5389)
+- feat(sidebar): 移除主机/项目分页 + 全部收起/展开切换 + 默认按创建时间排序 (c6fc9bfb)
+- feat(ui): 新增 grid-orbit 网格绕行加载动画 (f9e6a760)
+- feat(message): 工具图标多彩化 + 子任务完成态图标与 prompt 收敛 (fe879a0a)
+- feat(pane): 新增/关闭分栏时自动等分宽度 (8abda98e)
+- fix(changes): 修复 diff 面板恒空 + 非 git 项目显示文件 (1a6d850b)
+- fix(reliability): 请求失败自动恢复 + 撤回重编辑并行化 (30feddb1)
+- fix(sync): 通知历史不参与跨端同步，修复已读后又变未读 (7313de09)
+
 ## [v0.6.110] - 2026-10-02
 
 - fix(sidebar): 项目文件夹排序实时生效 + 拖拽重排可用 (7e8b505d)
