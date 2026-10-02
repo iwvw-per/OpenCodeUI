@@ -362,8 +362,20 @@ const LEADING_RELAXED = 1.625
 const USER_HTML_ARTIFACT_PATTERN =
   /(?:```(?:html|htm)\b|<!doctype\s+html\b|<html\b|<style\b|<script\b|<canvas\b|\son[a-z]+\s*=)/i
 
-// 折叠状态缓存：消息是否溢出
+// 折叠状态缓存：消息是否溢出。
+// key 含 messageId，随浏览过的消息单调增长，必须设上限，否则是只增不减的泄漏。
 const overflowStateCache = new Map<string, boolean>()
+const MAX_OVERFLOW_CACHE = 2000
+
+function setOverflowState(key: string, value: boolean) {
+  overflowStateCache.delete(key)
+  overflowStateCache.set(key, value)
+  while (overflowStateCache.size > MAX_OVERFLOW_CACHE) {
+    const oldest = overflowStateCache.keys().next().value
+    if (oldest === undefined) break
+    overflowStateCache.delete(oldest)
+  }
+}
 
 const CollapsibleUserText = memo(function CollapsibleUserText({
   text,
@@ -394,7 +406,7 @@ const CollapsibleUserText = memo(function CollapsibleUserText({
       if (!Number.isFinite(fsBase) || fsBase <= 0) return
       const collapsedHeight = fsBase * LEADING_RELAXED * COLLAPSE_PREVIEW_LINES
       const next = el.scrollHeight > collapsedHeight + 1
-      overflowStateCache.set(overflowCacheKey, next)
+      setOverflowState(overflowCacheKey, next)
       setIsOverflow(prev => (prev === next ? prev : next))
     }
 

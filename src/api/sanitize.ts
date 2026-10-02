@@ -50,6 +50,65 @@ export function stripPartAttachments(part: ApiMessageWithParts['parts'][number])
 }
 
 /**
+ * 单条工具输出的字符上限。`tool.state.output` 可能是整个大文件的 cat 结果或
+ * 数万行命令日志，是消息流常驻内存的主要来源。超过上限时保留首尾、省略中间，
+ * 正常输出不受影响，病态输出也不会把 JS 堆撑大。
+ *
+ * HEAD + TAIL 必须明显小于 MAX：截断结果还要加一段省略标记，若两者之和等于
+ * MAX，结果长度会超过 MAX 从而被再次截断（幂等性被破坏）。
+ */
+export const MAX_TOOL_OUTPUT_CHARS = 256 * 1024
+const TOOL_OUTPUT_HEAD_CHARS = 120 * 1024
+const TOOL_OUTPUT_TAIL_CHARS = 120 * 1024
+const TOOL_OUTPUT_TRUNCATION_MARKER = 'characters truncated to limit memory'
+
+function truncateLongString(value: string): string {
+  if (value.length <= MAX_TOOL_OUTPUT_CHARS) return value
+  // 已经截断过的串直接返回，保证幂等（重复投影不会反复改写标记）
+  if (value.includes(TOOL_OUTPUT_TRUNCATION_MARKER)) return value
+  const omitted = value.length - TOOL_OUTPUT_HEAD_CHARS - TOOL_OUTPUT_TAIL_CHARS
+  return `${value.slice(0, TOOL_OUTPUT_HEAD_CHARS)}\n\n... [${omitted.toLocaleString('en-US')} ${TOOL_OUTPUT_TRUNCATION_MARKER}] ...\n\n${value.slice(value.length - TOOL_OUTPUT_TAIL_CHARS)}`
+}
+
+/**
+ * 截断 tool.state.output 与运行态 metadata.output 的超长内容。
+ * 返回原引用表示未变化。
+ */
+export function truncatePartOutput(part: ApiMessageWithParts['parts'][number]): ApiMessageWithParts['parts'][number] {
+  if (part.type !== 'tool') return part
+  const state = (part as { state?: unknown }).state
+  if (!isRecord(state)) return part
+
+  let nextState: UnknownRecord | null = null
+
+  const output = state.output
+  if (typeof output === 'string') {
+    const truncated = truncateLongString(output)
+    if (truncated !== output) {
+      nextState = { ...state, output: truncated }
+    }
+  }
+
+  const metadata = state.metadata
+  if (isRecord(metadata) && typeof metadata.output === 'string') {
+    const truncated = truncateLongString(metadata.output)
+    if (truncated !== metadata.output) {
+      nextState = { ...(nextState ?? state), metadata: { ...metadata, output: truncated } }
+    }
+  }
+
+  if (!nextState) return part
+  return { ...part, state: nextState } as typeof part
+}
+
+/**
+ * SSE 与分页拉取共用的单 part 裁剪入口：剥离附件 + 截断超长输出。
+ */
+export function sanitizeStreamPart(part: ApiMessageWithParts['parts'][number]): ApiMessageWithParts['parts'][number] {
+  return truncatePartOutput(stripPartAttachments(part))
+}
+
+/**
  * 把一条「消息 + parts」裁剪成渲染足够、体积最小的投影。
  *
  * 对 SSE 事件与分页拉取共用，保证两条路径进入 store 的数据形态一致。
@@ -60,7 +119,7 @@ export function sanitizeMessageWithParts(message: ApiMessageWithParts): ApiMessa
   let partsChanged = false
 
   for (let index = 0; index < parts.length; index += 1) {
-    const next = stripPartAttachments(parts[index])
+    const next = sanitizeStreamPart(parts[index])
     if (next === parts[index]) continue
     if (!partsChanged) parts = parts.slice()
     parts[index] = next

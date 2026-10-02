@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   sanitizeMessageWithParts,
+  sanitizeStreamPart,
   stripMessageSummaryDiffs,
   stripPartAttachments,
   stripSessionDiffSnapshots,
   stripSessionListDetails,
+  truncatePartOutput,
+  MAX_TOOL_OUTPUT_CHARS,
 } from './sanitize'
 import type { ApiMessage, ApiMessageWithParts, ApiSession } from './types'
 
@@ -170,6 +173,102 @@ describe('stripSessionDiffSnapshots', () => {
   it('returns the same reference when there is nothing to strip', () => {
     const session = { id: 'ses_1' } as unknown as ApiSession
     expect(stripSessionDiffSnapshots(session)).toBe(session)
+  })
+})
+
+describe('truncatePartOutput', () => {
+  it('truncates an oversized tool output, keeping head and tail', () => {
+    const head = 'H'.repeat(200)
+    const tail = 'T'.repeat(200)
+    const output = head + 'M'.repeat(MAX_TOOL_OUTPUT_CHARS) + tail
+    const part = {
+      type: 'tool',
+      id: 'prt_1',
+      state: { status: 'completed', output },
+    } as unknown as ApiMessageWithParts['parts'][number]
+
+    const result = truncatePartOutput(part) as unknown as { state: { output: string } }
+
+    expect(result.state.output.length).toBeLessThan(output.length)
+    expect(result.state.output.startsWith(head)).toBe(true)
+    expect(result.state.output.endsWith(tail)).toBe(true)
+    expect(result.state.output).toContain('truncated to limit memory')
+  })
+
+  it('keeps output at or below the limit untouched (same reference)', () => {
+    const part = {
+      type: 'tool',
+      id: 'prt_1',
+      state: { status: 'completed', output: 'x'.repeat(MAX_TOOL_OUTPUT_CHARS) },
+    } as unknown as ApiMessageWithParts['parts'][number]
+
+    expect(truncatePartOutput(part)).toBe(part)
+  })
+
+  it('truncates running metadata.output as well', () => {
+    const part = {
+      type: 'tool',
+      id: 'prt_1',
+      state: { status: 'running', metadata: { output: 'y'.repeat(MAX_TOOL_OUTPUT_CHARS + 100) } },
+    } as unknown as ApiMessageWithParts['parts'][number]
+
+    const result = truncatePartOutput(part) as unknown as { state: { metadata: { output: string } } }
+
+    expect(result.state.metadata.output).toContain('truncated to limit memory')
+  })
+
+  it('ignores non-tool parts', () => {
+    const part = { type: 'text', id: 'prt_1', text: 'hi' } as unknown as ApiMessageWithParts['parts'][number]
+    expect(truncatePartOutput(part)).toBe(part)
+  })
+
+  it('is idempotent: re-truncating an already truncated output returns the same reference', () => {
+    const part = {
+      type: 'tool',
+      id: 'prt_1',
+      state: { status: 'completed', output: 'q'.repeat(MAX_TOOL_OUTPUT_CHARS * 4) },
+    } as unknown as ApiMessageWithParts['parts'][number]
+
+    const once = truncatePartOutput(part)
+    const twice = truncatePartOutput(once)
+
+    expect(twice).toBe(once)
+    const output = (once as unknown as { state: { output: string } }).state.output
+    // 结果必须严格不超过上限，否则会被再次截断
+    expect(output.length).toBeLessThanOrEqual(MAX_TOOL_OUTPUT_CHARS)
+  })
+
+  it('keeps the reported omitted count stable across repeated truncation', () => {
+    const part = {
+      type: 'tool',
+      id: 'prt_1',
+      state: { status: 'completed', output: 'r'.repeat(MAX_TOOL_OUTPUT_CHARS * 3) },
+    } as unknown as ApiMessageWithParts['parts'][number]
+
+    const output = (truncatePartOutput(part) as unknown as { state: { output: string } }).state.output
+    const match = output.match(/\[([\d,]+) characters truncated to limit memory\]/)
+    expect(match).not.toBeNull()
+    // 省略量应接近原始超出量，而不是标记串自身长度
+    expect(Number(match![1].replace(/,/g, ''))).toBeGreaterThan(MAX_TOOL_OUTPUT_CHARS)
+  })
+})
+
+describe('sanitizeStreamPart', () => {
+  it('applies both attachment stripping and output truncation', () => {
+    const part = {
+      type: 'tool',
+      id: 'prt_1',
+      state: {
+        status: 'completed',
+        output: 'z'.repeat(MAX_TOOL_OUTPUT_CHARS + 50),
+        attachments: [{ url: 'data:image/png;base64,AAA' }],
+      },
+    } as unknown as ApiMessageWithParts['parts'][number]
+
+    const result = sanitizeStreamPart(part) as unknown as { state: Record<string, unknown> }
+
+    expect('attachments' in result.state).toBe(false)
+    expect(result.state.output as string).toContain('truncated to limit memory')
   })
 })
 
