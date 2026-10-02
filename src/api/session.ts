@@ -19,6 +19,7 @@ import {
 } from './sessionListCache'
 import { singleFlight } from '../utils/singleFlight'
 import { stripSessionListDetails } from './sanitize'
+import { collectTurnDiffsFromMessages } from '../features/message/parts/turnDiffs'
 import type { ApiSession, SessionListParams, FileDiff, ApiMessageWithParts, ApiUserMessage } from './types'
 import type { SessionStatusMap } from '../types/api/session'
 import type { TodoItem } from '../types/api/event'
@@ -51,12 +52,16 @@ export async function getSessionStatus(directory?: string, serverId?: string): P
 /**
  * 获取 session 的 diff
  * 返回可在 UI 中渲染的 SnapshotFileDiff（过滤缺少 file 的异常项）
+ *
+ * 参数顺序为 (sessionId, directory?, serverId?, messageId?)：serverId 放第 3 位，
+ * 与项目内其它 API（getSession/getSessionMessages 等）一致，避免调用方把 serverId
+ * 误传到 messageId 槽位（曾导致 session 模式的 diff 恒为空）。
  */
 export async function getSessionDiff(
   sessionId: string,
   directory?: string,
-  messageId?: string,
   serverId?: string,
+  messageId?: string,
 ): Promise<FileDiff[]> {
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
@@ -97,7 +102,16 @@ export async function getLastTurnDiff(sessionId: string, directory?: string, ser
     ? userMessages.filter(message => message.info.id < revertMessageId)
     : userMessages
 
-  return normalizeFileDiffs(visibleUserMessages.at(-1)?.info.summary?.diffs)
+  const summaryDiffs = normalizeFileDiffs(visibleUserMessages.at(-1)?.info.summary?.diffs)
+  if (summaryDiffs.length > 0) return summaryDiffs
+
+  // 回退：服务端未写回 summary.diffs（snapshot 关闭 / 版本差异 / 尚未定稿）时，
+  // 从本轮工具调用的 metadata 聚合。tool metadata 与消息流工具卡片同源，
+  // 因此「工具卡片能看到改动」的场景这里也一定能看到，不再误报「本轮无变更」。
+  const fallbackMessages = revertMessageId
+    ? messages.filter(message => message.info.id < revertMessageId)
+    : messages
+  return collectTurnDiffsFromMessages(fallbackMessages)
 }
 
 // ============================================

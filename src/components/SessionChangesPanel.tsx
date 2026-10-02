@@ -15,7 +15,8 @@ import { ViewModeSwitch } from './FullscreenViewer'
 import { getCurrentProject, initGitProject } from '../api/client'
 import { getLastTurnDiff, getSessionDiff } from '../api/session'
 import { getVcsDiff, getVcsInfo } from '../api/vcs'
-import type { ApiProject, FileDiff, VcsDiffMode, VcsInfo } from '../api/types'
+import { listDirectory } from '../api/file'
+import type { ApiProject, FileDiff, FileNode, VcsDiffMode, VcsInfo } from '../api/types'
 import { detectLanguage } from '../utils/languageUtils'
 import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
 import { sessionErrorHandler } from '../utils'
@@ -100,6 +101,13 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   const [vcsInfo, setVcsInfo] = useState<VcsInfo | null>(null)
   const [projectLoading, setProjectLoading] = useState(false)
   const [initializingGit, setInitializingGit] = useState(false)
+  // 非 git 项目：直接列出工作区文件（变更面板降级为文件浏览器）
+  const [nonGitFiles, setNonGitFiles] = useState<FileNode[]>([])
+  const [nonGitLoading, setNonGitLoading] = useState(false)
+  const [nonGitError, setNonGitError] = useState<string | null>(null)
+  const [nonGitExpanded, setNonGitExpanded] = useState<Set<string>>(new Set())
+  const [nonGitChildren, setNonGitChildren] = useState<Map<string, FileNode[]>>(new Map())
+  const [nonGitRefreshToken, setNonGitRefreshToken] = useState(0)
   const [loadingModes, setLoadingModes] = useState({ git: false, branch: false, session: false, turn: false })
   const [loadedModes, setLoadedModes] = useState({ git: false, branch: false, session: false, turn: false })
   const [gitDiffs, setGitDiffs] = useState<FileDiff[]>([])
@@ -122,6 +130,7 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   const [fileContextMenu, setFileContextMenu] = useState<{ x: number; y: number; file: string } | null>(null)
 
   const projectRequestIdRef = useRef(0)
+  const nonGitRequestIdRef = useRef(0)
   const diffRequestIdRef = useRef({ git: 0, branch: 0, session: 0, turn: 0 })
   const openDiffFilesRef = useRef<string[]>([])
   const selectedFileRef = useRef<string | null>(null)
@@ -433,10 +442,63 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
     setMountedPreviewFiles(new Set())
     setExpandedDirs(new Set())
     setChangeMenuOpen(false)
+    setNonGitFiles([])
+    setNonGitChildren(new Map())
+    setNonGitExpanded(new Set())
+    setNonGitError(null)
     resetSplitHeight()
 
     void loadProjectState()
   }, [directory, sessionId, loadProjectState, resetSplitHeight])
+
+  // 非 git 项目：加载工作区根目录文件列表（变更面板降级为文件浏览器）
+  useEffect(() => {
+    if (project?.vcs) return
+    if (!project || projectLoading) return
+    if (!directory) return
+    const requestId = ++nonGitRequestIdRef.current
+    setNonGitLoading(true)
+    setNonGitError(null)
+    listDirectory('', directory, serverId)
+      .then(nodes => {
+        if (requestId !== nonGitRequestIdRef.current) return
+        setNonGitFiles(sortFileNodes(nodes))
+      })
+      .catch(err => {
+        if (requestId !== nonGitRequestIdRef.current) return
+        sessionErrorHandler('list directory for changes panel', err)
+        setNonGitError(t('sessionChanges.failedToLoad'))
+      })
+      .finally(() => {
+        if (requestId === nonGitRequestIdRef.current) setNonGitLoading(false)
+      })
+  }, [directory, project, projectLoading, serverId, t, nonGitRefreshToken])
+
+  const handleToggleNonGitDir = useCallback(
+    async (path: string) => {
+      setNonGitExpanded(prev => {
+        const next = new Set(prev)
+        if (next.has(path)) {
+          next.delete(path)
+          return next
+        }
+        next.add(path)
+        return next
+      })
+      if (nonGitChildren.has(path) || !directory) return
+      try {
+        const nodes = await listDirectory(path, directory, serverId)
+        setNonGitChildren(prev => {
+          const next = new Map(prev)
+          next.set(path, sortFileNodes(nodes))
+          return next
+        })
+      } catch (err) {
+        sessionErrorHandler('list subdirectory for changes panel', err)
+      }
+    },
+    [directory, nonGitChildren, serverId],
+  )
 
   useEffect(() => {
     if (changeOptions.length === 0) return
@@ -633,17 +695,62 @@ export const SessionChangesPanel = memo(function SessionChangesPanel({
   }
 
   if (!project?.vcs) {
+    // 非 git 项目：直接列出工作区文件，仍提供「初始化 Git」入口。
     return (
-      <div className="h-full flex items-center justify-center p-4">
-        <div className="max-w-xs text-center space-y-3">
-          <div className="space-y-1">
-            <div className="text-[length:var(--fs-base)] font-medium text-text-200">{t('sessionChanges.noGit')}</div>
-            <div className="text-[length:var(--fs-sm)] text-text-400">{t('sessionChanges.noGitHint')}</div>
+      <div className="flex flex-col h-full">
+        <div className="relative flex h-10 items-center gap-2 px-3 shrink-0">
+          <div className="min-w-0 flex flex-1 overflow-hidden">
+            <div className="inline-flex h-6 min-w-max items-center gap-1.5 whitespace-nowrap text-[length:var(--fs-xxs)] text-text-400">
+              {t('sessionChanges.filesScope')}
+            </div>
           </div>
-          <Button onClick={handleInitGit} disabled={initializingGit} size="sm">
-            {initializingGit ? t('sessionChanges.initializingGit') : t('sessionChanges.initGit')}
-          </Button>
-          {error && <div className="text-[length:var(--fs-sm)] text-danger-100">{error}</div>}
+          <div className="flex shrink-0 items-center gap-1">
+            <IconButton
+              size="sm"
+              onClick={() => {
+                setNonGitChildren(new Map())
+                setNonGitError(null)
+                setNonGitRefreshToken(token => token + 1)
+              }}
+              disabled={nonGitLoading}
+              aria-label={t('common:refresh')}
+              title={t('common:refresh')}
+            >
+              <RetryIcon size={12} className={nonGitLoading ? 'animate-spin' : ''} />
+            </IconButton>
+            <Button onClick={handleInitGit} disabled={initializingGit} size="sm">
+              {initializingGit ? t('sessionChanges.initializingGit') : t('sessionChanges.initGit')}
+            </Button>
+          </div>
+          <div className="pointer-events-none absolute inset-x-3 bottom-0 h-px bg-border-200/30" />
+        </div>
+
+        <div className="flex-1 overflow-auto panel-scrollbar-y">
+          {nonGitLoading && nonGitFiles.length === 0 ? (
+            <div className="p-4 text-center text-text-400 text-[length:var(--fs-sm)]">
+              {t('sessionChanges.loadingChanges')}
+            </div>
+          ) : nonGitError && nonGitFiles.length === 0 ? (
+            <div className="p-4 text-center text-danger-100 text-[length:var(--fs-sm)]">{nonGitError}</div>
+          ) : nonGitFiles.length === 0 ? (
+            <div className="p-4 text-center text-text-400 text-[length:var(--fs-sm)]">
+              {t('sessionChanges.emptyDirectory')}
+            </div>
+          ) : (
+            <div className="py-0.5">
+              {nonGitFiles.map(node => (
+                <NonGitTreeNode
+                  key={node.path || node.name}
+                  node={node}
+                  depth={0}
+                  expanded={nonGitExpanded}
+                  childrenMap={nonGitChildren}
+                  onToggleDir={handleToggleNonGitDir}
+                  onOpenFile={file => layoutStore.openFilePreview({ path: file.path, name: file.name }, position)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )
@@ -1322,6 +1429,103 @@ const ChangesTreeItem = memo(function ChangesTreeItem({
         {node.additions > 0 && <span className="text-success-100">+{node.additions}</span>}
         {node.deletions > 0 && <span className="text-danger-100">-{node.deletions}</span>}
       </div>
+    </button>
+  )
+})
+
+// ============================================
+// Non-Git File Tree（非 git 项目的文件浏览）
+// ============================================
+
+/** 目录在前、文件在后，同类按名称排序 */
+function sortFileNodes(nodes: FileNode[]): FileNode[] {
+  return [...nodes].sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
+    return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+  })
+}
+
+interface NonGitTreeNodeProps {
+  node: FileNode
+  depth: number
+  expanded: Set<string>
+  childrenMap: Map<string, FileNode[]>
+  onToggleDir: (path: string) => void
+  onOpenFile: (file: FileNode) => void
+}
+
+const NonGitTreeNode = memo(function NonGitTreeNode({
+  node,
+  depth,
+  expanded,
+  childrenMap,
+  onToggleDir,
+  onOpenFile,
+}: NonGitTreeNodeProps) {
+  const paddingLeft = 8 + depth * 16
+
+  if (node.type === 'directory') {
+    const isExpanded = expanded.has(node.path)
+    const children = childrenMap.get(node.path)
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => onToggleDir(node.path)}
+          className="w-full min-w-0 flex items-center gap-1.5 py-1 hover:bg-bg-200 transition-colors text-[length:var(--fs-sm)] text-text-300"
+          style={{ paddingLeft }}
+        >
+          <ChevronRightIcon size={12} className={`shrink-0 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+          <img
+            src={getMaterialIconUrl(node.path, 'directory', isExpanded)}
+            alt=""
+            width={16}
+            height={16}
+            className="shrink-0"
+            loading="lazy"
+            decoding="async"
+            onError={e => {
+              e.currentTarget.style.visibility = 'hidden'
+            }}
+          />
+          <span className="flex-1 min-w-0 truncate text-left">{node.name}</span>
+        </button>
+        {isExpanded &&
+          children?.map(child => (
+            <NonGitTreeNode
+              key={child.path || child.name}
+              node={child}
+              depth={depth + 1}
+              expanded={expanded}
+              childrenMap={childrenMap}
+              onToggleDir={onToggleDir}
+              onOpenFile={onOpenFile}
+            />
+          ))}
+      </>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenFile(node)}
+      className="w-full min-w-0 flex items-center gap-1.5 py-1 hover:bg-bg-200 transition-colors text-[length:var(--fs-sm)] text-text-300"
+      style={{ paddingLeft: paddingLeft + 16 }}
+    >
+      <img
+        src={getMaterialIconUrl(node.name, 'file')}
+        alt=""
+        width={16}
+        height={16}
+        className="shrink-0"
+        loading="lazy"
+        decoding="async"
+        onError={e => {
+          e.currentTarget.style.visibility = 'hidden'
+        }}
+      />
+      <span className="flex-1 min-w-0 font-mono truncate text-left">{node.name}</span>
     </button>
   )
 })
