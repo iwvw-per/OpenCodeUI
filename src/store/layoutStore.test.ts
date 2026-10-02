@@ -322,12 +322,12 @@ describe('LayoutStore reloadFromStorage', () => {
     // store 只在构造时读一次，不重读就会停在旧值 —— 表现为「另一台改了排序，
     // 这边要切换主机才生效」。
     const store = new LayoutStore()
-    expect(store.getState().sidebarSessionSortField).toBe('updated')
+    expect(store.getState().sidebarSessionSortField).toBe('created')
 
-    localStorage.setItem('opencode-sidebar-session-sort', JSON.stringify({ field: 'created', desc: false }))
+    localStorage.setItem('opencode-sidebar-session-sort', JSON.stringify({ field: 'updated', desc: false }))
     store.reloadFromStorage()
 
-    expect(store.getState().sidebarSessionSortField).toBe('created')
+    expect(store.getState().sidebarSessionSortField).toBe('updated')
     expect(store.getState().sidebarSessionSortDesc).toBe(false)
   })
   it('picks up sidebar toggles written externally', () => {

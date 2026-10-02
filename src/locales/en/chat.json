@@ -183,6 +183,8 @@
     "selectedMixed": "{{sessions}} + {{projects}} selected",
     "selectItems": "Select items",
     "manageSessions": "Manage",
+    "collapseAllProjects": "Collapse all",
+    "expandAllProjects": "Expand all",
     "doneManaging": "Done",
     "removeProject": "Remove Project",
     "removeProjectConfirm": "Remove this project folder from the list? Files won't be deleted.",

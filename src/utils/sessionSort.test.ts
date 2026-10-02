@@ -21,14 +21,15 @@ function makeSession(id: string, created: number, updated: number): ApiSession {
 }
 
 describe('sessionSort', () => {
-  it('sorts by updated descending by default', () => {
+  it('sorts by created descending by default', () => {
     const a = makeSession('a', 1, 10)
     const b = makeSession('b', 2, 30)
     const c = makeSession('c', 3, 20)
 
     const sorted = sortSessions([a, b, c], DEFAULT_SESSION_SORT)
 
-    expect(sorted.map(s => s.id)).toEqual(['b', 'c', 'a'])
+    // 默认按 created 倒序：c(3) > b(2) > a(1)
+    expect(sorted.map(s => s.id)).toEqual(['c', 'b', 'a'])
   })
 
   it('sorts ascending when desc is false', () => {
@@ -61,9 +62,9 @@ describe('sessionSort', () => {
   })
 
   it('keeps a stable order when timestamps tie', () => {
-    const a = makeSession('a', 1, 5)
-    const b = makeSession('b', 2, 5)
-    const c = makeSession('c', 3, 5)
+    const a = makeSession('a', 5, 5)
+    const b = makeSession('b', 5, 5)
+    const c = makeSession('c', 5, 5)
 
     // 时间戳相同时按 id 兜底，结果与输入顺序无关
     expect(sortSessions([c, a, b], DEFAULT_SESSION_SORT).map(s => s.id)).toEqual(['a', 'b', 'c'])

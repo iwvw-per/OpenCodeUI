@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, type SetStateAction } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderRecentList, type FolderRecentProject } from './FolderRecentList'
-import { HostList } from './HostList'
 import { HostQuickSwitcher } from './HostQuickSwitcher'
 import { SessionSortMenu } from './SessionSortMenu'
 import { useMultiServerStore } from '../../../store/multiServerStore'
@@ -10,20 +9,19 @@ import { getProjectGroupIdentity, sortProjectsByMode } from './projectGrouping'
 import { mergeExpandedProjectNames } from './expandedProjects'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { IconButton } from '../../../components/ui/IconButton'
-import { Tabs, TabsList, TabsTrigger } from '../../../components/ui/Tabs'
 import { SidebarFooter } from './SidebarFooter'
 import {
   SidebarIcon,
-  FolderIcon,
   PlusIcon,
   NewChatIcon,
   TrashIcon,
   SearchIcon,
   CloseIcon,
   ManageSessionsIcon,
+  CollapseAllIcon,
+  ExpandAllIcon,
   FolderMinusIcon,
   CheckIcon,
-  GlobeIcon,
 } from '../../../components/Icons'
 import { useDirectory, useKeybindingLabel, useGitWorkspaceCatalog } from '../../../hooks'
 import { Spinner } from '../../../components/ui/Spinner'
@@ -180,9 +178,6 @@ export function SidePanel({
     [currentDirectory],
   )
   const [connectionState, setConnectionState] = useState<ConnectionInfo | null>(null)
-  // 侧栏视图：主机（切换后端）/ 项目（会话与项目）
-  const [sidebarTab, setSidebarTab] = useState<'hosts' | 'projects'>('projects')
-
   // ---- 编辑模式状态 ----
   const [isEditMode, setIsEditMode] = useState(false)
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set())
@@ -659,6 +654,12 @@ export function SidePanel({
     () => folderProjects.filter(p => expandedProjectNames.includes(projectExpandKey(p))).map(p => p.id),
     [folderProjects, expandedProjectNames],
   )
+  // 全部可展开项目是否都已展开：用于把「全部收起/展开」做成一个切换按钮。
+  // 派生项目（isDerived，未保存的当前项目）不参与，与自动展开逻辑保持一致。
+  const allProjectsExpanded = useMemo(() => {
+    const ids = folderProjects.filter(p => !p.isDerived).map(p => p.id)
+    return ids.length > 0 && ids.every(id => expandedRecentProjectIds.includes(id))
+  }, [folderProjects, expandedRecentProjectIds])
   const setExpandedRecentProjectIds = useCallback(
     (updater: SetStateAction<string[]>) => {
       const currentIds = folderProjects.filter(p => expandedProjectNames.includes(projectExpandKey(p))).map(p => p.id)
@@ -1095,6 +1096,9 @@ export function SidePanel({
         )}
       </div>
 
+      {/* 搜索与列表之间的全宽分割线（负 margin 抵消导航区的 mx-2，通栏显示） */}
+      {showLabels && <div className="-mx-2 h-px bg-border-200/50" />}
+
       {/* ===== Main Content ===== */}
       <div
         className="flex-1 flex flex-col min-h-0 overflow-hidden transition-opacity duration-300 ease-out"
@@ -1167,71 +1171,54 @@ export function SidePanel({
               </>
             ) : (
               <>
-                {/* 视图切换：主机/项目 — 与「变更」面板的列表/树形切换同一视觉语言 */}
-                <Tabs
-                  variant="slider"
-                  value={sidebarTab}
-                  onValueChange={value => {
-                    setSidebarTab(value as 'hosts' | 'projects')
-                    if (value !== sidebarTab) exitEditMode()
-                  }}
-                >
-                  <TabsList activeIndex={sidebarTab === 'hosts' ? 0 : 1} itemCount={2} className="shrink-0">
-                    <TabsTrigger value="hosts" title={t('sidebar.hostsHint', { defaultValue: 'Switch between hosts' })}>
-                      <GlobeIcon size={13} />
-                      <span className="truncate">{t('sidebar.hosts', { defaultValue: 'Hosts' })}</span>
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="projects"
-                      title={t('sidebar.projectByFolder', { defaultValue: 'Group by project' })}
-                    >
-                      <FolderIcon size={13} />
-                      <span className="truncate">{t('sidebar.project', { defaultValue: 'Project' })}</span>
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
-                {/* 排序 + 管理：仅项目视图。两个按钮独立（排序改偏好，管理进批量选择） */}
-                {sidebarTab === 'projects' && (
-                  <div className="ml-auto shrink-0 flex items-center gap-0.5">
-                    <SessionSortMenu />
-                    <IconButton
-                      size="sm"
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={enterEditMode}
-                      aria-label={t('sidebar.manageSessions')}
-                      title={t('sidebar.manageSessions')}
-                    >
-                      <ManageSessionsIcon size={14} />
-                    </IconButton>
-                  </div>
-                )}
+                {/* 全部收起/展开切换 + 排序 + 管理 */}
+                <div className="ml-auto shrink-0 flex items-center gap-0.5">
+                  <IconButton
+                    size="sm"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => {
+                      const allIds = folderProjects.filter(p => !p.isDerived).map(p => p.id)
+                      setExpandedRecentProjectIds(allProjectsExpanded ? [] : allIds)
+                    }}
+                    aria-label={
+                      allProjectsExpanded ? t('sidebar.collapseAllProjects') : t('sidebar.expandAllProjects')
+                    }
+                    title={allProjectsExpanded ? t('sidebar.collapseAllProjects') : t('sidebar.expandAllProjects')}
+                  >
+                    {allProjectsExpanded ? <CollapseAllIcon size={14} /> : <ExpandAllIcon size={14} />}
+                  </IconButton>
+                  <SessionSortMenu />
+                  <IconButton
+                    size="sm"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={enterEditMode}
+                    aria-label={t('sidebar.manageSessions')}
+                    title={t('sidebar.manageSessions')}
+                  >
+                    <ManageSessionsIcon size={14} />
+                  </IconButton>
+                </div>
               </>
             )}
           </div>
 
-          {/* 主机 tab：切换后端 */}
-          {sidebarTab === 'hosts' ? (
-            <div ref={recentsSelectionRootRef} className="flex-1 overflow-hidden animate-in fade-in duration-150">
-              <HostList onActivate={() => setSidebarTab('projects')} onOpenSettings={onOpenSettings} />
-            </div>
-          ) : (
-            /* 项目 tab：已保存项目文件夹树（统一按目录查询）。
-               列表为空时由 FolderRecentList 渲染空状态；工作区解析的等待用文件夹内
-               的局部 spinner 过渡，不做整列表转圈，避免打开会话导致侧栏整体重载。 */
-            <div
-              ref={recentsSelectionRootRef}
-              className={`flex-1 overflow-hidden animate-in fade-in duration-150 ${isEditMode ? 'select-none' : ''}`}
-            >
-              <FolderRecentList
-                projects={sortedFolderProjects}
-                {...commonFolderRecentListProps}
-                onReorderProject={handleReorderProjectGroup}
-                workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
-                pinnedSessions={resolvedPinnedSessions}
-                unavailablePinnedEntries={unavailablePinnedEntries}
-              />
-            </div>
-          )}
+          {/* 项目列表：已保存项目文件夹树（统一按目录查询）。
+              列表为空时由 FolderRecentList 渲染空状态；工作区解析的等待用文件夹内
+              的局部 spinner 过渡，不做整列表转圈，避免打开会话导致侧栏整体重载。
+              主机切换由底部 HostQuickSwitcher 承担，不再单独占一个 tab。 */}
+          <div
+            ref={recentsSelectionRootRef}
+            className={`flex-1 overflow-hidden animate-in fade-in duration-150 ${isEditMode ? 'select-none' : ''}`}
+          >
+            <FolderRecentList
+              projects={sortedFolderProjects}
+              {...commonFolderRecentListProps}
+              onReorderProject={handleReorderProjectGroup}
+              workspaceDirectoriesByProjectId={workspaceDirectoriesByProjectId}
+              pinnedSessions={resolvedPinnedSessions}
+              unavailablePinnedEntries={unavailablePinnedEntries}
+            />
+          </div>
         </div>
       </div>
 

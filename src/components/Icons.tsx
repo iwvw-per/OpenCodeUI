@@ -104,6 +104,8 @@ import {
   Gauge,
   Timer,
   Database,
+  ChevronsDownUp,
+  ChevronsUpDown,
 } from 'lucide-react'
 
 export interface IconProps extends SVGProps<SVGSVGElement> {
@@ -270,6 +272,8 @@ export const SortIcon = wrap(ArrowUpNarrowWide)
 export const SortDescIcon = wrap(ArrowDownNarrowWide)
 export const CalendarPlusIcon = wrap(CalendarPlus)
 export const ManageSessionsIcon = wrap(ListChecks)
+export const CollapseAllIcon = wrap(ChevronsDownUp)
+export const ExpandAllIcon = wrap(ChevronsUpDown)
 export const MenuDotsIcon = wrap(MoreHorizontal)
 export const FolderPlusIcon = wrap(FolderPlus)
 export const ArchiveIcon = wrap(Archive)
