@@ -67,4 +67,72 @@ describe('paneLayoutStore', () => {
 
     expect(paneLayoutStore.isSubtaskSession('subtask-1')).toBe(false)
   })
+
+  it('equalizes split ratios when adding a third pane', () => {
+    paneLayoutStore.reset()
+
+    paneLayoutStore.setFocusedSession('session-a')
+    const paneB = paneLayoutStore.splitPane('pane-1', 'horizontal', 'session-b')!
+    // 二分屏：应各占 0.5
+    let root = paneLayoutStore.getRoot()
+    expect(root.type).toBe('split')
+    if (root.type === 'split') expect(root.ratio).toBeCloseTo(0.5)
+
+    // 三分屏：root 的 first 是 1 个叶子、second 是 2 个叶子的子树，
+    // 等分后 root.ratio = 1/3、子树 ratio = 0.5，三个 pane 视觉宽度都是 1/3
+    paneLayoutStore.splitPane(paneB, 'vertical', 'session-c')
+    root = paneLayoutStore.getRoot()
+    expect(root.type).toBe('split')
+    if (root.type === 'split') {
+      expect(root.ratio).toBeCloseTo(1 / 3)
+      if (root.second.type === 'split') expect(root.second.ratio).toBeCloseTo(0.5)
+    }
+  })
+
+  it('equalizes split ratios via splitPaneToSide', () => {
+    paneLayoutStore.reset()
+
+    paneLayoutStore.setFocusedSession('session-a')
+    const paneB = paneLayoutStore.splitPaneToSide('pane-1', 'right', 'session-b')!
+
+    paneLayoutStore.splitPaneToSide(paneB, 'bottom', 'session-c')
+
+    const root = paneLayoutStore.getRoot()
+    expect(root.type).toBe('split')
+    if (root.type === 'split') {
+      expect(root.ratio).toBeCloseTo(1 / 3)
+    }
+  })
+
+  it('re-equalizes ratios after closing a pane', () => {
+    paneLayoutStore.reset()
+
+    paneLayoutStore.setFocusedSession('session-a')
+    const paneB = paneLayoutStore.splitPane('pane-1', 'horizontal', 'session-b')!
+    paneLayoutStore.splitPane(paneB, 'vertical', 'session-c')
+
+    // 先人为拖拽一个不均的比例
+    const root = paneLayoutStore.getRoot()
+    if (root.type === 'split') paneLayoutStore.setRatio(root.id, 0.8)
+    if (root.type === 'split') expect(root.ratio).not.toBeCloseTo(0.5)
+
+    // 关闭一个 pane 后应恢复等分（二分屏各 0.5）
+    paneLayoutStore.closePane('pane-3')
+    const next = paneLayoutStore.getRoot()
+    expect(next.type).toBe('split')
+    if (next.type === 'split') expect(next.ratio).toBeCloseTo(0.5)
+  })
+
+  it('does not equalize on manual ratio drag alone', () => {
+    paneLayoutStore.reset()
+
+    paneLayoutStore.setFocusedSession('session-a')
+    paneLayoutStore.splitPane('pane-1', 'horizontal', 'session-b')
+
+    const root = paneLayoutStore.getRoot()
+    if (root.type === 'split') paneLayoutStore.setRatio(root.id, 0.3)
+
+    const after = paneLayoutStore.getRoot()
+    if (after.type === 'split') expect(after.ratio).toBeCloseTo(0.3)
+  })
 })
