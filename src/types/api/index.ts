@@ -120,6 +120,7 @@ export type {
   QuestionRejectedPayload,
   TodoItem,
   TodoUpdatedPayload,
+  NextToolSettledPayload,
   WorktreeReadyPayload,
   WorktreeFailedPayload,
   VcsBranchUpdatedPayload,

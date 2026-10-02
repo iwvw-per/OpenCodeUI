@@ -43,6 +43,13 @@ import { useMessageExpandRender } from '../messageExpandShared'
 // ToolPartView - 单个工具调用
 // ============================================
 
+/**
+ * 工具运行超过该时长仍未收到完成事件，判定为「可能卡住」并给出中止入口。
+ * 后端 bash 子进程卡死时不会主动上报，用户只能看到一直转圈；
+ * 这里主动提示，避免用户干等。
+ */
+const STUCK_TOOL_THRESHOLD_MS = 60_000
+
 interface ToolPartViewProps {
   part: ToolPart
   isFirst?: boolean
@@ -71,6 +78,7 @@ export const ToolPartView = memo(function ToolPartView({
 
   const isActive = state.status === 'running' || state.status === 'pending'
   const isError = state.status === 'error'
+  const isInterrupted = state.status === 'interrupted'
   // 运行态视觉至少保持 300ms：工具跑得极快时扫光只闪一帧，看起来像界面在抖。
   // 计时读数仍用真实 isActive，只有视觉（扫光、图标旋转）用这个。
   const showRunningVisual = useMinDurationActive(isActive, 300)
@@ -80,6 +88,7 @@ export const ToolPartView = memo(function ToolPartView({
   const endTime = state.time?.end ?? (isActive ? (calibratedNow ?? now) : undefined)
   const rawDuration = startTime !== undefined && endTime !== undefined ? endTime - startTime : undefined
   const duration = rawDuration !== undefined && isActive ? Math.max(0, rawDuration) : rawDuration
+  const isStuck = isActive && duration !== undefined && duration >= STUCK_TOOL_THRESHOLD_MS
   const { inlineToolRequests, immersiveMode, compactInlinePermission } = useTheme()
 
   const { pendingPermissions, pendingQuestions, onPermissionReply, onQuestionReply, onQuestionReject, isReplying } =
@@ -92,7 +101,9 @@ export const ToolPartView = memo(function ToolPartView({
     ? findQuestionRequestForTool(pendingQuestions, part.callID, childSessionId)
     : undefined
 
-  const toolDone = state.status === 'completed' || state.status === 'error'
+  const toolDone = state.status === 'completed' || state.status === 'error' || isInterrupted
+  // 完成/中断/运行中都展示耗时读数；中断态 time.end 已由对账补齐
+  const showDuration = duration !== undefined && (state.status === 'completed' || isActive || isInterrupted)
   // ── 延迟卸载 edit/write 权限组件 ──
   // 用户授权后 permissionRequest 会立即消失，但工具结果可能还没到，
   // 为了避免 "权限消失→空白→结果出现" 的跳动，缓存最后一次权限请求，
@@ -199,13 +210,14 @@ export const ToolPartView = memo(function ToolPartView({
   // 已完成的中性态按工具类别着色（多彩），运行中/失败仍用语义色。
   const isTaskDone = toolName.toLowerCase() === 'task' && state.status === 'completed'
   const iconSpins = showRunningVisual && toolName.toLowerCase() === 'task'
-  const neutralColorClass = !isActive && !isError && !isTaskDone ? getToolColorClass(toolName) : ''
+  const neutralColorClass = !isActive && !isError && !isInterrupted && !isTaskDone ? getToolColorClass(toolName) : ''
   const toolIcon = (
     <div
       className={`
       relative flex items-center justify-center transition-colors duration-200
       ${isActive ? 'text-accent-main-100' : ''}
       ${isError ? 'text-danger-100' : ''}
+      ${isInterrupted ? 'text-warning-100' : ''}
       ${isTaskDone ? 'text-success-100' : ''}
       ${neutralColorClass}
       ${iconSpins ? 'animate-spin' : ''}
@@ -271,6 +283,34 @@ export const ToolPartView = memo(function ToolPartView({
     </button>
   ) : null
 
+  // 非 task 工具卡住时没有单工具中止接口，只能中止整个会话；task 走上面的子会话 Stop。
+  const handleAbortStuck = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (!currentSessionId) return
+      const { serverId } = splitSessionKey(currentSessionId)
+      const state = messageStore.getSessionState(currentSessionId)
+      void abortSession(currentSessionId, state?.directory || '', serverId || undefined)
+    },
+    [currentSessionId],
+  )
+  const stuckHint = isStuck ? (
+    <span className="flex items-center gap-1 shrink-0 text-[length:var(--fs-xxs)] font-medium text-warning-100">
+      {t('toolPart.maybeStuck')}
+      {!taskStopButton && (
+        <button
+          type="button"
+          onClick={handleAbortStuck}
+          aria-label={t('toolPart.abortStuck')}
+          title={t('toolPart.abortStuck')}
+          className="w-[18px] h-[18px] p-0 flex items-center justify-center text-warning-100 hover:text-danger-100 hover:bg-danger-100/10 active:bg-danger-100/20 rounded-sm transition-colors bg-transparent border-none"
+        >
+          <StopIcon size={10} />
+        </button>
+      )}
+    </span>
+  ) : null
+
   const handleFullscreenChange = useCallback((isFullscreen: boolean) => {
     setIsChildFullscreen(isFullscreen)
   }, [])
@@ -330,7 +370,7 @@ export const ToolPartView = memo(function ToolPartView({
           size="sm"
           className="group/header gap-2"
           truncateLabel={false}
-          labelTone={showRunningVisual ? 'active' : isError ? 'error' : 'idle'}
+          labelTone={showRunningVisual ? 'active' : isError ? 'error' : isInterrupted ? 'warning' : 'idle'}
           icon={toolIcon}
           label={
             <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
@@ -354,14 +394,21 @@ export const ToolPartView = memo(function ToolPartView({
             </span>
           }
           meta={
-            duration !== undefined &&
-            (state.status === 'completed' || isActive) && (
-              <span
-                className={`text-[length:var(--fs-xxs)] tabular-nums ${isError ? 'text-danger-100/70' : isActive ? 'reasoning-shimmer-text' : 'text-text-500'}`}
-              >
-                {formatDuration(duration)}
-              </span>
-            )
+            <>
+              {stuckHint}
+              {isInterrupted && (
+                <span className="shrink-0 text-[length:var(--fs-xxs)] font-medium text-warning-100">
+                  {t('toolPart.interrupted')}
+                </span>
+              )}
+              {showDuration && (
+                <span
+                  className={`text-[length:var(--fs-xxs)] tabular-nums ${isError ? 'text-danger-100/70' : isActive ? 'reasoning-shimmer-text' : 'text-text-500'}`}
+                >
+                  {formatDuration(duration!)}
+                </span>
+              )}
+            </>
           }
         />
 
@@ -391,7 +438,7 @@ export const ToolPartView = memo(function ToolPartView({
             inset={false}
             className="group/header pl-2 pr-0"
             truncateLabel={false}
-            labelTone={showRunningVisual ? 'active' : isError ? 'error' : 'idle'}
+            labelTone={showRunningVisual ? 'active' : isError ? 'error' : isInterrupted ? 'warning' : 'idle'}
             label={
               <span className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
                 {taskTitle ?? (
@@ -406,13 +453,19 @@ export const ToolPartView = memo(function ToolPartView({
             }
             meta={
               <>
-                {duration !== undefined && (state.status === 'completed' || isActive) && (
+                {stuckHint}
+                {isInterrupted && (
+                  <span className="text-[length:var(--fs-xxs)] font-medium text-warning-100">
+                    {t('toolPart.interrupted')}
+                  </span>
+                )}
+                {showDuration && (
                   <span
                     className={`text-[length:var(--fs-xxs)] tabular-nums ${
                       isActive ? 'reasoning-shimmer-text' : 'text-text-500'
                     }`}
                   >
-                    {formatDuration(duration)}
+                    {formatDuration(duration!)}
                   </span>
                 )}
                 <span
@@ -466,7 +519,7 @@ export const ToolPartView = memo(function ToolPartView({
           inset={false}
           className="group/header gap-2.5 pl-2 pr-0"
           truncateLabel={false}
-          labelTone={showRunningVisual ? 'active' : isError ? 'error' : 'idle'}
+          labelTone={showRunningVisual ? 'active' : isError ? 'error' : isInterrupted ? 'warning' : 'idle'}
           label={
             <span className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
               {taskTitle ?? (
@@ -483,13 +536,19 @@ export const ToolPartView = memo(function ToolPartView({
           meta={
             <>
               {taskStopButton}
-              {duration !== undefined && (state.status === 'completed' || isActive) && (
+              {stuckHint}
+              {isInterrupted && (
+                <span className="text-[length:var(--fs-xxs)] font-medium text-warning-100">
+                  {t('toolPart.interrupted')}
+                </span>
+              )}
+              {showDuration && (
                 <span
                   className={`text-[length:var(--fs-xxs)] tabular-nums transition-opacity duration-300 ${
                     isActive ? 'reasoning-shimmer-text' : 'text-text-500'
                   }`}
                 >
-                  {formatDuration(duration)}
+                  {formatDuration(duration!)}
                 </span>
               )}
               <span

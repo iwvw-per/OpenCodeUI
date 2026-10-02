@@ -164,8 +164,80 @@ describe('subscribeToEvents', () => {
     expect(received).toBe('2026-04-22T15:00:00.000Z')
   })
 
-  it('ignores stale server.connected events from an old browser SSE generation after reconnect', async () => {
-    const firstFetch = createDeferred<Pick<Response, 'ok' | 'body'>>()
+  it('normalizes session.next.tool.success into a settled callback', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse(
+        createEventChunk({
+          type: EventTypes.SESSION_NEXT_TOOL_SUCCESS,
+          properties: {
+            sessionID: 'session-1',
+            callID: 'call-1',
+            content: [
+              { type: 'text', text: 'line one' },
+              { type: 'text', text: 'line two' },
+            ],
+          },
+        }),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { subscribeToEvents } = await import('./events')
+
+    const received = await new Promise<unknown>((resolve, reject) => {
+      const unsubscribe = subscribeToEvents({
+        onNextToolSettled(data) {
+          unsubscribe()
+          resolve(data)
+        },
+        onError(error) {
+          unsubscribe()
+          reject(error)
+        },
+      })
+    })
+
+    expect(received).toEqual({
+      sessionID: 'session-1',
+      callID: 'call-1',
+      status: 'completed',
+      output: 'line one\nline two',
+    })
+  })
+
+  it('normalizes session.next.shell.ended output and session.next.tool.failed errors', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      createFetchResponse([
+        ...createEventChunk({
+          type: EventTypes.SESSION_NEXT_SHELL_ENDED,
+          properties: { sessionID: 'session-1', callID: 'call-shell', output: 'done' },
+        }),
+        ...createEventChunk({
+          type: EventTypes.SESSION_NEXT_TOOL_FAILED,
+          properties: { sessionID: 'session-1', callID: 'call-fail', error: { name: 'Boom', message: 'exploded' } },
+        }),
+      ]),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { subscribeToEvents } = await import('./events')
+    const received: unknown[] = []
+
+    subscribeToEvents({
+      onNextToolSettled(data) {
+        received.push(data)
+      },
+    })
+
+    await vi.waitFor(() => {
+      expect(received).toEqual([
+        { sessionID: 'session-1', callID: 'call-shell', status: 'completed', output: 'done' },
+        { sessionID: 'session-1', callID: 'call-fail', status: 'error', error: 'exploded' },
+      ])
+    })
+  })
+
+  it('ignores stale server.connected events from an old browser SSE generation after reconnect', async () => {    const firstFetch = createDeferred<Pick<Response, 'ok' | 'body'>>()
     const secondFetch = createDeferred<Pick<Response, 'ok' | 'body'>>()
     const fetchMock = vi
       .fn()

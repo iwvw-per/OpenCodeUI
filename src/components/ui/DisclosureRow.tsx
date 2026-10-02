@@ -22,6 +22,7 @@ const labelToneStyles = {
   idle: 'text-text-400 group-hover/disclosure:text-text-200',
   active: 'reasoning-shimmer-text',
   error: 'text-danger-100',
+  warning: 'text-warning-100',
 } as const
 
 export type DisclosureLabelTone = keyof typeof labelToneStyles

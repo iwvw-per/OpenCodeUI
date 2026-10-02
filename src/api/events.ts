@@ -17,6 +17,7 @@ import type {
   ApiMessage,
   EventCallbacks,
   GlobalEvent,
+  NextToolSettledPayload,
   ServerConnectedPayload,
   SessionErrorPayload,
   TodoUpdatedPayload,
@@ -862,10 +863,63 @@ function handleEventForSubscriber(payload: GlobalEvent['payload'], callbacks: Ev
     case EventTypes.SERVER_CONNECTED:
       callbacks.onServerConnected?.(normalizeServerConnected(payload.properties))
       break
+    case EventTypes.SESSION_NEXT_TOOL_SUCCESS: {
+      const settled = normalizeNextToolSettled(payload.properties, 'completed')
+      if (settled) callbacks.onNextToolSettled?.(settled)
+      break
+    }
+    case EventTypes.SESSION_NEXT_SHELL_ENDED: {
+      const settled = normalizeNextToolSettled(payload.properties, 'completed')
+      if (settled) callbacks.onNextToolSettled?.(settled)
+      break
+    }
+    case EventTypes.SESSION_NEXT_TOOL_FAILED: {
+      const settled = normalizeNextToolSettled(payload.properties, 'error')
+      if (settled) callbacks.onNextToolSettled?.(settled)
+      break
+    }
     default:
       // 忽略其他事件类型
       break
   }
+}
+
+/**
+ * 归一 session.next.tool.success/failed / shell.ended 的 properties。
+ * 只需要 sessionID + callID + 终态；content/output 仅作兜底文本。
+ */
+function normalizeNextToolSettled(
+  properties: unknown,
+  status: 'completed' | 'error',
+): NextToolSettledPayload | null {
+  if (!isRecord(properties)) return null
+  const sessionID = typeof properties.sessionID === 'string' ? properties.sessionID : ''
+  const callID = typeof properties.callID === 'string' ? properties.callID : ''
+  if (!sessionID || !callID) return null
+
+  if (status === 'error') {
+    const error = isRecord(properties.error)
+      ? typeof properties.error.message === 'string'
+        ? properties.error.message
+        : typeof properties.error.name === 'string'
+          ? properties.error.name
+          : undefined
+      : undefined
+    return { sessionID, callID, status, error }
+  }
+
+  // shell.ended 的 output 是字符串；tool.success 的 content 是文本块数组。
+  let output: string | undefined
+  if (typeof properties.output === 'string') {
+    output = properties.output
+  } else if (Array.isArray(properties.content)) {
+    const texts = properties.content
+      .filter((item): item is { type: 'text'; text: string } => isRecord(item) && item.type === 'text' && typeof item.text === 'string')
+      .map(item => item.text)
+    if (texts.length > 0) output = texts.join('\n')
+  }
+
+  return { sessionID, callID, status, output }
 }
 
 function normalizeServerConnected(properties: unknown): ServerConnectedPayload {

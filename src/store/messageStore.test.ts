@@ -52,6 +52,28 @@ function createMessageWithParts(id: string, text: string, sessionID = 'session-1
   }
 }
 
+function createRunningToolPart(
+  id: string,
+  messageID: string,
+  status: 'running' | 'pending' = 'running',
+  callID = `call-${id}`,
+  sessionID = 'session-1',
+): ApiPart & { sessionID: string; messageID: string } {
+  return {
+    id,
+    sessionID,
+    messageID,
+    type: 'tool',
+    callID,
+    tool: 'bash',
+    state: {
+      status,
+      input: { command: 'sleep 999' },
+      time: { start: 1000 },
+    },
+  } as unknown as ApiPart & { sessionID: string; messageID: string }
+}
+
 describe('messageStore', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -408,8 +430,79 @@ describe('messageStore', () => {
     expect(messageStore.getHistoryCursor('session-1')).toBeUndefined()
   })
 
-  it('notifies only subscribers for changed sessions', () => {
-    const session1Subscriber = vi.fn()
+  it('reconciles in-flight tool parts to interrupted on session idle', () => {
+    messageStore.setMessages('session-1', [createMessageWithParts('message-1', 'hi')])
+    messageStore.handlePartUpdated(createRunningToolPart('tool-1', 'message-1'))
+
+    const before = messageStore.getSessionState('session-1')
+    const beforeTool = before?.messages[0].parts.find(p => p.type === 'tool') as { state: { status: string } }
+    expect(beforeTool.state.status).toBe('running')
+
+    messageStore.handleSessionIdle('session-1')
+
+    const after = messageStore.getSessionState('session-1')
+    const toolPart = after?.messages[0].parts.find(p => p.type === 'tool') as {
+      state: { status: string; metadata?: Record<string, unknown>; time?: { end?: number } }
+    }
+    expect(toolPart.state.status).toBe('interrupted')
+    expect(toolPart.state.metadata?.interrupted).toBe(true)
+    expect(toolPart.state.time?.end).toBeTypeOf('number')
+  })
+
+  it('reconciles in-flight tool parts to interrupted on session error', () => {
+    messageStore.setMessages('session-1', [createMessageWithParts('message-1', 'hi')])
+    messageStore.handlePartUpdated(createRunningToolPart('tool-1', 'message-1', 'pending'))
+
+    messageStore.handleSessionError('session-1')
+
+    const state = messageStore.getSessionState('session-1')
+    const toolPart = state?.messages[0].parts.find(p => p.type === 'tool') as { state: { status: string } }
+    expect(toolPart.state.status).toBe('interrupted')
+  })
+
+  it('does not touch already-completed tool parts on session idle', () => {
+    messageStore.setMessages('session-1', [createMessageWithParts('message-1', 'hi')])
+    messageStore.handlePartUpdated(createRunningToolPart('tool-1', 'message-1'))
+    messageStore.handlePartUpdated({
+      ...createRunningToolPart('tool-1', 'message-1'),
+      state: { status: 'completed', input: {}, output: 'ok', title: 'bash', metadata: {}, time: { start: 1000, end: 2000 } },
+    } as never)
+
+    messageStore.handleSessionIdle('session-1')
+
+    const state = messageStore.getSessionState('session-1')
+    const toolPart = state?.messages[0].parts.find(p => p.type === 'tool') as { state: { status: string } }
+    expect(toolPart.state.status).toBe('completed')
+  })
+
+  it('settles a running tool by callID from next.* events', () => {
+    messageStore.setMessages('session-1', [createMessageWithParts('message-1', 'hi')])
+    messageStore.handlePartUpdated(createRunningToolPart('tool-1', 'message-1', 'running', 'call-abc'))
+
+    messageStore.settleToolByCallID('session-1', 'call-abc', { status: 'completed', output: 'done' })
+
+    const state = messageStore.getSessionState('session-1')
+    const toolPart = state?.messages[0].parts.find(p => p.type === 'tool') as { state: { status: string; output?: string } }
+    expect(toolPart.state.status).toBe('completed')
+    expect(toolPart.state.output).toBe('done')
+  })
+
+  it('does not overwrite an authoritative tool result when next.* arrives late', () => {
+    messageStore.setMessages('session-1', [createMessageWithParts('message-1', 'hi')])
+    messageStore.handlePartUpdated({
+      ...createRunningToolPart('tool-1', 'message-1', 'running', 'call-abc'),
+      state: { status: 'completed', input: {}, output: 'server-result', title: 'bash', metadata: {}, time: { start: 1, end: 2 } },
+    } as never)
+
+    messageStore.settleToolByCallID('session-1', 'call-abc', { status: 'error', error: 'stale' })
+
+    const state = messageStore.getSessionState('session-1')
+    const toolPart = state?.messages[0].parts.find(p => p.type === 'tool') as { state: { status: string; output?: string } }
+    expect(toolPart.state.status).toBe('completed')
+    expect(toolPart.state.output).toBe('server-result')
+  })
+
+  it('notifies only subscribers for changed sessions', () => {    const session1Subscriber = vi.fn()
     const session2Subscriber = vi.fn()
     const allSubscriber = vi.fn()
     const rafCallbacks: Array<(time: number) => void> = []

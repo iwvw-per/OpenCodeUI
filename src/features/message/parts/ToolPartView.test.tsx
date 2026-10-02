@@ -12,6 +12,9 @@ vi.mock('react-i18next', () => ({
     t: (key: string) => {
       if (key === 'toolPart.running') return 'Running'
       if (key === 'toolPart.failed') return 'Failed'
+      if (key === 'toolPart.interrupted') return 'Interrupted'
+      if (key === 'toolPart.maybeStuck') return 'Possibly stuck'
+      if (key === 'toolPart.abortStuck') return 'Abort session'
       return key
     },
   }),
@@ -156,6 +159,33 @@ describe('ToolPartView running duration', () => {
 
     rerender(<ToolPartView part={part} descriptive />)
     expect(container.firstElementChild?.className).toContain('pt-1')
+  })
+
+  it('shows an interrupted marker and duration for reconciled tool parts', () => {
+    const part = createRunningToolPart()
+    part.state = { ...part.state, status: 'interrupted', metadata: { interrupted: true }, time: { start: 7_500, end: 10_000 } }
+
+    render(<ToolPartView part={part} />)
+
+    expect(screen.getByText('Interrupted')).toBeInTheDocument()
+    expect(screen.getByText('2.5s')).toBeInTheDocument()
+  })
+
+  it('shows a stuck hint with abort entry once a tool runs past the threshold', () => {
+    getActiveCalibratedNowMock.mockReturnValue(7_500 + 60_000)
+
+    render(<ToolPartView part={createRunningToolPart()} />)
+
+    expect(screen.getByText('Possibly stuck')).toBeInTheDocument()
+    expect(screen.getByLabelText('Abort session')).toBeInTheDocument()
+  })
+
+  it('does not show the stuck hint before the threshold', () => {
+    getActiveCalibratedNowMock.mockReturnValue(7_500 + 30_000)
+
+    render(<ToolPartView part={createRunningToolPart()} />)
+
+    expect(screen.queryByText('Possibly stuck')).not.toBeInTheDocument()
   })
 })
 
