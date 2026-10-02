@@ -24,7 +24,9 @@ interface IconProps {
 }
 
 const defaultSize = 14
-const defaultClassName = 'text-text-400'
+// 不硬编码颜色：图标颜色由外层容器决定（工具类别多彩 / 运行中 accent / 失败 danger）。
+// 硬编码 text-text-400 会直接作用在 SVG 上，优先级高于外层容器的颜色，导致多彩配色失效。
+const defaultClassName = ''
 
 function wrapTool(Icon: ComponentType<LucideProps>) {
   return function WrappedToolIcon({ size = defaultSize, className = defaultClassName, ...props }: IconProps) {

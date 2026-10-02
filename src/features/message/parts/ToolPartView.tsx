@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { diffLines } from 'diff'
 import { DisclosureRow } from '../../../components/ui/DisclosureRow'
-import { StopIcon } from '../../../components/Icons'
+import { StopIcon, TaskDoneIcon } from '../../../components/Icons'
 import { ToolParamChip } from './ToolParamChip'
 import type { ToolPart } from '../../../types/message'
 import { useCompositorExpand, useDisclosureScrollLock } from '../../../hooks'
@@ -26,6 +26,7 @@ import { InlinePermission } from '../../chat/InlinePermission'
 import { InlineQuestion } from '../../chat/InlineQuestion'
 import {
   getToolIcon,
+  getToolColorClass,
   extractToolData,
   getToolConfig,
   DefaultRenderer,
@@ -194,18 +195,23 @@ export const ToolPartView = memo(function ToolPartView({
   // Shared icon element
   // 子代理（task）的图标语义是「正在跑」，运行时让它真的转；
   // 其它工具图标代表类型，不旋转（转一个文件/终端图标没有意义）。
+  // task 完成后换成绿色空心圆对勾，明确表达「子任务已结束」。
+  // 已完成的中性态按工具类别着色（多彩），运行中/失败仍用语义色。
+  const isTaskDone = toolName.toLowerCase() === 'task' && state.status === 'completed'
   const iconSpins = showRunningVisual && toolName.toLowerCase() === 'task'
+  const neutralColorClass = !isActive && !isError && !isTaskDone ? getToolColorClass(toolName) : ''
   const toolIcon = (
     <div
       className={`
       relative flex items-center justify-center transition-colors duration-200
       ${isActive ? 'text-accent-main-100' : ''}
       ${isError ? 'text-danger-100' : ''}
-      ${state.status === 'completed' ? 'text-text-400 group-hover:text-text-300' : ''}
+      ${isTaskDone ? 'text-success-100' : ''}
+      ${neutralColorClass}
       ${iconSpins ? 'animate-spin' : ''}
     `}
     >
-      {getToolIcon(toolName)}
+      {isTaskDone ? <TaskDoneIcon size={14} /> : getToolIcon(toolName)}
     </div>
   )
 
