@@ -8,6 +8,8 @@ const {
   getSessionMessagePageMock,
   messageStoreMock,
   sessionErrorHandlerMock,
+  revertMessageMock,
+  extractUserMessageContentMock,
 } = vi.hoisted(() => ({
   getSessionMock: vi.fn(),
   getSessionMessagePageMock: vi.fn(),
@@ -21,14 +23,16 @@ const {
     setRevertState: vi.fn(),
   },
   sessionErrorHandlerMock: vi.fn(),
+  revertMessageMock: vi.fn(),
+  extractUserMessageContentMock: vi.fn((_message: unknown) => ({ text: 'hello', attachments: [] })),
 }))
 
 vi.mock('../api', () => ({
   getSession: (...args: unknown[]) => getSessionMock(...args),
   getSessionMessagePage: (...args: unknown[]) => getSessionMessagePageMock(...args),
-  revertMessage: vi.fn(),
+  revertMessage: (...args: unknown[]) => revertMessageMock(...args),
   unrevertSession: vi.fn(),
-  extractUserMessageContent: vi.fn(),
+  extractUserMessageContent: (message: unknown) => extractUserMessageContentMock(message),
 }))
 
 vi.mock('../store', () => ({
@@ -51,10 +55,14 @@ describe('useSessionManager', () => {
     messageStoreMock.prependMessages.mockReset()
     messageStoreMock.setRevertState.mockReset()
     sessionErrorHandlerMock.mockReset()
+    revertMessageMock.mockReset()
+    extractUserMessageContentMock.mockReset()
 
     messageStoreMock.getSessionState.mockReturnValue(null)
     getSessionMock.mockResolvedValue({ id: 'session-1', directory: '/workspace/demo' })
     getSessionMessagePageMock.mockResolvedValue({ messages: [] })
+    revertMessageMock.mockResolvedValue({})
+    extractUserMessageContentMock.mockReturnValue({ text: 'hello', attachments: [] })
   })
 
   it('reports missing route sessions when loading returns not found', async () => {
@@ -213,5 +221,120 @@ describe('useSessionManager', () => {
     })
 
     expect(messageStoreMock.setLoadState).toHaveBeenCalledWith('session-2', 'loading')
+  })
+
+  it('retries a transient Failed to fetch and succeeds without surfacing an error', async () => {
+    vi.useFakeTimers()
+    try {
+      messageStoreMock.getSessionState.mockReturnValue(null)
+      getSessionMessagePageMock
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+        .mockResolvedValueOnce({ messages: [] })
+
+      const { result } = renderHook(() =>
+        useSessionManager({ sessionId: null, directory: '/workspace/demo' }),
+      )
+
+      const loadPromise = result.current.loadSession('session-1')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600)
+        await loadPromise
+      })
+
+      expect(getSessionMessagePageMock).toHaveBeenCalledTimes(2)
+      expect(messageStoreMock.setMessages).toHaveBeenCalled()
+      expect(messageStoreMock.setLoadError).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives up after retries and surfaces the error', async () => {
+    vi.useFakeTimers()
+    try {
+      messageStoreMock.getSessionState.mockReturnValue(null)
+      getSessionMessagePageMock.mockRejectedValue(new TypeError('Failed to fetch'))
+
+      const { result } = renderHook(() =>
+        useSessionManager({ sessionId: null, directory: '/workspace/demo' }),
+      )
+
+      const loadPromise = result.current.loadSession('session-1')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+        await loadPromise
+      })
+
+      // 1 次初始 + 3 次重试
+      expect(getSessionMessagePageMock).toHaveBeenCalledTimes(4)
+      expect(messageStoreMock.setLoadError).toHaveBeenCalledWith('session-1', expect.objectContaining({ name: 'APIError' }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not retry a 404 session-not-found error', async () => {
+    vi.useFakeTimers()
+    try {
+      messageStoreMock.getSessionState.mockReturnValue(null)
+      const notFound = Object.assign(new Error('session not found'), { status: 404 })
+      getSessionMessagePageMock.mockRejectedValue(notFound)
+
+      const { result } = renderHook(() =>
+        useSessionManager({ sessionId: null, directory: '/workspace/demo' }),
+      )
+
+      const loadPromise = result.current.loadSession('session-1')
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+        await loadPromise
+      })
+
+      expect(getSessionMessagePageMock).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('requestUndo issues the network call but does not commit state', async () => {
+    messageStoreMock.getSessionState.mockReturnValue({
+      messages: [
+        {
+          info: { id: 'message-1', role: 'user', time: { created: 1 }, model: { providerID: 'p', modelID: 'm' }, agent: 'build' },
+          parts: [],
+        },
+        { info: { id: 'message-2', role: 'assistant', time: { created: 2 } }, parts: [] },
+      ],
+      directory: '/workspace/demo',
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager({ sessionId: 'session-1', directory: '/workspace/demo' }),
+    )
+
+    let revertState: unknown
+    await act(async () => {
+      revertState = await result.current.requestUndo('message-1')
+    })
+
+    expect(revertMessageMock).toHaveBeenCalledWith('session-1', 'message-1', undefined, '/workspace/demo', expect.anything())
+    expect(revertState).toMatchObject({ messageId: 'message-1' })
+    // 拆分后 requestUndo 不落状态，由 commitUndo 负责
+    expect(messageStoreMock.setRevertState).not.toHaveBeenCalled()
+  })
+
+  it('commitUndo applies the revert state to the store', async () => {
+    const { result } = renderHook(() =>
+      useSessionManager({ sessionId: 'session-1', directory: '/workspace/demo' }),
+    )
+
+    act(() => {
+      result.current.commitUndo({ messageId: 'message-1', history: [] })
+    })
+
+    expect(messageStoreMock.setRevertState).toHaveBeenCalledWith('session-1', {
+      messageId: 'message-1',
+      history: [],
+    })
   })
 })

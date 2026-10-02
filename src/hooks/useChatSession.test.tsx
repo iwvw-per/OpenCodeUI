@@ -24,6 +24,7 @@ const {
   refreshPendingRequestsMock,
   useSessionStateMock,
   activeSessionStatusMap,
+  loadSessionMock,
 } = vi.hoisted(() => ({
   createSessionMock: vi.fn(),
   summarizeSessionMock: vi.fn(),
@@ -48,6 +49,7 @@ const {
   refreshPendingRequestsMock: vi.fn((_sessionIds?: string | string[], _directory?: string) => Promise.resolve()),
   useSessionStateMock: vi.fn((_sessionId: string | null) => null as null | { isStreaming: boolean; messages: unknown[] }),
   activeSessionStatusMap: {} as Record<string, { type: string; attempt?: number; message?: string; next?: number }>,
+  loadSessionMock: vi.fn(() => Promise.resolve()),
 }))
 
 const autoApproveState = vi.hoisted(() => ({
@@ -91,7 +93,7 @@ vi.mock('../store', () => ({
 
 vi.mock('../hooks', () => ({
   useSessionManager: () => ({
-    loadSession: vi.fn(),
+    loadSession: loadSessionMock,
     loadMoreHistory: vi.fn(),
     handleUndo: vi.fn(),
     handleRedo: vi.fn(),
@@ -158,6 +160,29 @@ vi.mock('../utils', () => ({
   clipboardErrorHandler: vi.fn(),
   copyTextToClipboard: vi.fn(),
   createErrorHandler: vi.fn(() => errorHandlerMock),
+}))
+
+const healthStore = vi.hoisted(() => {
+  const listeners = new Set<() => void>()
+  return {
+    listeners,
+    status: null as string | null,
+    emit() {
+      for (const listener of listeners) listener()
+    },
+  }
+})
+
+vi.mock('../store/serverStore', () => ({
+  serverStore: {
+    getActiveServerId: () => 'local',
+    subscribe: (listener: () => void) => {
+      healthStore.listeners.add(listener)
+      return () => healthStore.listeners.delete(listener)
+    },
+    onServerChange: () => () => {},
+    getHealth: () => (healthStore.status ? { status: healthStore.status } : null),
+  },
 }))
 
 vi.mock('../utils/perServerStorage', () => ({
@@ -392,8 +417,86 @@ describe('useChatSession handleCommand', () => {
   )
 })
 
-describe('useChatSession busy UI signal', () => {
+describe('useChatSession health recovery', () => {
   beforeEach(() => {
+    registerSessionConsumerMock.mockReset()
+    registerSessionConsumerMock.mockReturnValue(vi.fn())
+    useSessionStateMock.mockReset()
+    useSessionFamilyMock.mockReset()
+    useSessionFamilyMock.mockReturnValue([])
+    loadSessionMock.mockReset()
+    loadSessionMock.mockResolvedValue(undefined)
+    getPaneFullAutoModeMock.mockReturnValue('off')
+    onFullAutoChangeMock.mockReturnValue(vi.fn())
+    autoApproveSubscribeMock.mockReturnValue(vi.fn())
+    getSelectableAgentsMock.mockResolvedValue([])
+    healthStore.status = null
+    healthStore.listeners.clear()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('reloads the session when health recovers from offline to online', () => {
+    useSessionStateMock.mockReturnValue({ isStreaming: false, messages: [] })
+
+    renderHook(() =>
+      useChatSession({
+        paneId: 'pane-1',
+        chatAreaRef: { current: null },
+        currentModel: { id: 'model-1', providerId: 'provider-1', variants: [] } as never,
+        refetchModels: vi.fn(async () => {}),
+        sessionId: 'session-1',
+        navigateToSession: vi.fn(),
+        navigateHome: vi.fn(),
+      }),
+    )
+
+    loadSessionMock.mockClear()
+
+    act(() => {
+      healthStore.status = 'offline'
+      healthStore.emit()
+    })
+    act(() => {
+      healthStore.status = 'online'
+      healthStore.emit()
+    })
+
+    expect(loadSessionMock).toHaveBeenCalledWith('session-1', { force: true })
+  })
+
+  it('does not reload when health was already online', () => {
+    useSessionStateMock.mockReturnValue({ isStreaming: false, messages: [] })
+
+    renderHook(() =>
+      useChatSession({
+        paneId: 'pane-1',
+        chatAreaRef: { current: null },
+        currentModel: { id: 'model-1', providerId: 'provider-1', variants: [] } as never,
+        refetchModels: vi.fn(async () => {}),
+        sessionId: 'session-1',
+        navigateToSession: vi.fn(),
+        navigateHome: vi.fn(),
+      }),
+    )
+
+    act(() => {
+      healthStore.status = 'online'
+      healthStore.emit()
+    })
+    loadSessionMock.mockClear()
+    act(() => {
+      healthStore.status = 'online'
+      healthStore.emit()
+    })
+
+    expect(loadSessionMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('useChatSession busy UI signal', () => {  beforeEach(() => {
     createSessionMock.mockReset()
     summarizeSessionMock.mockReset()
     executeCommandMock.mockReset()

@@ -214,11 +214,47 @@ export function useChatSession({
   const sessionFamily = useSessionFamily(routeSessionId)
 
   // Session Manager
-  const { loadSession, loadMoreHistory, handleUndo, handleRedo, handleRedoAll, clearRevert } = useSessionManager({
-    sessionId: routeSessionId,
-    directory: currentDirectory,
-    onSessionMissing: handleMissingRouteSession,
-  })
+  const { loadSession, loadMoreHistory, requestUndo, commitUndo, handleRedo, handleRedoAll, clearRevert } =
+    useSessionManager({
+      sessionId: routeSessionId,
+      directory: currentDirectory,
+      onSessionMissing: handleMissingRouteSession,
+    })
+
+  /**
+   * 健康状态恢复 → 重新加载当前会话。
+   *
+   * 只在「该服务器从明确的故障态（offline/error/unauthorized）变为 online」
+   * 时触发：本地 serve 短暂未就绪、或服务重启后 health 恢复，此时若当前会话
+   * 正因加载失败停在错误页，自动补一次 force 加载，避免用户手动刷新。
+   *
+   * 健康轮询每次都会先置 checking 再落终态，因此必须忽略 checking，否则每 15s
+   * 的轮询都会被误判成一次「恢复」。
+   *
+   * 与 SSE onReconnected 互补：onReconnected 只覆盖长连接真正断开的情况，
+   * 覆盖不到「SSE 未断、只是单次 HTTP 请求失败」。
+   */
+  const prevHealthStatusRef = useRef<string | null>(null)
+  useEffect(() => {
+    const check = () => {
+      const status = serverStore.getHealth(paneServerId)?.status ?? null
+      // checking 是轮询的中间态，不更新基线，否则会把 offline→checking→online
+      // 的恢复过程误判成「从 checking 变 online」而漏掉恢复
+      if (status === 'checking') return
+      const prev = prevHealthStatusRef.current
+      prevHealthStatusRef.current = status
+      if (status === null) return
+      const recovered = prev === 'offline' || prev === 'error' || prev === 'unauthorized'
+      if (!recovered || status !== 'online') return
+      if (!routeSessionId || sessionKeyToServerId(routeSessionId) !== paneServerId) return
+      // 只有「尚未成功加载」时才补拉，避免对已加载会话做无谓重拉
+      const state = messageStore.getSessionState(routeSessionId)
+      if (state?.loadState === 'loaded' && !state.isStale && state.messages.length > 0) return
+      void loadSession(routeSessionId, { force: true })
+    }
+    check()
+    return serverStore.subscribe(check)
+  }, [paneServerId, routeSessionId, loadSession])
 
   // Permission handling
   const {
@@ -1083,10 +1119,14 @@ export function useChatSession({
 
       const messageIdsToRemove = currentMessages.slice(messageIndex).map(m => m.info.id)
 
+      // 网络请求与淡出动画并行：原来先 await 动画再发请求，两段耗时叠加，
+      // 体感就是「点了以后要等一下才开始」。并行后总耗时约为二者较大者。
+      const undoRequest = requestUndo(userMessageId)
       await animateUndo(messageIdsToRemove)
-      await handleUndo(userMessageId)
+      const revertState = await undoRequest
+      if (revertState) commitUndo(revertState)
     },
-    [animateUndo, handleUndo],
+    [animateUndo, requestUndo, commitUndo],
   )
 
   // Redo with animation
