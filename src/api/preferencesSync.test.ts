@@ -91,10 +91,10 @@ describe('preferences sync', () => {
   it('admits the opencode: and opencode- prefixes', async () => {
     const { isSyncableKey } = await import('./preferencesSync')
 
-    expect(isSyncableKey('opencode:notifications')).toBe(true)
     expect(isSyncableKey('opencode:sound-settings')).toBe(true)
     expect(isSyncableKey('opencode:toast-enabled')).toBe(true)
     expect(isSyncableKey('opencode:update-check')).toBe(true)
+    expect(isSyncableKey('opencode:notification-event-settings')).toBe(true)
 
     expect(isSyncableKey('opencode-keybindings')).toBe(true)
     expect(isSyncableKey('opencode-sidebar-session-sort')).toBe(true)
@@ -159,6 +159,8 @@ describe('preferences sync', () => {
     expect(isSyncableKey('opencode-auto-start-service')).toBe(false)
     expect(isSyncableKey('opencode-service-env-vars')).toBe(false)
     expect(isSyncableKey('opencode-terminal-layout')).toBe(false)
+    // 通知历史含逐条已读标志，属本机运行时状态：同步会让已读被旧未读覆盖
+    expect(isSyncableKey('opencode:notifications')).toBe(false)
 
     expect(isSyncableKey('srv:local:opencode-hidden-directories')).toBe(false)
     expect(isSyncableKey('srv:server-1:opencode-pinned-sessions')).toBe(false)
@@ -172,6 +174,7 @@ describe('preferences sync', () => {
     localStorage.setItem('theme-preset', '"eucalyptus"')
     localStorage.setItem('i18nextLng', 'zh-CN')
     localStorage.setItem('opencode:notifications', '{"enabled":true}')
+    localStorage.setItem('opencode:sound-settings', '{"enabled":true}')
     localStorage.setItem('opencode-keybindings', '{}')
     localStorage.setItem('srv:aiagent:inst_1:selected-agent:pane-1', '"build"')
     localStorage.setItem('opencode-servers', '[{"url":"http://localhost"}]')
@@ -188,10 +191,11 @@ describe('preferences sync', () => {
     expect(entries['font-scale']).toBe('0.1')
     expect(entries['theme-preset']).toBe('"eucalyptus"')
     expect(entries['i18nextLng']).toBe('zh-CN')
-    expect(entries['opencode:notifications']).toBeDefined()
+    expect(entries['opencode:sound-settings']).toBeDefined()
     expect(entries['opencode-keybindings']).toBeDefined()
     expect(entries['srv:aiagent:inst_1:selected-agent:pane-1']).toBeDefined()
 
+    expect(entries['opencode:notifications']).toBeUndefined()
     expect(entries['opencode-servers']).toBeUndefined()
     expect(entries['opencode-active-server']).toBeUndefined()
     expect(entries['opencode-aiagent-account']).toBeUndefined()
