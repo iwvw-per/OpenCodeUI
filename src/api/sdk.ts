@@ -27,13 +27,38 @@ async function getTauriFetch(): Promise<typeof globalThis.fetch> {
   return _tauriFetchLoading
 }
 
-function getFetchImpl(): typeof globalThis.fetch {
-  return isTauri() && _tauriFetch ? _tauriFetch : globalThis.fetch
+/**
+ * 等待 tauri fetch 就绪；导入失败时回退原生 fetch。
+ *
+ * 移动端（Android）同样走 Tauri 分支，但连的是远程服务器，远程 https 用
+ * webview 原生 fetch 本就可达。若插件在某些环境导入失败，回退原生 fetch
+ * 比直接硬失败更稳妥，也保持与旧行为一致。
+ */
+async function resolveTauriFetch(): Promise<typeof globalThis.fetch> {
+  try {
+    return await getTauriFetch()
+  } catch {
+    return globalThis.fetch
+  }
+}
+
+/**
+ * 已就绪的 fetch 实现；Tauri 插件尚未加载完成时返回 null。
+ *
+ * 浏览器环境恒为 globalThis.fetch；Tauri 下只有插件加载完成才算就绪，
+ * 避免首屏请求落到 webview 原生 fetch 访问 127.0.0.1 时抛 Failed to fetch。
+ */
+function readyFetchImpl(): typeof globalThis.fetch | null {
+  if (isTauri()) return _tauriFetch
+  return globalThis.fetch
 }
 
 function createAbortError(message: string) {
   return new DOMException(message, 'AbortError')
 }
+
+/** 请求超时：服务端半死时避免请求永久挂起，超时后按瞬态错误重试。 */
+const API_REQUEST_TIMEOUT_MS = 30_000
 
 async function trackedFetch(input: RequestInfo | URL, init: RequestInit | undefined, generation: number): Promise<Response> {
   const controller = new AbortController()
@@ -46,6 +71,11 @@ async function trackedFetch(input: RequestInfo | URL, init: RequestInit | undefi
     externalSignal?.addEventListener('abort', abortFromExternal, { once: true })
   }
 
+  // 外部已带 signal 时不叠加超时，避免和调用方的取消语义打架
+  const timeoutId = externalSignal
+    ? null
+    : setTimeout(() => controller.abort(createAbortError('API request timed out')), API_REQUEST_TIMEOUT_MS)
+
   _apiRequestControllers.add(controller)
 
   try {
@@ -53,11 +83,22 @@ async function trackedFetch(input: RequestInfo | URL, init: RequestInit | undefi
       throw createAbortError('Stale API request')
     }
 
-    return await getFetchImpl()(input, {
-      ...init,
-      signal: controller.signal,
-    })
+    // 快路径：fetch 已就绪时同步发起，保证 abortInFlightApiRequests 能在
+    // 请求真正开始前取消它（不引入微任务间隙）。
+    const ready = readyFetchImpl()
+    if (ready) {
+      return await ready(input, { ...init, signal: controller.signal })
+    }
+
+    // 慢路径：Tauri 插件尚未加载完成，等待就绪后再发；期间若端点已切换则放弃。
+    // 插件导入失败时回退原生 fetch，避免移动端等环境硬失败。
+    const fetchImpl = await resolveTauriFetch()
+    if (generation !== _apiRequestGeneration) {
+      throw createAbortError('Stale API request')
+    }
+    return await fetchImpl(input, { ...init, signal: controller.signal })
   } finally {
+    if (timeoutId !== null) clearTimeout(timeoutId)
     externalSignal?.removeEventListener('abort', abortFromExternal)
     _apiRequestControllers.delete(controller)
   }
@@ -97,8 +138,9 @@ function buildHeaders(serverId?: string): Record<string, string> {
 }
 
 /**
- * 同步获取 SDK client（浏览器环境 or tauri fetch 已加载）
- * 如果 tauri fetch 还没加载完，先用原生 fetch
+ * 同步获取 SDK client。
+ * 每次请求经 trackedFetch：fetch 已就绪时同步发起；Tauri 插件尚未加载完成时
+ * 等待其就绪后再发，不会回退到 webview 原生 fetch。
  * @param serverId 指定服务器（缺省用活动服务器）
  */
 export function getSDKClient(serverId?: string): OpencodeClient {

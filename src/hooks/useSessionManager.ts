@@ -31,10 +31,55 @@ function toLoadMessageError(error: unknown): MessageError {
     name: 'APIError',
     data: {
       message,
-      isRetryable: true,
+      isRetryable: isRetryableLoadError(error),
       responseBody: error instanceof Error ? error.stack : undefined,
     },
   }
+}
+
+/**
+ * 判定加载失败是否值得自动重试。
+ *
+ * 目标场景：本地 serve 进程短暂未就绪、传输层单次抖动，抛出的
+ * `TypeError: Failed to fetch`（Tauri/webview 网络层失败）或超时/中止错误。
+ * 这类错误是瞬态的，重试同一请求即可恢复，不必让用户手动刷新。
+ *
+ * 明确不重试：404/会话不存在（重试也不会出现），以及其它带 4xx 状态码的
+ * 确定性错误。
+ */
+function isRetryableLoadError(error: unknown): boolean {
+  if (isSessionNotFoundError(error)) return false
+
+  const record = error && typeof error === 'object' ? (error as Record<string, unknown>) : null
+  const status =
+    typeof record?.status === 'number'
+      ? record.status
+      : typeof record?.statusCode === 'number'
+        ? record.statusCode
+        : undefined
+  if (status !== undefined && status >= 400 && status < 500) return false
+
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return /failed to fetch|network|timeout|timed out|aborted|econnrefused|connection (refused|reset|closed)|load failed/i.test(
+    message,
+  )
+}
+
+/** 有限次退避重试；仅在 isRetryableLoadError 判定为可重试且未失效时重试 */
+async function withLoadRetry<T>(fn: () => Promise<T>, isStale: () => boolean): Promise<T> {
+  const delays = [500, 1500, 3000]
+  let lastError: unknown
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      return await fn()
+    } catch (error) {
+      lastError = error
+      if (isStale() || !isRetryableLoadError(error) || attempt === delays.length) throw error
+      sessionErrorHandler('load session retry', error)
+      await new Promise(resolve => setTimeout(resolve, delays[attempt]))
+    }
+  }
+  throw lastError
 }
 
 /**
@@ -196,12 +241,18 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
       }
 
       try {
-        // 并行加载 session 信息和消息（传递 directory）
+        // 并行加载 session 信息和消息（传递 directory）。
+        // 瞬态网络失败（本地 serve 短暂未就绪、传输层抖动）自动重试，避免
+        // 首屏或重连时一次 Failed to fetch 就把用户卡在错误页。
         const serverId = sessionKeyToServerId(sid)
-        const [sessionInfo, page] = await Promise.all([
-          getSession(sid, dir, serverId).catch(() => null),
-          getSessionMessagePage(sid, INITIAL_MESSAGE_LIMIT, undefined, dir, serverId),
-        ])
+        const [sessionInfo, page] = await withLoadRetry(
+          () =>
+            Promise.all([
+              getSession(sid, dir, serverId).catch(() => null),
+              getSessionMessagePage(sid, INITIAL_MESSAGE_LIMIT, undefined, dir, serverId),
+            ]),
+          isStale,
+        )
         const apiMessages = page.messages
 
         if (isStale()) return
@@ -325,13 +376,19 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
   // Undo
   // ============================================
 
-  const handleUndo = useCallback(
-    async (userMessageId: string) => {
-      if (!sessionId) return
+  /**
+   * 发起撤销请求并计算 redo 历史，但不提交状态。
+   *
+   * 拆出「网络请求」与「状态提交」两步，是为了让动画与网络并行：
+   * 调用方可先发起本请求，同时播放淡出动画，动画结束后再 commitUndo，
+   * 从而把网络往返从串行路径上移出（原来先等动画再发请求，两段耗时叠加）。
+   */
+  const requestUndo = useCallback(
+    async (userMessageId: string): Promise<RevertState | null> => {
+      if (!sessionId) return null
 
-      // 获取当前 session 的 directory（优先用 store 中的，其次用传入的）
       const state = messageStore.getSessionState(sessionId)
-      if (!state) return
+      if (!state) return null
 
       const dir = state.directory || directoryRef.current
 
@@ -341,7 +398,7 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
 
         // 找到 revert 点的索引
         const revertIndex = state.messages.findIndex(m => m.info.id === userMessageId)
-        if (revertIndex === -1) return
+        if (revertIndex === -1) return null
 
         // 收集被撤销的用户消息，构建 redo 历史
         const revertedUserMessages = state.messages.slice(revertIndex).filter(isUserUIMessage)
@@ -359,17 +416,30 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
           }
         })
 
-        // 更新 store 的 revert 状态
-        const revertState: RevertState = {
-          messageId: userMessageId,
-          history,
-        }
-        messageStore.setRevertState(sessionId, revertState)
+        return { messageId: userMessageId, history }
       } catch (error) {
         sessionErrorHandler('undo', error)
+        return null
       }
     },
     [sessionId],
+  )
+
+  /** 提交撤销状态（由 requestUndo 得到的 revertState） */
+  const commitUndo = useCallback(
+    (revertState: RevertState) => {
+      if (!sessionId) return
+      messageStore.setRevertState(sessionId, revertState)
+    },
+    [sessionId],
+  )
+
+  const handleUndo = useCallback(
+    async (userMessageId: string) => {
+      const revertState = await requestUndo(userMessageId)
+      if (revertState) commitUndo(revertState)
+    },
+    [requestUndo, commitUndo],
   )
 
   // ============================================
@@ -466,6 +536,8 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
     loadSession,
     loadMoreHistory,
     handleUndo,
+    requestUndo,
+    commitUndo,
     handleRedo,
     handleRedoAll,
     clearRevert,
