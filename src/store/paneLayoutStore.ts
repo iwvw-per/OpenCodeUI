@@ -378,6 +378,9 @@ function createPaneLayoutStore() {
       }
 
       _root = replaceNode(_root, paneId, split)
+      // 新增分栏后自动等分：嵌套 split 若各自 ratio=0.5，会退化成 50/25/25 这类
+      // 不均分布；统一按叶子数重算，保证多开时各 pane 宽度平均。
+      _root = equalizeSplitRatios(_root)
       _focusedPaneId = newLeaf.id
       if (_fullscreenPaneId === paneId) {
         _fullscreenPaneId = null
@@ -416,6 +419,8 @@ function createPaneLayoutStore() {
       }
 
       _root = replaceNode(_root, targetPaneId, split)
+      // 新增分栏后自动等分（见 splitPane 说明）
+      _root = equalizeSplitRatios(_root)
       _focusedPaneId = newLeaf.id
       if (_fullscreenPaneId === targetPaneId) {
         _fullscreenPaneId = null
@@ -445,6 +450,9 @@ function createPaneLayoutStore() {
       if (!result) return
 
       _root = result
+      // 关闭分栏后同样重新等分：否则移除一个叶子会让剩下的 pane 宽度保持旧比例
+      // （如 3 分屏关掉一个后变成 50/50 之外的残留比例），与「自动平均」预期不符。
+      _root = equalizeSplitRatios(_root)
       if (_fullscreenPaneId === paneId || (_fullscreenPaneId && !findLeaf(_root, _fullscreenPaneId))) {
         _fullscreenPaneId = null
       }

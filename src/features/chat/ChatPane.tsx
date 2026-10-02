@@ -285,11 +285,6 @@ export const ChatPane = memo(function ChatPane({
       if (!newPaneId) return false
       paneLayoutStore.markSubtaskSession(sessionKey)
 
-      // 三分屏（两个主对话 + 一个子代理）时，让三个 pane 尺寸一致
-      if (paneLayoutStore.getSnapshot().paneCount === 3) {
-        paneLayoutStore.equalizeSplits()
-      }
-
       // 焦点保持在原 pane（用户在主任务视图继续操作）；新 pane 只负责展示子会话
       if (previousFocusedPaneId && paneLayoutStore.findLeaf(previousFocusedPaneId)) {
         paneLayoutStore.focusPane(previousFocusedPaneId)
