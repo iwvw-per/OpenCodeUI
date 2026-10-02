@@ -16,7 +16,9 @@ export interface SessionSortPreference {
   desc: boolean
 }
 
-export const DEFAULT_SESSION_SORT: SessionSortPreference = { field: 'updated', desc: true }
+// 默认按「创建时间」倒序：created 不随对话进行而变化，顺序稳定；
+// updated 会被并行运行的对话交替刷新，导致两条会话在列表里来回跳。
+export const DEFAULT_SESSION_SORT: SessionSortPreference = { field: 'created', desc: true }
 
 export function isSessionSortField(value: unknown): value is SessionSortField {
   return value === 'updated' || value === 'created'

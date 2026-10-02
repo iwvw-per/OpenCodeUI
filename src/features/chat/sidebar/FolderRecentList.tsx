@@ -7,7 +7,6 @@ import {
   GitBranchIcon,
   GlobeIcon,
   PinIcon,
-  SpinnerIcon,
   ChevronDownIcon,
   PlusIcon,
   TrashIcon,
@@ -1143,7 +1142,7 @@ function FolderRecentSection({
                 图标类型（地球/分支/文件夹）不丢失，鼠标移开即恢复。 */}
             <span className="relative size-5 shrink-0 flex items-center justify-center">
               <FolderDisplayIcon
-                size={15}
+                size={17}
                 className={`transition-opacity duration-150 group-hover/folder:opacity-0 ${
                   isProjectActive ? 'text-accent-main-100' : 'text-text-400'
                 }`}
@@ -1246,7 +1245,7 @@ function FolderRecentSection({
               title={folderStatus.count ? `${folderStatus.label} (${folderStatus.count})` : folderStatus.label}
             >
               {folderStatus.kind === 'working' ? (
-                <SpinnerIcon size={12} className="animate-spin text-accent-main-100" />
+                <Spinner size="sm" tone="accent" variant="grid-orbit" />
               ) : (
                 <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot}`} />
               )}
