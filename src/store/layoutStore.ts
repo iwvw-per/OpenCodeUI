@@ -105,6 +105,13 @@ function buildTerminalPanelTab(
 // 旧的 RightPanelView 类型 - 兼容
 export type RightPanelView = 'files' | 'changes'
 
+/** 项目文件夹排序模式：auto = 按最后使用时间实时排序；manual = 用户拖拽保存的顺序 */
+export type ProjectSortMode = 'auto' | 'manual'
+
+function isProjectSortMode(value: unknown): value is ProjectSortMode {
+  return value === 'auto' || value === 'manual'
+}
+
 interface LayoutState {
   // 统一的面板标签系统
   panelTabs: PanelTab[]
@@ -128,6 +135,14 @@ interface LayoutState {
   sidebarSessionSortField: SessionSortField
   /** 侧栏会话排序方向：true = 倒序（新→旧），false = 正序（旧→新） */
   sidebarSessionSortDesc: boolean
+  /**
+   * 侧栏「项目文件夹」排序模式：
+   * - auto：按最后使用时间自动排序（跟随会话活动实时更新）
+   * - manual：按用户拖拽保存的顺序（saved-directories 的顺序）
+   *
+   * 拖拽项目即切到 manual 并持久化；在排序菜单重新选择字段/方向时切回 auto。
+   */
+  sidebarProjectSortMode: ProjectSortMode
   /**
    * 侧栏展开的项目（按项目名记录，而非 id）。
    *
@@ -162,6 +177,7 @@ const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS = 'opencode-sidebar-folder-recents'
 const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF = 'opencode-sidebar-folder-recents-show-diff'
 const STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS = 'opencode-sidebar-show-child-sessions'
 const STORAGE_KEY_SIDEBAR_SESSION_SORT = 'opencode-sidebar-session-sort'
+const STORAGE_KEY_SIDEBAR_PROJECT_SORT_MODE = 'opencode-sidebar-project-sort-mode'
 const STORAGE_KEY_SIDEBAR_EXPANDED_PROJECTS = 'opencode-sidebar-expanded-projects'
 const STORAGE_KEY_SEND_ON_ENTER = 'opencode-send-on-enter'
 const STORAGE_KEY_PANEL_LAYOUT = 'opencode-panel-layout'
@@ -354,6 +370,7 @@ export class LayoutStore {
     sidebarChildSessions: 'active',
     sidebarSessionSortField: DEFAULT_SESSION_SORT.field,
     sidebarSessionSortDesc: DEFAULT_SESSION_SORT.desc,
+    sidebarProjectSortMode: 'auto',
     sidebarExpandedProjects: [],
     sendOnEnter: true,
     rightPanelOpen: false,
@@ -507,6 +524,11 @@ export class LayoutStore {
         }
       } catch {
         // ignore malformed preference
+      }
+
+      const savedProjectSortMode = localStorage.getItem(STORAGE_KEY_SIDEBAR_PROJECT_SORT_MODE)
+      if (isProjectSortMode(savedProjectSortMode)) {
+        this.state.sidebarProjectSortMode = savedProjectSortMode
       }
 
       // 展开的项目名列表（跨端对齐用项目名，见 sidebarExpandedProjects 注释）
@@ -669,6 +691,23 @@ export class LayoutStore {
     this.state.sidebarSessionSortDesc = desc
     try {
       localStorage.setItem(STORAGE_KEY_SIDEBAR_SESSION_SORT, JSON.stringify({ field, desc }))
+    } catch {
+      /* ignore */
+    }
+    this.notify()
+  }
+
+  /**
+   * 项目文件夹排序模式。
+   *
+   * 拖拽项目后切到 manual（记住用户手工顺序）；在排序菜单重新选择字段/方向时
+   * 切回 auto（用户表达了「按时间重新排」的意图）。
+   */
+  setSidebarProjectSortMode(mode: ProjectSortMode) {
+    if (this.state.sidebarProjectSortMode === mode) return
+    this.state.sidebarProjectSortMode = mode
+    try {
+      localStorage.setItem(STORAGE_KEY_SIDEBAR_PROJECT_SORT_MODE, mode)
     } catch {
       /* ignore */
     }
@@ -1406,6 +1445,7 @@ export interface LayoutBackup {
   sidebarChildSessions: ChildSessionsDisplayMode
   sidebarSessionSortField: SessionSortField
   sidebarSessionSortDesc: boolean
+  sidebarProjectSortMode: ProjectSortMode
   sendOnEnter: boolean
   wakeLock: boolean
   rightPanelWidth: number
@@ -1453,6 +1493,7 @@ export function exportLayoutBackup(): LayoutBackup {
     sidebarChildSessions: state.sidebarChildSessions,
     sidebarSessionSortField: state.sidebarSessionSortField,
     sidebarSessionSortDesc: state.sidebarSessionSortDesc,
+    sidebarProjectSortMode: state.sidebarProjectSortMode,
     sendOnEnter: state.sendOnEnter,
     wakeLock: state.wakeLock,
     rightPanelWidth: state.rightPanelWidth,
@@ -1514,6 +1555,9 @@ export function importLayoutBackup(raw: unknown): void {
       : DEFAULT_SESSION_SORT.field,
     sidebarSessionSortDesc:
       typeof parsed?.sidebarSessionSortDesc === 'boolean' ? parsed.sidebarSessionSortDesc : DEFAULT_SESSION_SORT.desc,
+    sidebarProjectSortMode: isProjectSortMode(parsed?.sidebarProjectSortMode)
+      ? parsed.sidebarProjectSortMode
+      : 'auto',
     sendOnEnter: parsed?.sendOnEnter !== false,
     wakeLock: parsed?.wakeLock === true,
     rightPanelWidth,
@@ -1535,6 +1579,7 @@ export function importLayoutBackup(raw: unknown): void {
     STORAGE_KEY_SIDEBAR_SESSION_SORT,
     JSON.stringify({ field: nextState.sidebarSessionSortField, desc: nextState.sidebarSessionSortDesc }),
   )
+  localStorage.setItem(STORAGE_KEY_SIDEBAR_PROJECT_SORT_MODE, nextState.sidebarProjectSortMode)
   localStorage.setItem(STORAGE_KEY_SEND_ON_ENTER, String(nextState.sendOnEnter))
   localStorage.setItem(STORAGE_KEY_WAKE_LOCK, String(nextState.wakeLock))
   localStorage.setItem(STORAGE_KEY_RIGHT_PANEL_WIDTH, String(rightPanelWidth))
