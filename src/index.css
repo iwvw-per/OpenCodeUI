@@ -1034,6 +1034,45 @@ h6 {
   }
 }
 
+/* 主机切换：项目列表按切换方向平移进入。切到右侧主机从右边滑入，
+ * 切到左侧主机从左边滑入，方向由主机在切换条中的索引差决定。 */
+@keyframes host-slide-from-right {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes host-slide-from-left {
+  from {
+    transform: translateX(-16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.host-slide-from-right {
+  animation: host-slide-from-right 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.host-slide-from-left {
+  animation: host-slide-from-left 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .host-slide-from-right,
+  .host-slide-from-left {
+    animation: fade-in 120ms ease-out both;
+  }
+}
+
 /* Animation utility classes */
 .animate-in {
   animation-duration: 200ms;
