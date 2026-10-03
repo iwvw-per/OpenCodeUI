@@ -65,3 +65,7 @@ opencode-session-*.json
 perf-*.json
 scratch-*.cjs
 scratch-*.mjs
+
+# 本地远程 Agent 调试状态（可能包含令牌或进程信息，禁止提交）
+.tmp-token.txt
+aiagent_processes.json
