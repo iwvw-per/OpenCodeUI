@@ -104,8 +104,20 @@ const ProcessCollapseHeader = memo(function ProcessCollapseHeader({
   const now = useNow(1000, isActive && startedAt != null)
   const liveMs = isActive && startedAt != null ? Math.max(0, now - startedAt) : null
   const lastLiveMsRef = useRef(0)
+  // 渲染期写 ref 是有意为之：这是「记住最后一次有效时长」的粘滞值。
+  // liveMs 结束时（isActive 变 false）会立刻变 null，若改用 useEffect 记录，
+  // 中间会有一帧 displayMs 回落到 durationMs/0，计时标签出现闪跳。
+  // 该 ref 不参与并发渲染的结果差异（只做单调记录），故此处显式豁免规则。
+  // eslint-disable-next-line react-hooks/refs
   if (liveMs != null) lastLiveMsRef.current = liveMs
-  const displayMs = liveMs != null ? liveMs : durationMs != null && durationMs > 0 ? durationMs : lastLiveMsRef.current
+  const displayMs =
+    liveMs != null
+      ? liveMs
+      : durationMs != null && durationMs > 0
+        ? durationMs
+        : // 同上：读取粘滞值，见上方豁免说明
+          // eslint-disable-next-line react-hooks/refs
+          lastLiveMsRef.current
   // Working/Worked：整秒无小数；超过 1 分钟带 m（如 3m 12s）
   const durationLabel = formatProcessDuration(displayMs)
   const label = isActive
@@ -151,6 +163,7 @@ export function ProcessCollapseBlock({
   stateKey,
   stepCount = 0,
   reasoningCount = 0,
+  onExpand,
 }: {
   children: ReactNode
   durationMs?: number
@@ -160,6 +173,8 @@ export function ProcessCollapseBlock({
   /** 折叠时在 header 右侧显示的统计（工具调用数 / 思考段数） */
   stepCount?: number
   reasoningCount?: number
+  /** 用户手动展开时触发；用于按需回拉被压缩轮次的完整过程内容 */
+  onExpand?: () => void
 }) {
   const [expanded, setExpanded] = useUiDisclosureState(stateKey, isActive)
   const shouldRenderBody = useMessageExpandRender(expanded)
@@ -183,8 +198,10 @@ export function ProcessCollapseBlock({
     unlockScrollRef.current = lockScrollAroundAnchor(headerRef.current, {
       observe: rootRef.current,
     })
+    // 仅展开时回拉；折叠无需数据
+    if (!expanded) onExpand?.()
     setExpanded(!expanded)
-  }, [expanded, setExpanded])
+  }, [expanded, setExpanded, onExpand])
 
   // 进行中默认展开：不要跑 grid 展开动画（否则每条新消息都带动画高度重排）
   // 用户手动折叠/展开、或结束后自动收起时再开动画
@@ -302,7 +319,11 @@ function useEntryGrowAnimation(
   onComplete?: (id: string) => void,
 ) {
   const ref = useRef<HTMLDivElement>(null)
+  // latest-callback ref：让 effect 读到最新的 onComplete 而不必把它列入依赖
+  // （列入会导致每次父组件重渲染都重跑入场动画的完成判定）。
+  // 该写法在全项目通用（ChatArea 的 onLoadMoreRef 等同款），故豁免规则。
   const onCompleteRef = useRef(onComplete)
+  // eslint-disable-next-line react-hooks/refs
   onCompleteRef.current = onComplete
 
   useLayoutEffect(() => {

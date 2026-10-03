@@ -73,7 +73,7 @@ export function SessionChildrenSlot({
       cancelled = true
       cancelAnimationFrame(loadingFrameId)
     }
-  }, [fetchAll, parentSession.id, parentSession.directory])
+  }, [fetchAll, parentSession.id, parentSession.directory, serverId])
 
   const handleRename = useCallback(async (childId: string, newTitle: string) => {
     try {
@@ -83,7 +83,7 @@ export function SessionChildrenSlot({
     } catch (e) {
       uiErrorHandler('rename session', e)
     }
-  }, [])
+  }, [parentSession.directory, serverId])
 
   const handleDeleteConfirmed = useCallback(async () => {
     const id = deleteConfirm.sessionId
@@ -99,7 +99,7 @@ export function SessionChildrenSlot({
     } catch (e) {
       uiErrorHandler('delete session', e)
     }
-  }, [deleteConfirm.sessionId, selectedSessionId, onDeleteSelected])
+  }, [deleteConfirm.sessionId, selectedSessionId, onDeleteSelected, parentSession.directory, serverId])
 
   const list = fetchAll ? fetched : givenChildren
 

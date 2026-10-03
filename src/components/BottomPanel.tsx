@@ -87,7 +87,7 @@ export const BottomPanel = memo(function BottomPanel({ directory, serverId, clas
           normalizedDirectory,
           sessions.map(pty => ({
             id: pty.id,
-            title: pty.title || 'Terminal',
+            title: pty.title || t('terminal.terminal'),
             status: pty.status === 'running' ? 'connecting' : 'exited',
             serverId,
           })),
@@ -105,7 +105,7 @@ export const BottomPanel = memo(function BottomPanel({ directory, serverId, clas
     return serverStore.onServerChange(() => {
       void restoreSessions(++restoreRequestIdRef.current)
     })
-  }, [normalizedDirectory])
+  }, [normalizedDirectory, serverId, t])
 
   // 创建新终端
   const handleNewTerminal = useCallback(async () => {
@@ -115,7 +115,7 @@ export const BottomPanel = memo(function BottomPanel({ directory, serverId, clas
       logger.log('[BottomPanel] PTY created:', pty)
       const tab: TerminalTab = {
         id: pty.id,
-        title: pty.title || 'Terminal',
+        title: pty.title || t('terminal.terminal'),
         status: 'connecting',
         serverId,
       }
@@ -123,7 +123,7 @@ export const BottomPanel = memo(function BottomPanel({ directory, serverId, clas
     } catch (error) {
       uiErrorHandler('create terminal', error)
     }
-  }, [normalizedDirectory])
+  }, [normalizedDirectory, serverId, t])
 
   // 关闭终端
   const handleCloseTerminal = useCallback(
@@ -134,7 +134,7 @@ export const BottomPanel = memo(function BottomPanel({ directory, serverId, clas
         // ignore - may already be closed
       }
     },
-    [normalizedDirectory],
+    [normalizedDirectory, serverId],
   )
 
   // 渲染内容
@@ -223,7 +223,7 @@ export const BottomPanel = memo(function BottomPanel({ directory, serverId, clas
         </>
       )
     },
-    [isRestoring, handleNewTerminal, directory, sessionId, isPanelResizing, t],
+    [isRestoring, handleNewTerminal, directory, sessionId, isPanelResizing, t, serverId],
   )
 
   return (
