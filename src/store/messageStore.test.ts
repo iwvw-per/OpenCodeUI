@@ -791,7 +791,7 @@ describe('optimistic user message reconciliation by id', () => {
   const KEY = 'local::ses_dup'
   const MSG_ID = 'msg_abc123'
 
-  function optimisticUserMessage(): import('../api/types').ApiMessageWithParts {
+  function optimisticUserMessage(): import('../types/message').Message {
     return {
       info: {
         id: MSG_ID,
@@ -800,7 +800,7 @@ describe('optimistic user message reconciliation by id', () => {
         time: { created: 100 },
         agent: 'build',
         model: { providerID: 'p', modelID: 'm' },
-      } as ApiMessage,
+      },
       parts: [
         {
           id: `${MSG_ID}:text`,
@@ -808,8 +808,9 @@ describe('optimistic user message reconciliation by id', () => {
           messageID: MSG_ID,
           type: 'text',
           text: 'hello world',
-        } as ApiPart & { sessionID: string; messageID: string },
+        },
       ],
+      isStreaming: false,
     }
   }
 
