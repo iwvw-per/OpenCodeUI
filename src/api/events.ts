@@ -12,6 +12,7 @@ import { getApiBaseUrl, getAuthHeader } from './http'
 import { createSseTextParser } from './sse'
 import { normalizeTodoItems } from './todo'
 import { isTauri } from '../utils/tauri'
+import { diag } from '../utils/diag'
 import { serverStore } from '../store/serverStore'
 import type {
   ApiMessage,
@@ -95,6 +96,9 @@ function updateConnectionState(serverId: string, update: Partial<ConnectionInfo>
   // 不隐式创建连接：无连接时直接返回（避免断开后残留空壳连接）
   const conn = connections.get(serverId)
   if (!conn) return
+  if (update.state && update.state !== conn.info.state) {
+    diag('SSE', `state ${conn.info.state} -> ${update.state}`, { serverId, error: update.error })
+  }
   conn.info = { ...conn.info, ...update }
   connectionListeners.get(serverId)?.forEach(fn => {
     fn(conn.info)
@@ -780,7 +784,26 @@ function unregisterLifecycleListeners() {
 // Event broadcast（只发给对应服务器的订阅者）
 // ============================================
 
+function summarizeEventIds(payload: GlobalEvent['payload']): Record<string, unknown> {
+  const props = (payload as { properties?: Record<string, unknown> }).properties ?? {}
+  const part = props.part as { id?: string; sessionID?: string; messageID?: string; type?: string } | undefined
+  const info = (props.info ?? props.message) as { id?: string; sessionID?: string; role?: string } | undefined
+  return {
+    sessionID: props.sessionID ?? info?.sessionID ?? part?.sessionID,
+    messageID: props.messageID ?? info?.id ?? part?.messageID,
+    partID: props.partID ?? part?.id,
+    partType: part?.type,
+    role: info?.role,
+  }
+}
+
 function broadcastEvent(conn: ServerConnection, globalEvent: GlobalEvent) {
+  diag('SSE', {
+    serverId: conn.serverId,
+    type: globalEvent.payload.type,
+    subscribers: conn.subscribers.size,
+    ...summarizeEventIds(globalEvent.payload),
+  })
   conn.subscribers.forEach(callbacks => {
     handleEventForSubscriber(globalEvent.payload, callbacks)
   })
@@ -1084,6 +1107,7 @@ export function subscribeToConnectionState(fn: (info: ConnectionInfo) => void): 
 export function subscribeToServerEvents(serverId: string, callbacks: EventCallbacks): () => void {
   const conn = getOrCreateConnection(serverId)
   conn.subscribers.add(callbacks)
+  diag('SSE', 'subscribe', { serverId, subscribers: conn.subscribers.size, state: conn.info.state })
 
   // 如果是第一个订阅者，启动连接
   if (conn.subscribers.size === 1) {

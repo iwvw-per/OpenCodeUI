@@ -32,22 +32,18 @@ interface SortableProject {
 /**
  * 项目文件夹排序（仅作用于「已保存项目」，派生项目由调用方剥离）。
  *
- * - manual：保持传入顺序（即用户拖拽保存的 saved-directories 顺序）
- * - auto + created：按项目保存时间排序。保存时间是稳定值，会话活动不会改变它，
- *   避免边聊天项目行边跳。
- * - auto + updated：按最后使用时间排序（跟随会话活动，顺序会实时变化）。
+ * - created：按项目保存时间排序。保存时间是稳定值，会话活动不会改变它。
+ * - updated：按最后一次对话时间排序（用户最后一条消息的锚点，单调只增，
+ *   多个会话并行运行时也不会来回跳）。
  *
  * 时间相同按名称兜底，保证稳定。纯函数，便于单测。
  */
-export function sortProjectsByMode<T extends SortableProject>(
+export function sortProjects<T extends SortableProject>(
   projects: T[],
-  mode: 'auto' | 'manual',
   field: SessionSortField,
   lastUsedAt: Record<string, number>,
   desc: boolean,
 ): T[] {
-  if (mode === 'manual') return projects
-
   const sortTime = (project: SortableProject): number => {
     if (field === 'created') return project.addedAt ?? 0
     return lastUsedAt[normalizeToForwardSlash(project.worktree || '')] ?? 0

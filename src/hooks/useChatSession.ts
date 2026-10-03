@@ -47,6 +47,7 @@ import {
 import { getMessageText, isUserMessage, type AssistantMessageInfo, type Message as UIMessage } from '../types/message'
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
+import { diag } from '../utils/diag'
 import { serverStorage } from '../utils/perServerStorage'
 import { sessionKeyToServerId, splitSessionKey, makeSessionKey } from '../utils/sessionKey'
 import { serverStore } from '../store/serverStore'
@@ -149,6 +150,17 @@ export function useChatSession({
     () => (routeSessionId ? sessionKeyToServerId(routeSessionId) : activeServerId),
     [routeSessionId, activeServerId],
   )
+
+  // 诊断：暴露 pane 绑定的会话 key 与服务器，用于比对 SSE 事件的 serverId
+  useEffect(() => {
+    diag('PANE', 'binding', {
+      routeSessionId,
+      paneServerId,
+      activeServerId,
+      isComposite: routeSessionId ? routeSessionId.includes('::') : null,
+      storeHasBucket: routeSessionId ? !!messageStore.getSessionState(routeSessionId) : null,
+    })
+  }, [routeSessionId, paneServerId, activeServerId])
 
   const handleMissingRouteSession = useCallback(
     (missingSessionId: string) => {
@@ -760,20 +772,47 @@ export function useChatSession({
       }
 
       let rollbackSnapshot = sessionId ? messageStore.createSendRollbackSnapshot(sessionId) : null
+      let optimisticMessageId: string | null = null
 
       try {
         if (!sessionId) {
           if (!input.allowCreateSession) return false
-          const newSession = await createSession()
+          const newSession = await createSession(undefined, input.directory)
           sessionId = newSession.id
           navigateToSession(sessionId, newSession.directory)
         }
+        diag('SEND', 'sendMessageNow', {
+          inputSessionId: input.sessionId,
+          resolvedSessionId: sessionId,
+          isComposite: sessionId.includes('::'),
+          paneServerId,
+          activeServerId: serverStore.getActiveServerId(),
+        })
 
         if (rollbackSnapshot) {
           messageStore.truncateAfterRevert(sessionId)
         }
 
-        // 记录发送前的消息数量，作为判断 SSE 是否推送新消息的基线
+        // SSE 是最终事实来源，但可能在请求返回后才到达；先显示用户输入，
+        // 让新建会话和网络抖动时的发送反馈保持即时。
+        optimisticMessageId = `msg-local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        messageStore.upsertLocalMessage(
+          buildLocalQueuedMessage({
+            sessionId,
+            messageId: optimisticMessageId,
+            text: input.content,
+            attachments: input.attachments,
+            agent: input.options?.agent,
+            model: input.model,
+            createdAt: Date.now(),
+          }),
+          input.directory,
+        )
+        diag('SEND', 'optimistic upserted', {
+          storeBucket: sessionId,
+          count: messageStore.getSessionState(sessionId)?.messages.length ?? -1,
+        })
+        // 基线在乐观消息之后取，兜底回拉仍能识别服务端的 canonical user message。
         const msgCountBeforeSend = messageStore.getSessionState(sessionId)?.messages.length ?? 0
 
         // 不要在 send 前 setStreaming：新 user 往往还没入列，过程折叠会把
@@ -822,12 +861,13 @@ export function useChatSession({
             .catch(() => {
               // 拉取失败不影响主流程，SSE 重连后仍可补齐
             })
-        }, 1500)
+        }, 250)
 
         return true
       } catch (error) {
         handleError('send message', error)
         if (sessionId) {
+          if (optimisticMessageId) messageStore.removeMessage(sessionId, optimisticMessageId)
           if (rollbackSnapshot) {
             messageStore.restoreSendRollback(sessionId, rollbackSnapshot)
             rollbackSnapshot = null
@@ -839,7 +879,7 @@ export function useChatSession({
         return false
       }
     },
-    [routeSessionId, navigateToSession, createSession, paneServerId],
+    [routeSessionId, navigateToSession, createSession, paneServerId, buildLocalQueuedMessage],
   )
 
   // Send message handler
@@ -882,6 +922,7 @@ export function useChatSession({
             model: queued.model,
             createdAt: queued.createdAt,
           }),
+          queued.directory,
         )
         return true
       }

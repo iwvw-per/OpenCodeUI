@@ -11,10 +11,12 @@
 //   - 组件重挂时同步读到已有内容，首帧即有数据，不闪 loading
 //   - 切回访问过的主机拿到的是**当前准确**的列表，而不是最长 30s 前的快照
 //
-// 排序由 store 负责（不在读取侧做），且遵循「就地更新」：
-//   - 整桶替换 / 新会话：按偏好排序插入
-//   - 已有会话的字段更新：位置不动。并行会话的 session.updated 交替到达，
-//     若每次重排，列表会来回跳，上/下一个会话快捷键的目标也会乱跳。
+// 排序由 store 负责（不在读取侧做），固定「最新对话置顶」：
+//   - 排序依据是用户最后一条消息的锚点时间（见 sessionActivityStore），
+//     不是会话的 time.updated —— 后者会被 assistant 流式输出持续刷新，
+//     多个会话并行运行时交替变化，按它排序会让列表来回跳。
+//   - 整桶替换 / 新会话：按锚点排序插入
+//   - 已有会话的字段更新：位置不动，避免流式期间列表重排。
 //
 // 不负责的事：
 //   - 网络请求（由 hook 成功时 replace 进来）
@@ -23,8 +25,7 @@
 import type { ApiSession } from '../api/types'
 import { normalizeForComparison } from '../utils/directoryUtils'
 import { stripSessionListDetails } from '../api/sanitize'
-import { layoutStore } from './layoutStore'
-import { sortSessions, insertSessionSorted, type SessionSortPreference } from '../utils/sessionSort'
+import { sessionActivityStore, sortSessionsByAnchor, insertSessionByAnchor } from './sessionActivityStore'
 
 /** 视图分桶：活跃（不含归档）/ 归档 */
 export type SessionListView = 'active' | 'archived'
@@ -106,13 +107,6 @@ function bucketId(key: SessionListBucketKey): string {
   return `${key.serverId}\u0000${normalizeForComparison(key.directory)}\u0000${key.view}\u0000${key.scope ?? ''}`
 }
 
-function currentPreference(): SessionSortPreference {
-  return {
-    field: layoutStore.getState().sidebarSessionSortField,
-    desc: layoutStore.getState().sidebarSessionSortDesc,
-  }
-}
-
 /** 搜索结果是瞬态高基数查询，不进索引 */
 export function isIndexableQuery(query: { search?: string }): boolean {
   return !query.search
@@ -123,19 +117,18 @@ class SessionListIndexStore {
   private subscribers = new Set<() => void>()
   /** 快照缓存：满足 useSyncExternalStore 对稳定引用的要求 */
   private snapshotCache = new Map<string, { revision: number; value: ApiSession[] }>()
-  /** 排序偏好：生效于整桶替换与新会话插入 */
-  private preference: SessionSortPreference = currentPreference()
 
   constructor() {
-    // 排序偏好变化时重排所有桶（这是唯一会改变已有项顺序的时机）
-    layoutStore.subscribe(() => {
-      const next = currentPreference()
-      if (next.field === this.preference.field && next.desc === this.preference.desc) return
-      this.preference = next
+    // 用户消息锚点变化时重排相关会话所在的桶（这是唯一会改变已有项顺序的时机）。
+    // 锚点单调递增，只在用户发送/加载时抬高，流式 assistant 输出不会触发。
+    sessionActivityStore.subscribe(change => {
+      const rawId = change.sessionId
+      if (!rawId) return
       let changed = false
       for (const bucket of this.buckets.values()) {
         if (bucket.items.length === 0) continue
-        bucket.items = sortSessions(bucket.items, this.preference)
+        if (!bucket.items.some(item => item.id === rawId)) continue
+        bucket.items = sortSessionsByAnchor(bucket.items)
         bucket.contentRevision++
         changed = true
       }
@@ -246,7 +239,7 @@ class SessionListIndexStore {
       .filter(session => !bucket.tombstones.has(session.id))
       .map(stripSessionListDetails)
 
-    bucket.items = sortSessions(stripped, this.preference)
+    bucket.items = sortSessionsByAnchor(stripped)
     bucket.loadedLimit = options.limit
     bucket.hasMore = options.hasMore
     bucket.fetchedAt = Date.now()
@@ -398,14 +391,14 @@ class SessionListIndexStore {
 
   /**
    * 把一个会话写进桶（去重 + 版本语义）。返回内容是否真的变了。
-   * 已存在则就地替换（位置不变）；否则按偏好插入到正确位置。
+   * 已存在则就地替换（位置不变）；否则按锚点插入到正确位置。
    */
   private writeIntoBucket(bucket: Bucket, session: ApiSession): boolean {
     const stripped = stripSessionListDetails(session)
     const index = bucket.items.findIndex(item => item.id === session.id)
 
     if (index === -1) {
-      bucket.items = insertSessionSorted(bucket.items, stripped, this.preference)
+      bucket.items = insertSessionByAnchor(bucket.items, stripped)
       bucket.membershipRevision++
     } else {
       if (isSameSessionSummary(bucket.items[index], stripped)) return false

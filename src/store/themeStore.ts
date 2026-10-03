@@ -147,6 +147,8 @@ const DEFAULT_OUTLINE_CURRENT_HIGHLIGHT = true
 const DEFAULT_ACTIONS_ON_LATEST_ASSISTANT_ONLY = true
 /** 桌面端是否启用输入框上滚收起（移动端始终可用） */
 const DEFAULT_DESKTOP_COLLAPSED_INPUT_DOCK = true
+/** 输入框下方信息栏（自动放行 / 会话统计 / 任务进度）默认隐藏 */
+const DEFAULT_SHOW_INPUT_STATUS_BAR = false
 /**
  * 过程折叠：按用户消息把中间过程收成计时折叠块。
  *
@@ -210,6 +212,8 @@ export interface ThemeState {
   actionsOnLatestAssistantOnly: boolean
   /** 桌面端是否启用输入框上滚收起为胶囊 */
   desktopCollapsedInputDock: boolean
+  /** 是否显示输入框下方的信息栏（自动放行 / 会话统计 / 任务进度） */
+  showInputStatusBar: boolean
   /** 过程折叠：用户发送后显示 Working 计时，结束后收成折叠块，最终回答留在外面 */
   processCollapseEnabled: boolean
   /** 代码块语法高亮主题（亮色模式），Shiki theme id */
@@ -251,6 +255,7 @@ const STORAGE_KEY_EXTERNAL_FILE_DROP_MODE = 'external-file-drop-mode'
 const STORAGE_KEY_OUTLINE_CURRENT_HIGHLIGHT = 'outline-current-highlight'
 const STORAGE_KEY_ACTIONS_ON_LATEST_ASSISTANT_ONLY = 'actions-on-latest-assistant-only'
 const STORAGE_KEY_DESKTOP_COLLAPSED_INPUT_DOCK = 'desktop-collapsed-input-dock'
+const STORAGE_KEY_SHOW_INPUT_STATUS_BAR = 'show-input-status-bar'
 const STORAGE_KEY_PROCESS_COLLAPSE_ENABLED = 'process-collapse-enabled'
 const STORAGE_KEY_CODE_BLOCK_THEME_LIGHT = 'code-block-theme-light'
 const STORAGE_KEY_CODE_BLOCK_THEME_DARK = 'code-block-theme-dark'
@@ -396,6 +401,10 @@ class ThemeStore {
         ? DEFAULT_DESKTOP_COLLAPSED_INPUT_DOCK
         : savedDesktopCollapsedInputDock === 'true'
 
+    const savedShowInputStatusBar = localStorage.getItem(STORAGE_KEY_SHOW_INPUT_STATUS_BAR)
+    const showInputStatusBar =
+      savedShowInputStatusBar === null ? DEFAULT_SHOW_INPUT_STATUS_BAR : savedShowInputStatusBar === 'true'
+
     const savedProcessCollapseEnabled = localStorage.getItem(STORAGE_KEY_PROCESS_COLLAPSE_ENABLED)
     const processCollapseEnabled =
       savedProcessCollapseEnabled === null
@@ -439,6 +448,7 @@ class ThemeStore {
       outlineCurrentHighlight,
       actionsOnLatestAssistantOnly,
       desktopCollapsedInputDock,
+      showInputStatusBar,
       processCollapseEnabled,
       codeBlockThemeLight,
       codeBlockThemeDark,
@@ -533,6 +543,10 @@ class ThemeStore {
 
   get desktopCollapsedInputDock() {
     return this.state.desktopCollapsedInputDock
+  }
+
+  get showInputStatusBar() {
+    return this.state.showInputStatusBar
   }
 
   get processCollapseEnabled() {
@@ -845,6 +859,13 @@ class ThemeStore {
     this.emit()
   }
 
+  setShowInputStatusBar(enabled: boolean) {
+    if (this.state.showInputStatusBar === enabled) return
+    this.state = { ...this.state, showInputStatusBar: enabled }
+    localStorage.setItem(STORAGE_KEY_SHOW_INPUT_STATUS_BAR, String(enabled))
+    this.emit()
+  }
+
   setProcessCollapseEnabled(enabled: boolean) {
     if (this.state.processCollapseEnabled === enabled) return
     this.state = { ...this.state, processCollapseEnabled: enabled }
@@ -1125,6 +1146,8 @@ function normalizeThemeBackup(raw: unknown): ThemeBackup {
       typeof parsed?.desktopCollapsedInputDock === 'boolean'
         ? parsed.desktopCollapsedInputDock
         : DEFAULT_DESKTOP_COLLAPSED_INPUT_DOCK,
+    showInputStatusBar:
+      typeof parsed?.showInputStatusBar === 'boolean' ? parsed.showInputStatusBar : DEFAULT_SHOW_INPUT_STATUS_BAR,
     processCollapseEnabled:
       typeof parsed?.processCollapseEnabled === 'boolean'
         ? parsed.processCollapseEnabled
@@ -1189,6 +1212,7 @@ export function importThemeBackup(raw: unknown): void {
     String(backup.actionsOnLatestAssistantOnly),
   )
   localStorage.setItem(STORAGE_KEY_DESKTOP_COLLAPSED_INPUT_DOCK, String(backup.desktopCollapsedInputDock))
+  localStorage.setItem(STORAGE_KEY_SHOW_INPUT_STATUS_BAR, String(backup.showInputStatusBar))
   localStorage.setItem(STORAGE_KEY_PROCESS_COLLAPSE_ENABLED, String(backup.processCollapseEnabled))
   localStorage.setItem(STORAGE_KEY_CODE_BLOCK_THEME_LIGHT, backup.codeBlockThemeLight)
   localStorage.setItem(STORAGE_KEY_CODE_BLOCK_THEME_DARK, backup.codeBlockThemeDark)

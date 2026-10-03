@@ -120,6 +120,8 @@
     "actionsOnLatestAssistantOnlyDesc": "In a turn with multiple assistant messages, show fork and copy only on the last one",
     "desktopCollapsedInputDock": "Collapse composer on desktop",
     "desktopCollapsedInputDockDesc": "When scrolling up through history, shrink the input into a capsule; always on for mobile, on by default on desktop",
+    "showInputStatusBar": "Show composer status bar",
+    "showInputStatusBarDesc": "Show auto-approve, session stats and task progress below the composer; hidden by default",
     "sendMode": "Send message with",
     "sendModeDesc": "Choose whether Enter or Shift+Enter sends the message; the other key inserts a newline.",
     "sendModeEnter": "Enter to send",

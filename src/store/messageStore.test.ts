@@ -722,3 +722,58 @@ describe('messageStore', () => {
     expect((message.parts[0] as { text: string }).text).toBe('restored thinking')
   })
 })
+
+/**
+ * 同一后端被多前缀连接（本机 local 与隧道 aiagent:inst）时，同一条会话会以
+ * 不同 serverId 前缀推事件。store 应把它们归并进同一个权威 bucket，
+ * 否则会出现「UI 订阅的 bucket 收不到事件，事件写进了另一个 bucket」。
+ */
+describe('multi-prefix session coalescing', () => {
+  beforeEach(() => {
+    messageStore.clearAll()
+  })
+
+  const LOCAL = 'local::ses_abc'
+  const TUNNEL = 'aiagent:inst_x::ses_abc'
+
+  it('coalesces events from another serverId prefix into the subscribed bucket', () => {
+    // UI 打开会话：订阅 local 前缀，成为权威 bucket
+    const unsubscribe = messageStore.subscribeSession(LOCAL, () => {})
+    messageStore.setMessages(LOCAL, [createMessageWithParts('m1', 'hello')])
+
+    // 隧道前缀推来增量事件（与 useGlobalEvents 一致：sessionID 已按 serverId scope）
+    messageStore.handleMessageUpdated(createAssistantMessage('m2', TUNNEL))
+    messageStore.handlePartUpdated(createTextPart('part-m2', 'm2', 'from-tunnel', TUNNEL))
+    messageStore.handleMessageUpdated(createAssistantMessage('m3', TUNNEL))
+
+    // 事件必须落在 UI 订阅的 local bucket
+    const state = messageStore.getSessionState(LOCAL)!
+    const ids = state.messages.map(m => m.info.id)
+    expect(ids).toContain('m2')
+    expect(ids).toContain('m3')
+    // m2 的 part 也归并进来（不是被丢到另一个 bucket）
+    const m2 = state.messages.find(m => m.info.id === 'm2')!
+    expect(m2.parts.some(p => p.id === 'part-m2')).toBe(true)
+
+    // 另一个前缀读取到的是同一份状态（归并）
+    expect(messageStore.getSessionState(TUNNEL)!.messages).toBe(state.messages)
+    unsubscribe()
+  })
+
+  it('does not create a duplicate bucket for the second prefix', () => {
+    messageStore.setMessages(LOCAL, [createMessageWithParts('m1', 'hello')])
+    // 隧道前缀先推 message.updated（新消息）
+    messageStore.handleMessageUpdated(createAssistantMessage('m2', 'ses_abc'))
+
+    // 无论用哪个前缀读，都是同一份、且只有两条
+    expect(messageStore.getSessionState(LOCAL)!.messages).toHaveLength(2)
+    expect(messageStore.getSessionState(TUNNEL)!.messages).toHaveLength(2)
+  })
+
+  it('keeps distinct sessions separate', () => {
+    messageStore.setMessages('local::ses_a', [createMessageWithParts('a1', 'A')])
+    messageStore.setMessages('local::ses_b', [createMessageWithParts('b1', 'B')])
+    expect(messageStore.getSessionState('local::ses_a')!.messages[0].info.id).toBe('a1')
+    expect(messageStore.getSessionState('local::ses_b')!.messages[0].info.id).toBe('b1')
+  })
+})

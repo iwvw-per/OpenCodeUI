@@ -31,6 +31,8 @@ export function ChatSettings() {
     setActionsOnLatestAssistantOnly,
     desktopCollapsedInputDock,
     setDesktopCollapsedInputDock,
+    showInputStatusBar,
+    setShowInputStatusBar,
     renderUserMarkdown,
     setRenderUserMarkdown,
   } = useTheme()
@@ -140,6 +142,14 @@ export function ChatSettings() {
             enabled={desktopCollapsedInputDock}
             onChange={() => setDesktopCollapsedInputDock(!desktopCollapsedInputDock)}
           />
+        </SettingRow>
+
+        <SettingRow
+          label={t('chat.showInputStatusBar')}
+          description={t('chat.showInputStatusBarDesc')}
+          onClick={() => setShowInputStatusBar(!showInputStatusBar)}
+        >
+          <Toggle enabled={showInputStatusBar} onChange={() => setShowInputStatusBar(!showInputStatusBar)} />
         </SettingRow>
 
         <SettingRow label={t('chat.sendMode')} description={t('chat.sendModeDesc')}>
