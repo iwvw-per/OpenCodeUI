@@ -178,7 +178,11 @@ describe('DirectoryContext across a server switch', () => {
     expect(JSON.parse(laptopBucket || '[]')).toEqual([])
   })
 
-  it('clears the directory param on switch while on home', async () => {
+  it('does not touch the directory route on switch (owned by host workspace snapshot)', async () => {
+    // 目录（URL 的 dir 参数）不再由 DirectoryContext 在切服时清空或改写：
+    // 切换主机的会话与目录统一由 App 的「每主机工作区快照」决定
+    // （见 hostWorkspaceStore / App 的 server-switch effect）。
+    // DirectoryContext 只负责切换 per-server 的 savedDirectories / recentProjects。
     render(
       <DirectoryProvider>
         <Probe />
@@ -190,12 +194,10 @@ describe('DirectoryContext across a server switch', () => {
       serverChangeListeners.forEach(fn => fn('aiagent:inst_laptop', 'server-switch'))
     })
 
-    expect(setDirectoryMock).toHaveBeenCalledWith(undefined)
+    expect(setDirectoryMock).not.toHaveBeenCalled()
   })
 
-  it('keeps the session route when switching servers with a session open', async () => {
-    // 会话打开时切服：不能清目录参数。setDirectory 会把 sessionId 写成 null，
-    // 当前会话会被路由同步 effect 卸载、退回首页。
+  it('does not touch the directory route even when a session is open', async () => {
     routeState.sessionId = 'aiagent:inst_work::session-1'
     routeState.directory = 'D:/Code/OnWork'
 
