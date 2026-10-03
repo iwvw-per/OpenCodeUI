@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import i18n from '../i18n'
 
 export interface UpdateRelease {
   version: string
@@ -213,7 +214,7 @@ export class UpdateStore {
         this.state = {
           ...this.state,
           checking: false,
-          error: error instanceof Error ? error.message : 'Failed to check updates',
+          error: error instanceof Error ? error.message : i18n.t('settings:about.checkFailed'),
         }
         this.notify()
       } finally {

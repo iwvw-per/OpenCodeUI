@@ -1,12 +1,15 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog, Button, Checkbox, ConfirmDialog } from '../../../components/ui'
-import { ArchiveIcon, FolderIcon, TrashIcon, UndoIcon } from '../../../components/Icons'
+import { ArchiveIcon, ChevronDownIcon, FolderIcon, GlobeIcon, TrashIcon, UndoIcon } from '../../../components/Icons'
 import { Spinner } from '../../../components/ui/Spinner'
 import { useArchivedSessions } from '../../../hooks'
+import type { ApiSession } from '../../../api'
 import { splitSessionKey } from '../../../utils/sessionKey'
 import { getDirectoryName } from '../../../utils/directoryUtils'
 import { cn } from '../../../utils/cn'
+import { interactive } from '../../../utils/interaction'
+import { ExpandableSection } from '../../../components/ui/AnimatedPresence'
 
 interface ArchivedSessionsDialogProps {
   isOpen: boolean
@@ -30,7 +33,7 @@ export function ArchivedSessionsDialog({ isOpen, onClose, serverId }: ArchivedSe
       isOpen={isOpen}
       onClose={onClose}
       title={t('chat:archived.title', { defaultValue: 'Archived chats' })}
-      width={560}
+      width={680}
       className="w-full"
     >
       {isOpen ? <ArchivedSessionsBody serverId={serverId} /> : null}
@@ -48,11 +51,42 @@ function ArchivedSessionsBody({ serverId }: { serverId?: string }) {
   const [confirmClearAll, setConfirmClearAll] = useState(false)
   const [isBulkBusy, setIsBulkBusy] = useState(false)
   const [bulkFailed, setBulkFailed] = useState(false)
+  // 记录被折叠的项目；不在集合内即为展开（默认全部展开）
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set())
 
   const sorted = useMemo(
     () => [...sessions].sort((a, b) => (b.time?.archived ?? 0) - (a.time?.archived ?? 0)),
     [sessions],
   )
+
+  // 按项目（目录）分组，保留每组内归档时间倒序；无目录的会话归入「全局」
+  const groups = useMemo(() => {
+    const map = new Map<string, { directory: string; name: string; sessions: ApiSession[] }>()
+    for (const session of sorted) {
+      const directory = session.directory || ''
+      const key = directory || '\u0000global'
+      let group = map.get(key)
+      if (!group) {
+        group = {
+          directory,
+          name: directory ? getDirectoryName(directory) || directory : t('chat:sidebar.global', { defaultValue: 'Global' }),
+          sessions: [],
+        }
+        map.set(key, group)
+      }
+      group.sessions.push(session)
+    }
+    return Array.from(map.values())
+  }, [sorted, t])
+
+  const toggleProject = useCallback((directory: string) => {
+    setCollapsedProjects(prev => {
+      const next = new Set(prev)
+      if (next.has(directory)) next.delete(directory)
+      else next.add(directory)
+      return next
+    })
+  }, [])
 
   const outgoing = sorted.filter(session => selected.has(session.id))
   const allSelected = sorted.length > 0 && outgoing.length === sorted.length
@@ -154,7 +188,7 @@ function ArchivedSessionsBody({ serverId }: { serverId?: string }) {
 
   return (
     <div className="flex flex-col">
-      <div className="sticky top-0 z-10 -mt-1 mb-2 flex items-center gap-3 border-b border-border-100/50 bg-bg-100 pb-2">
+      <div className="sticky top-0 z-10 -mt-1 mb-2 flex items-center gap-3 border-b border-border-100/50 pb-2">
         <Checkbox
           checked={allSelected ? true : someSelected ? 'indeterminate' : false}
           onCheckedChange={() => toggleAll()}
@@ -204,88 +238,151 @@ function ArchivedSessionsBody({ serverId }: { serverId?: string }) {
         </div>
       )}
 
-      <div className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto">
-        {sorted.map(session => {
-          const rawId = splitSessionKey(session.id).sessionId
-          const isBusy = busyId === session.id || isBulkBusy
-          const isConfirming = confirmId === session.id
-          const isSelected = selected.has(session.id)
+      <div className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto pr-0.5">
+        {groups.map(group => {
+          const groupKey = group.directory || '\u0000global'
+          const isExpanded = !collapsedProjects.has(group.directory)
+          const GroupIcon = group.directory ? FolderIcon : GlobeIcon
+          const groupSelectedCount = group.sessions.filter(session => selected.has(session.id)).length
+          const groupAllSelected = groupSelectedCount === group.sessions.length
+          const groupSomeSelected = groupSelectedCount > 0 && !groupAllSelected
           return (
-            <div
-              key={session.id}
-              className={cn(
-                'group flex items-center gap-3 rounded-lg border px-3 py-2',
-                'transition-colors',
-                isSelected ? 'border-accent-main-100/50 bg-accent-main-100/5' : 'border-border-200/50 bg-bg-100',
-              )}
-            >
-              <Checkbox
-                checked={isSelected}
-                disabled={isBusy}
-                onCheckedChange={() => toggleOne(session.id)}
-                aria-label={session.title || t('commands:sessions.untitledChat', { defaultValue: 'Untitled' })}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[length:var(--fs-sm)] text-text-200">
-                  {session.title || t('commands:sessions.untitledChat', { defaultValue: 'Untitled' })}
-                </div>
-                {/* 时间与项目各占一行：挤在一行时目录会被时间压得只剩几个字符，
-                    长路径也容易把行撑乱。上下两行后两者都完整可读。 */}
-                <div className="mt-0.5 text-[length:var(--fs-xxs)] tabular-nums text-text-500">
-                  {formatArchivedAt(session.time?.archived)}
-                </div>
-                {session.directory && (
-                  <div
-                    className="mt-0.5 flex items-center gap-1 text-[length:var(--fs-xxs)] text-text-400"
-                    title={session.directory}
-                  >
-                    <FolderIcon size={11} className="shrink-0 opacity-60" />
-                    <span className="min-w-0 truncate">{getDirectoryName(session.directory)}</span>
-                  </div>
+            <div key={groupKey} className="flex flex-col">
+              <div
+                className={cn(
+                  'flex items-center gap-2.5 rounded-lg border border-border-200/50 bg-bg-100 px-3 py-2',
+                  interactive.row,
                 )}
+              >
+                <Checkbox
+                  checked={groupAllSelected ? true : groupSomeSelected ? 'indeterminate' : false}
+                  onCheckedChange={() =>
+                    setSelected(prev => {
+                      const next = new Set(prev)
+                      if (groupAllSelected) group.sessions.forEach(session => next.delete(session.id))
+                      else group.sessions.forEach(session => next.add(session.id))
+                      return next
+                    })
+                  }
+                  aria-label={group.name}
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleProject(group.directory)}
+                  className="group flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left"
+                  title={group.directory || group.name}
+                >
+                  <span className="relative size-5 shrink-0 flex items-center justify-center">
+                    <GroupIcon
+                      size={16}
+                      className={cn(
+                        'transition-opacity duration-150 group-hover:opacity-0',
+                        group.directory ? 'text-text-400' : 'text-accent-main-100',
+                      )}
+                    />
+                    <ChevronDownIcon
+                      size={13}
+                      className={cn(
+                        'absolute text-text-300 opacity-0 transition-[opacity,transform] duration-150 group-hover:opacity-100',
+                        isExpanded ? '' : '-rotate-90',
+                      )}
+                    />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)] font-semibold text-text-100">
+                    {group.name}
+                  </span>
+                  <span className="shrink-0 text-[length:var(--fs-xxs)] tabular-nums text-text-500">
+                    {group.sessions.length}
+                  </span>
+                </button>
               </div>
 
-              {isConfirming ? (
-                <div className="shrink-0 flex items-center gap-2">
-                  <Button variant="danger" size="sm" isLoading={isBusy} onClick={() => void handleDelete(session.id)}>
-                    {t('common:confirm')}
-                  </Button>
-                  <Button variant="ghost" size="sm" disabled={isBusy} onClick={() => setConfirmId(null)}>
-                    {t('common:cancel')}
-                  </Button>
+              <ExpandableSection show={isExpanded}>
+                <div className="mt-1 flex flex-col gap-1 pl-4">
+                  {group.sessions.map(session => {
+                    const rawId = splitSessionKey(session.id).sessionId
+                    const isBusy = busyId === session.id || isBulkBusy
+                    const isConfirming = confirmId === session.id
+                    const isSelected = selected.has(session.id)
+                    return (
+                      <div
+                        key={session.id}
+                        className={cn(
+                          'group flex items-center gap-3 rounded-lg border px-3 py-2',
+                          'transition-colors',
+                          isSelected
+                            ? 'border-accent-main-100/50 bg-accent-main-100/5'
+                            : cn('border-border-200/40 bg-bg-100', interactive.row),
+                        )}
+                      >
+                        <Checkbox
+                          checked={isSelected}
+                          disabled={isBusy}
+                          onCheckedChange={() => toggleOne(session.id)}
+                          aria-label={session.title || t('commands:sessions.untitledChat', { defaultValue: 'Untitled' })}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[length:var(--fs-sm)] text-text-200">
+                            {session.title || t('commands:sessions.untitledChat', { defaultValue: 'Untitled' })}
+                          </div>
+                          <div className="mt-0.5 text-[length:var(--fs-xxs)] tabular-nums text-text-500">
+                            {formatArchivedAt(session.time?.archived)}
+                          </div>
+                        </div>
+
+                        {isConfirming ? (
+                          <div className="shrink-0 flex items-center gap-2">
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              isLoading={isBusy}
+                              onClick={() => void handleDelete(session.id)}
+                            >
+                              {t('common:confirm')}
+                            </Button>
+                            <Button variant="ghost" size="sm" disabled={isBusy} onClick={() => setConfirmId(null)}>
+                              {t('common:cancel')}
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="shrink-0 flex items-center gap-1">
+                            <button
+                              type="button"
+                              title={t('chat:archived.restore', { defaultValue: 'Restore' })}
+                              disabled={isBusy}
+                              onClick={() => void handleRestore(session.id)}
+                              className={cn(
+                                'flex h-7 items-center gap-1 rounded-md px-2 text-[length:var(--fs-xxs)]',
+                                'bg-bg-200 text-text-300 transition-colors duration-150',
+                                'hover:bg-bg-300 active:bg-bg-300',
+                                isBusy && 'opacity-50',
+                              )}
+                            >
+                              {isBusy ? <Spinner size="xs" tone="current" variant="ring" /> : <UndoIcon size={13} />}
+                              <span>{t('chat:archived.restore', { defaultValue: 'Restore' })}</span>
+                            </button>
+                            <button
+                              type="button"
+                              title={t('chat:archived.delete', { defaultValue: 'Delete' })}
+                              disabled={isBusy}
+                              onClick={() => setConfirmId(session.id)}
+                              className={cn(
+                                'flex h-7 items-center gap-1 rounded-md px-2 text-[length:var(--fs-xxs)]',
+                                'bg-danger-100/10 text-danger-100 transition-colors duration-150',
+                                'hover:bg-danger-100/20 active:bg-danger-100/30',
+                                isBusy && 'opacity-50',
+                              )}
+                              data-session-id={rawId}
+                            >
+                              <TrashIcon size={13} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
-              ) : (
-                <div className="shrink-0 flex items-center gap-1">
-                  <button
-                    type="button"
-                    title={t('chat:archived.restore', { defaultValue: 'Restore' })}
-                    disabled={isBusy}
-                    onClick={() => void handleRestore(session.id)}
-                    className={cn(
-                      'flex h-7 items-center gap-1 rounded-md px-2 text-[length:var(--fs-xxs)]',
-                      'text-text-400 hover:bg-bg-200 transition-colors',
-                      isBusy && 'opacity-50',
-                    )}
-                  >
-                    {isBusy ? <Spinner size="xs" tone="current" variant="ring" /> : <UndoIcon size={13} />}
-                    <span>{t('chat:archived.restore', { defaultValue: 'Restore' })}</span>
-                  </button>
-                  <button
-                    type="button"
-                    title={t('chat:archived.delete', { defaultValue: 'Delete' })}
-                    disabled={isBusy}
-                    onClick={() => setConfirmId(session.id)}
-                    className={cn(
-                      'flex h-7 items-center gap-1 rounded-md px-2 text-[length:var(--fs-xxs)]',
-                      'text-text-400 hover:bg-danger-100/10 hover:text-danger-100 transition-colors',
-                      isBusy && 'opacity-50',
-                    )}
-                    data-session-id={rawId}
-                  >
-                    <TrashIcon size={13} />
-                  </button>
-                </div>
-              )}
+              </ExpandableSection>
             </div>
           )
         })}

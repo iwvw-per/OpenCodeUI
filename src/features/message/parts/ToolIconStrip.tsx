@@ -50,7 +50,7 @@ export const ToolIconStrip = memo(function ToolIconStrip({ parts, className }: T
                 isActive && isTask && 'animate-spin',
               )}
             >
-              {isTaskDone ? <TaskDoneIcon size={13} /> : getToolIcon(part.tool)}
+              {isTaskDone ? <TaskDoneIcon size={16} /> : getToolIcon(part.tool)}
             </span>
           )
         })}

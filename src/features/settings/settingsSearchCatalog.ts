@@ -74,7 +74,7 @@ export const SETTINGS_SEARCH_DEFINITIONS: SettingsSearchDefinition[] = [
     'workspace.layout',
     'workspace.terminal',
     'workspace.sidebar',
-    'appearance.wideMode',
+    'appearance.resetChatWidth',
     'appearance.wakeLock',
     'appearance.codeWordWrap',
     'workspace.manualTerminalTitles',

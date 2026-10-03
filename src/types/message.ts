@@ -312,6 +312,13 @@ export interface Message {
   parts: Part[]
   // UI 状态
   isStreaming?: boolean
+  /**
+   * 历史压缩标记：该消息属于较早的轮次，reasoning 与工具大输出已被清空，
+   * 只保留渲染与统计所需的最小投影。展开对应过程折叠块时按需回拉完整 parts。
+   */
+  isCompressed?: boolean
+  /** 压缩前的过程统计，供折叠块 header 在压缩态仍能显示规模 */
+  compressedStats?: { reasoningCount: number; stepCount: number }
 }
 
 // ============================================

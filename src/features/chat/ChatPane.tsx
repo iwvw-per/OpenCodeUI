@@ -17,10 +17,10 @@ import { PaneHeader } from './PaneHeader'
 import { PaneDropOverlay, resolveDropZone, type DropZone, type PaneDropOverlayHandle } from './PaneDropOverlay'
 import { useFolderProjectDrop } from './useFolderProjectDrop'
 import { FolderProjectDropOverlay } from './FolderProjectDropOverlay'
-import { useChatSession, useModels, useModelSelection } from '../../hooks'
+import { useChatSession, useModels, useModelSelection, useTurnOutlineEntries, useMergeTurnOutline } from '../../hooks'
 import { useServerStore } from '../../hooks/useServerStore'
 import { useCancelHint } from '../../hooks/useCancelHint'
-import { makeSessionKey, sessionKeyToServerId } from '../../utils/sessionKey'
+import { makeSessionKey, sessionKeyToServerId, sessionKeyToSessionId } from '../../utils/sessionKey'
 import { serverStore } from '../../store/serverStore'
 import {
   InlineToolRequestContext,
@@ -28,6 +28,7 @@ import {
   type InlineToolRequestContextValue,
 } from './InlineToolRequestContext'
 import { ChatViewportProvider, canUseSplitPane, useChatViewportMaybe, type ChatViewportValue } from './chatViewport'
+import { ChatWidthControls } from './ChatWidthControls'
 import { useChatPageViewModel } from './useChatPageViewModel'
 import { SessionNavigationContext } from '../../contexts/SessionNavigationContext'
 import { useDirectory } from '../../contexts/useDirectory'
@@ -72,7 +73,6 @@ const PANE_VIEWPORT: ChatViewportValue = {
   presentation: {
     surfaceVariant: 'compact',
     isCompact: true,
-    isWideMode: false,
   },
   interaction: {
     mode: 'pointer',
@@ -173,6 +173,8 @@ export const ChatPane = memo(function ChatPane({
   // ============================================
   const chatAreaRef = useRef<ChatAreaHandle>(null)
   const modelSelectorRef = useRef<ModelSelectorHandle>(null)
+  const [chatContentEl, setChatContentEl] = useState<HTMLDivElement | null>(null)
+  const setChatContentRef = useCallback((node: HTMLDivElement | null) => setChatContentEl(node), [])
   const { addDirectory } = useDirectory()
 
   // 当前 pane 绑定的服务器（sessionId 为复合 key，split 出 serverId；home 状态跟随 active server 实时变化）
@@ -316,10 +318,6 @@ export const ChatPane = memo(function ChatPane({
   }, [])
   const [isAtBottom, setIsAtBottom] = useState(true)
 
-  const handleOutlineScrollToMessage = useCallback((messageId: string) => {
-    chatAreaRef.current?.scrollToMessageId(messageId)
-  }, [])
-
   // ============================================
   // Input Box Height
   // ============================================
@@ -356,6 +354,7 @@ export const ChatPane = memo(function ChatPane({
     loadState,
     loadError,
     hasMoreHistory,
+    hasTrimmedHistory,
     retryStatus,
     effectiveDirectory,
 
@@ -367,6 +366,8 @@ export const ChatPane = memo(function ChatPane({
     isReplying,
 
     loadMoreHistory,
+    loadUntilMessage,
+    hydrateTurn,
     handleRedoAll,
     clearRevert,
     reloadSession,
@@ -397,10 +398,25 @@ export const ChatPane = memo(function ChatPane({
     navigateHome,
   })
 
-  const shouldDeferMessages = displayMode === 'split' && !isStreaming && messages.length > 20
+  const handleOutlineScrollToMessage = useCallback(
+    (messageId: string) => {
+      // 轴现在可能含未加载的轮次：先补拉到目标进入内存再滚动
+      const scroll = () => chatAreaRef.current?.scrollToMessageId(messageId)
+      const state = routeSessionId ? messageStore.getSessionState(routeSessionId) : undefined
+      if (state?.messages.some(m => m.info.id === messageId)) {
+        scroll()
+        return
+      }
+      void loadUntilMessage(messageId).then(scroll)
+    },
+    [routeSessionId, loadUntilMessage],
+  )
+
+  // 分屏时把重派生降到低优先级渲染车道。聚焦 pane 在流式期间必须保持实时，
+  // 不能延迟（用户正在看）；非聚焦 pane 即使正在流式也走延迟：多对话并发时
+  // 让未在看的那个把 CPU 让给聚焦 pane，聚焦切换或流式结束后自然追平。
+  const shouldDeferMessages = displayMode === 'split' && messages.length > 20 && (!isStreaming || !isFocused)
   const messageView = useMemo(() => ({ sessionId: routeSessionId, messages }), [routeSessionId, messages])
-  // Streaming never consumes the deferred value, so do not feed every token into a
-  // second low-priority render lane.
   const deferredMessageView = useDeferredValue(shouldDeferMessages ? messageView : null)
   const renderedMessagesView = shouldDeferMessages && deferredMessageView ? deferredMessageView : messageView
   const renderedMessages = useMemo(
@@ -417,6 +433,19 @@ export const ChatPane = memo(function ChatPane({
   const isSubtaskPane = !!routeSessionId && paneLayoutStore.isSubtaskSession(routeSessionId)
   const chatPageViewModel = useChatPageViewModel(renderedMessages)
 
+  // 独立轮次大纲：把已加载消息里的轮次增量并入持久化 store，
+  // 并用 store 的完整大纲渲染侧边轴，历史未加载完也能显示全部轮次。
+  const routeRawSessionId = routeSessionId ? sessionKeyToSessionId(routeSessionId) : null
+  useMergeTurnOutline(paneServerId, routeRawSessionId, renderedMessages)
+  const turnOutlineEntries = useTurnOutlineEntries(paneServerId, routeRawSessionId)
+  const outlineSourceEntries = useMemo(() => {
+    // store 有数据时以它为准（含未加载轮次）；否则退回消息派生的条目
+    if (turnOutlineEntries.length >= chatPageViewModel.outlineSourceEntries.length && turnOutlineEntries.length > 0) {
+      return turnOutlineEntries.map(entry => ({ messageId: entry.messageId, title: entry.title }))
+    }
+    return chatPageViewModel.outlineSourceEntries
+  }, [turnOutlineEntries, chatPageViewModel.outlineSourceEntries])
+
   // 切 session remount 时默认视为贴底，避免回底按钮闪一下
   useEffect(() => {
     if (chatAreaMountKey == null) return
@@ -429,7 +458,7 @@ export const ChatPane = memo(function ChatPane({
       return {
         name: 'APIError',
         data: {
-          message: 'No active OpenCode server is selected',
+          message: t('connectionError.noActiveServer'),
           isRetryable: false,
         },
       }
@@ -440,12 +469,12 @@ export const ChatPane = memo(function ChatPane({
     }
 
     const lines = [
-      `Server: ${activeServer.name}`,
+      t('connectionError.serverLine', { name: activeServer.name }),
       `URL: ${activeServer.url}`,
-      `Status: ${activeServerHealth.status}`,
-      activeServerHealth.error ? `Error: ${activeServerHealth.error}` : '',
+      t('connectionError.statusLine', { status: activeServerHealth.status }),
+      activeServerHealth.error ? t('connectionError.errorLine', { error: activeServerHealth.error }) : '',
       activeServerHealth.status === 'error' || activeServerHealth.status === 'offline'
-        ? 'Expected /global/health to return OpenCode health JSON.'
+        ? t('connectionError.expectedHealth')
         : '',
     ].filter(Boolean)
 
@@ -456,14 +485,14 @@ export const ChatPane = memo(function ChatPane({
     return {
       name: 'APIError',
       data: {
-        message: activeServerHealth.error || `Unable to connect to ${activeServer.name}`,
+        message: activeServerHealth.error || t('connectionError.unableToConnect', { name: activeServer.name }),
         statusCode: activeServerHealth.status === 'unauthorized' ? 401 : undefined,
         isRetryable: activeServerHealth.status !== 'unauthorized',
         responseBody,
         metadata: activeServerHealth.details ? { rawDiagnostics: activeServerHealth.details } : undefined,
       },
     }
-  }, [activeServer, activeServerHealth])
+  }, [activeServer, activeServerHealth, t])
 
   const navigationCtx = useMemo(
     () => ({
@@ -960,7 +989,7 @@ export const ChatPane = memo(function ChatPane({
     ))
 
   const chatContent = (
-    <div className="flex-1 relative overflow-hidden flex flex-col min-h-0">
+    <div ref={setChatContentRef} className="flex-1 relative overflow-hidden flex flex-col min-h-0">
       <div className="absolute inset-0">
         <InlineToolRequestContext.Provider value={inlineToolRequestCtx}>
           <ErrorBoundary onOpenSettings={onOpenSettings}>
@@ -989,7 +1018,9 @@ export const ChatPane = memo(function ChatPane({
                 onOpenSettings={onOpenSettings}
                 onReloadSession={reloadSession}
                 hasMoreHistory={hasMoreHistory}
+                hasTrimmedHistory={hasTrimmedHistory}
                 onLoadMore={loadMoreHistory}
+                onHydrateTurn={hydrateTurn}
                 onUndo={handleUndoWithAnimation}
                 onFork={handleForkMessage}
                 canUndo={canUndo}
@@ -1005,7 +1036,7 @@ export const ChatPane = memo(function ChatPane({
       </div>
 
       <OutlineIndex
-        sourceEntries={chatPageViewModel.outlineSourceEntries}
+        sourceEntries={outlineSourceEntries}
         ownerByMessageId={chatPageViewModel.outlineOwnerByMessageId}
         visibleMessageIds={visibleMessageIds}
         currentHighlightEnabled={outlineCurrentHighlight}
@@ -1062,7 +1093,6 @@ export const ChatPane = memo(function ChatPane({
             onClearRevert={clearRevert}
             registerInputBox={registerInputBox}
             isAtBottom={isAtBottom}
-            showScrollToBottom={!isAtBottom}
             onScrollToBottom={handleScrollToBottom}
             collapsedPermission={
               !inlineToolRequests && pendingPermissionRequests.length > 0 && permissionCollapsed
@@ -1082,9 +1112,7 @@ export const ChatPane = memo(function ChatPane({
               questionCollapsed
                 ? {
                     label: t('chat:questionDialog.title'),
-                    queueLength: inlineToolRequests
-                      ? unmatchedPendingQuestions.length
-                      : pendingQuestionRequests.length,
+                    queueLength: inlineToolRequests ? unmatchedPendingQuestions.length : pendingQuestionRequests.length,
                     onExpand: () => setQuestionCollapsed(false),
                   }
                 : undefined
@@ -1092,6 +1120,9 @@ export const ChatPane = memo(function ChatPane({
           />
         )}
       </div>
+
+      {/* 内容列宽拖拽手柄：只在非紧凑视图启用，两条手柄对称加宽 */}
+      <ChatWidthControls container={chatContentEl} enabled={!showCompactShell} />
 
       {!inlineToolRequests && pendingPermissionRequests.length > 0 && (
         <PermissionDialog
@@ -1214,21 +1245,11 @@ export const ChatPane = memo(function ChatPane({
   const viewportValue = useMemo((): ChatViewportValue => {
     if (!showCompactShell) return outerViewport ?? PANE_VIEWPORT
     const enableCollapsedInputDock = outerViewport?.interaction.enableCollapsedInputDock ?? false
-    // 宽屏模式由用户在设置里控制，分屏面板同样要跟随，
-    // 否则分屏下输入框与消息列的宽度会和主视图不一致。
-    const isWideMode = outerViewport?.presentation.isWideMode ?? false
-    if (
-      enableCollapsedInputDock === PANE_VIEWPORT.interaction.enableCollapsedInputDock &&
-      isWideMode === PANE_VIEWPORT.presentation.isWideMode
-    ) {
+    if (enableCollapsedInputDock === PANE_VIEWPORT.interaction.enableCollapsedInputDock) {
       return PANE_VIEWPORT
     }
     return {
       ...PANE_VIEWPORT,
-      presentation: {
-        ...PANE_VIEWPORT.presentation,
-        isWideMode,
-      },
       interaction: {
         ...PANE_VIEWPORT.interaction,
         enableCollapsedInputDock,

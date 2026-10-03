@@ -14,7 +14,9 @@ import { SlashCommandMenu, type SlashCommandMenuHandle } from '../slash-command'
 import { InputToolbar } from './input/InputToolbar'
 import type { ModelSelectorHandle } from './ModelSelector'
 import { InputFooter } from './input/InputFooter'
-import { FloatingActions, CollapsedCapsule } from './input/InputActions'
+import { FloatingActions } from './input/InputActions'
+import { ChatFab, type ChatFabMode } from './input/ChatFab'
+import { ArrowUpIcon } from '../../components/Icons'
 import { useMobileCollapse } from './input/useMobileCollapse'
 import { useAttachmentRail } from './input/useAttachmentRail'
 import { useInputHistory } from './input/useInputHistory'
@@ -34,7 +36,7 @@ import { themeStore } from '../../store/themeStore'
 import { notificationStore } from '../../store/notificationStore'
 import { useLayoutStore } from '../../store/layoutStore'
 import { useChatViewport } from './chatViewport'
-import { getContentMaxWidthClass, getContentPaddingClass } from './contentWidth'
+import { chatContentMaxWidthStyle, getContentPaddingClass } from './contentWidth'
 import type { ApiAgent } from '../../api/client'
 import type { ModelInfo, FileCapabilities } from '../../api'
 import type { Command } from '../../api/command'
@@ -76,6 +78,9 @@ const INPUT_FOOTER_FALLBACK_HEIGHT = 32
 const COMPOSER_MIN_HEIGHT = 144
 const COMPOSER_DESKTOP_MAX_HEIGHT = 420
 const COMPOSER_COMPACT_MAX_HEIGHT = 320
+// 收起态药丸高度（px）：与 ChatFab 收起态等高（--chat-fab-collapsed-size = 36px），
+// 两者并排时视觉上是一组。内容 28px + 上下 padding 3px + 上下边框 1px。
+const COLLAPSED_BOX_HEIGHT = 36
 
 const MAX_DROPPED_FILE_SIZE = 20 * 1024 * 1024
 const MAX_DROPPED_FILE_SIZE_LABEL = `${MAX_DROPPED_FILE_SIZE / (1024 * 1024)}MB`
@@ -162,7 +167,6 @@ export interface InputBoxProps {
   // Animation
   registerInputBox?: (element: HTMLElement | null) => void
   isAtBottom?: boolean
-  showScrollToBottom?: boolean
   onScrollToBottom?: () => void
   // Collapsed dialog capsules
   collapsedPermission?: CollapsedDialogInfo
@@ -204,7 +208,6 @@ function InputBoxComponent({
   onClearRevert,
   registerInputBox,
   isAtBottom = true,
-  showScrollToBottom = false,
   onScrollToBottom,
   collapsedPermission,
   collapsedQuestion,
@@ -382,10 +385,7 @@ function InputBoxComponent({
       TEXTAREA_MIN_HEIGHT + TEXTAREA_VERTICAL_CHROME + toolbarHeight,
       nextComposerMaxHeight - footerHeight,
     )
-    const nextTextareaMaxHeight = Math.max(
-      TEXTAREA_MIN_HEIGHT,
-      nextInputContainerMaxHeight - inputContainerChrome,
-    )
+    const nextTextareaMaxHeight = Math.max(TEXTAREA_MIN_HEIGHT, nextInputContainerMaxHeight - inputContainerChrome)
 
     setComposerMaxHeight(prev => (Math.abs(prev - nextComposerMaxHeight) < 1 ? prev : nextComposerMaxHeight))
     setInputContainerMaxHeight(prev =>
@@ -1146,7 +1146,10 @@ function InputBoxComponent({
     [text],
   )
 
-  const insertDraggedFile = useCallback((fileInfo: DraggedFileInfo) => insertDraggedFiles([fileInfo]), [insertDraggedFiles])
+  const insertDraggedFile = useCallback(
+    (fileInfo: DraggedFileInfo) => insertDraggedFiles([fileInfo]),
+    [insertDraggedFiles],
+  )
 
   useEffect(() => {
     const updateInternalFileDragState = () => {
@@ -1252,7 +1255,13 @@ function InputBoxComponent({
         console.warn('[InputBox] Failed to process Tauri dropped paths:', err)
       }
     },
-    [buildDraggedFileInfo, createUploadAttachmentFromDroppedPath, externalFileDropMode, insertDraggedFiles, isSubmitting],
+    [
+      buildDraggedFileInfo,
+      createUploadAttachmentFromDroppedPath,
+      externalFileDropMode,
+      insertDraggedFiles,
+      isSubmitting,
+    ],
   )
 
   const handleTauriDragDropEvent = useCallback(
@@ -1334,32 +1343,149 @@ function InputBoxComponent({
     ? 'max(2rem, var(--safe-area-inset-bottom, 0px))'
     : 'max(0px, calc(var(--safe-area-inset-bottom, 0px) - 2rem))'
   // 收起态视觉下移：把 2rem 撑出的多余缓冲吃掉，只留 0.75rem(12px) 呼吸空间
-  const collapsedVisualOffset = isCollapsed
-    ? 'translateY(calc(2rem - 0.75rem))'
-    : 'none'
+  const collapsedVisualOffset = isCollapsed ? 'translateY(calc(2rem - 0.75rem))' : 'none'
+
+  // ---- FAB 模式：收起态回到底部，展开态发送 / 停止（与工具栏共用同一套判定） ----
+  const fabMode: ChatFabMode = isCollapsed ? 'scroll' : !canSend && isStreaming && !isSubmitting ? 'stop' : 'send'
+  const fabDisabled = fabMode === 'send' && (!canSend || isSubmitting)
+  const handleFabClick = useCallback(() => {
+    if (fabMode === 'scroll') {
+      // 收起态点击回到底部；没有回底回调时退化为展开输入框。
+      if (onScrollToBottom) onScrollToBottom()
+      else handleExpandInput()
+      return
+    }
+    if (fabMode === 'stop') {
+      onAbort?.()
+      return
+    }
+    handleSend()
+  }, [fabMode, handleExpandInput, handleSend, onAbort, onScrollToBottom])
+
+  // ---- 单元素几何变形：输入框本体从圆角矩形「长」成药丸 ----
+  //
+  // 纯 CSS 过渡驱动 width / height / border-radius（同一条缓动），边框与背景全程
+  // 依附在同一个元素上，不存在淡出再出现的切换。
+  // 高度是内容驱动的 auto，CSS 无法在 auto 之间插值，所以把展开态高度也钉成
+  // 「内容自然高度的像素值」，height 两端就都是确定值、可被 CSS 插值。
+  //
+  // 关键约束：外层 contentWrap 在收起态用 minHeight 钉住展开高度，composer 只在
+  // 里面变形——这样 ChatPane 量到的输入区总高不变，virtualizer 的 bottomPadding
+  // 不动，消息列表不会随每一帧的高度变化重排（那是卡顿的主要来源）。
+  //
+  // 几何过渡只在「收起/展开翻转」期间打开（data-morphing）：平时输入增高需要即时
+  // 响应，不能被 480ms 过渡拖住。
+  const expandedContentRef = useRef<HTMLDivElement>(null)
+  const prevCollapsedRef = useRef(isCollapsed)
+  const morphTimerRef = useRef<number | null>(null)
+  // 展开态内容的真实宽度，每个展开 commit 记录一次。收起那一帧 DOM 已切到
+  // absolute（会收缩到内容宽），当场量不准，所以必须用上一次展开态记下的值。
+  const expandedWidthRef = useRef(0)
+  // 翻转期间保持 true：外层 contentWrap 用 minHeight 钉住展开高度，composer 只在
+  // 里面变形，ChatPane 量到的输入区总高恒定 → virtualizer bottomPadding 不动，
+  // 消息列表不会随每一帧的高度变化重排。
+  const [isMorphing, setIsMorphing] = useState(false)
+  // 收起变形期间把展开内容冻在展开宽度上，避免逐帧收窄导致工具栏 reflow。
+  const [morphContentWidth, setMorphContentWidth] = useState(0)
+
+  useEffect(
+    () => () => {
+      if (morphTimerRef.current !== null) window.clearTimeout(morphTimerRef.current)
+    },
+    [],
+  )
+
+  const syncBoxHeight = useCallback(() => {
+    const el = inputContainerRef.current
+    if (!el) return
+    let target: number
+    if (isCollapsed) {
+      target = COLLAPSED_BOX_HEIGHT
+    } else {
+      const natural = expandedContentRef.current?.offsetHeight ?? 0
+      if (natural <= 0) return
+      target = natural + 2 // 上下各 1px 边框
+    }
+    if (Math.abs(el.offsetHeight - target) > 0.5) el.style.height = `${target}px`
+  }, [isCollapsed, inputContainerRef])
+
+  useLayoutEffect(() => {
+    const el = inputContainerRef.current
+    const toggled = prevCollapsedRef.current !== isCollapsed
+    prevCollapsedRef.current = isCollapsed
+
+    // 展开态每个 commit 同步刷新一次内容宽度：收起那一帧 DOM 已切到 absolute，
+    // 当场量不准，必须用展开态记下的值；ResizeObserver 是本帧之后才触发的，
+    // 首次收起会拿不到，所以这里同步记一次兜底。
+    if (!isCollapsed) {
+      const inner = expandedContentRef.current
+      if (inner && inner.offsetWidth > 0) expandedWidthRef.current = inner.offsetWidth
+    }
+
+    if (el && toggled) {
+      // 收起方向：用展开态记下的内容宽度把内容冻住，否则容器逐帧收窄会把
+      // 工具栏/textarea 一路 reflow，看起来就是不丝滑。
+      if (isCollapsed) setMorphContentWidth(expandedWidthRef.current)
+      el.setAttribute('data-morphing', '')
+      setIsMorphing(true)
+      if (morphTimerRef.current !== null) window.clearTimeout(morphTimerRef.current)
+      morphTimerRef.current = window.setTimeout(() => {
+        morphTimerRef.current = null
+        el.removeAttribute('data-morphing')
+        setIsMorphing(false)
+      }, 520)
+    }
+
+    syncBoxHeight()
+  }, [isCollapsed, syncBoxHeight, text, attachments.length, inputContainerMaxHeight])
+
+  // 展开态内容变化（增高、变宽、附件、工具栏）时同步容器高度，并记录内容宽度，
+  // 供收起时把内容冻住。
+  useEffect(() => {
+    const inner = expandedContentRef.current
+    if (!inner || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      if (prevCollapsedRef.current) return
+      if (inner.offsetWidth > 0) expandedWidthRef.current = inner.offsetWidth
+      syncBoxHeight()
+    })
+    ro.observe(inner)
+    return () => ro.disconnect()
+  }, [syncBoxHeight])
 
   return (
     <div className="w-full">
       <div
-        className={`mx-auto ${getContentMaxWidthClass(presentation.isWideMode)} transition-[max-width] duration-300 ease-in-out ${getContentPaddingClass(isCompact)} ${
+        className={`mx-auto chat-content-width-transition ${getContentPaddingClass(isCompact)} ${
           isCollapsed ? 'pointer-events-none' : 'pointer-events-auto'
         }`}
-        style={{ paddingBottom: bottomDockPadding }}
+        style={{ ...chatContentMaxWidthStyle, paddingBottom: bottomDockPadding }}
       >
         <div
           ref={contentWrapRef}
           onPointerDown={handleContainerPointerDown}
-          className={`relative flex flex-col gap-2 ${isCollapsed ? 'justify-end' : ''}`}
-          style={
-            isCollapsed && expandedHeightRef.current > 0
-              ? { minHeight: expandedHeightRef.current, maxHeight: composerMaxHeight, transform: collapsedVisualOffset }
-              : { maxHeight: composerMaxHeight }
-          }
+          className={`relative flex flex-col gap-2 ${isCollapsed || isMorphing ? 'justify-end' : ''}`}
+          style={{
+            // 翻转全程（isMorphing）用固定 height 钉住展开高度：composer 在里面变形、
+            // FloatingActions 进出文档流都不会改变外层盒子高度 → ChatPane 量到的
+            // inputBoxHeight 恒定 → virtualizer bottomPadding 不动 → 消息列表不重排
+            // （卡顿根因）。用 height 而非 minHeight，是因为收起瞬间 FA 回到文档流会把
+            // 内容撑高，minHeight 挡不住。超出部分向上溢出，正好让 FA 浮在药丸上方。
+            ...(isMorphing && expandedHeightRef.current > 0
+              ? { height: expandedHeightRef.current }
+              : isCollapsed && expandedHeightRef.current > 0
+                ? { minHeight: expandedHeightRef.current }
+                : {}),
+            maxHeight: composerMaxHeight,
+            // 收起态视觉下移；transform 与几何用同一条缓动，展开时平滑归零。
+            transform: isCollapsed ? collapsedVisualOffset : 'none',
+            transition: 'transform 480ms cubic-bezier(0.16, 1, 0.3, 1)',
+          }}
         >
           {/* FloatingActions —
               展开态：absolute 定位在内容区上方，不占文档流，避免显隐变化影响高度导致滚动抖动
-              收起态：正常文档流，紧贴胶囊上方
-              始终同一 DOM 节点，切换时 FloatingActions 不 remount，避免入场动画闪烁 */}
+              收起态：正常文档流，紧贴变形后的药丸上方
+              始终同一 DOM 节点，切换时 FloatingActions 不 remount，避免入场动画闪烁。 */}
           <div
             data-floating-actions
             className={
@@ -1370,46 +1496,20 @@ function InputBoxComponent({
           >
             <div className={isCollapsed ? undefined : 'pointer-events-auto'}>
               <FloatingActions
-                showScrollToBottom={showScrollToBottom}
-                isCollapsed={isCollapsed}
                 canRedo={canRedo}
                 revertSteps={revertSteps}
                 onRedo={onRedo}
                 onRedoAll={onRedoAll}
-                onScrollToBottom={onScrollToBottom}
                 collapsedPermission={collapsedPermission}
                 collapsedQuestion={collapsedQuestion}
               />
             </div>
           </div>
 
-          {/* Collapsed Capsule - 移动端收起状态
-              与输入区共用一条时间线做「缩小 ↔ 浮现」的交叉过渡：
-              输入框向下缩小淡出，胶囊同时从略小的尺度放大浮现，读成一个连贯动作。
-              用 transform + opacity 而非 height：不触发布局，inputBoxHeight 恒定，
-              否则 bottomPadding → virtualizer paddingEnd 变化会引发振荡闪烁
-              （见上方 bottomDockPadding 注释）。 */}
-          {isCollapsed && (
-            <div className="animate-composer-capsule-in">
-              <CollapsedCapsule
-                onExpand={handleExpandInput}
-                showScrollToBottom={showScrollToBottom}
-                onScrollToBottom={onScrollToBottom}
-              />
-            </div>
-          )}
-
           {/* Wrapper — 菜单在 glass 容器外，避免嵌套 backdrop-filter 导致模糊失效。
               收起态只做视觉隐藏，不能卸载输入区，否则移动端虚拟键盘会随焦点元素销毁而关闭。
-              缩小动效：scale 收小 + 向下位移 + 淡出，配合 transform-origin: bottom，
-              视觉上是「缩进下方」而不是原地消失；位移量与胶囊落点呼应。 */}
-          <div
-            className={`z-30 origin-bottom transition-[opacity,transform] duration-[220ms] ease-[cubic-bezier(0.32,0.72,0,1)] ${
-              isCollapsed
-                ? 'pointer-events-none absolute inset-x-0 bottom-0 translate-y-6 scale-[0.94] opacity-0'
-                : 'relative translate-y-0 scale-100 opacity-100'
-            }`}
-          >
+              变形主体是容器本身（见下方 [data-input-box]），这里只负责菜单定位。 */}
+          <div className="relative z-30">
             {/* @ Mention Menu */}
             <MentionMenu
               ref={mentionMenuRef}
@@ -1433,119 +1533,163 @@ function InputBoxComponent({
               onClose={handleSlashClose}
             />
 
-            {/* Input Container */}
-            <div
-              ref={inputContainerRef}
-              data-input-box
-              data-pane-id={paneId}
-              onPointerDown={handleContainerPointerDown}
-              onDragEnter={handleDragEnter}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`glass rounded-2xl relative overflow-hidden focus-within:outline-none shadow-lg ${
-                isDragging || isInternalFileDragging
-                  ? 'border border-accent-main-100 ring-2 ring-accent-main-100/30'
-                  : isStreaming
-                    ? 'border border-accent-main-100/50 animate-border-pulse'
-                    : 'border border-border-200/60'
-              }`}
-              style={{ maxHeight: inputContainerMaxHeight }}
-            >
-              {/* Drop overlay */}
-              {(isDragging || isInternalFileDragging) && (
-                <div className="absolute inset-0 z-50 rounded-2xl bg-accent-main-100/5 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
-                  <span className="text-[length:var(--fs-base)] text-accent-main-100 font-medium">{t('inputBox.dropFilesHere')}</span>
+            {/* Input Container + FAB：FAB 锚点宽度跟随输入框（132 ↔ 整列），
+                FAB 是锚点的子节点，因此 right 相对输入框右缘解析——
+                收起时挂在药丸右侧，展开时滑到输入框右下角。 */}
+            <div className="relative">
+              <div className="chat-fab-anchor" data-collapsed={isCollapsed}>
+                <ChatFab
+                  collapsed={isCollapsed}
+                  mode={fabMode}
+                  sending={isSubmitting}
+                  disabled={fabDisabled}
+                  onClick={handleFabClick}
+                />
+              </div>
+              <div
+                ref={inputContainerRef}
+                data-input-box
+                data-collapsed={isCollapsed ? '' : undefined}
+                data-pane-id={paneId}
+                onClick={isCollapsed ? handleExpandInput : undefined}
+                onPointerDown={handleContainerPointerDown}
+                onDragEnter={handleDragEnter}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`glass rounded-2xl relative overflow-hidden focus-within:outline-none shadow-lg ${
+                  isCollapsed ? 'pointer-events-auto' : ''
+                } ${
+                  isDragging || isInternalFileDragging
+                    ? 'border border-accent-main-100 ring-2 ring-accent-main-100/30'
+                    : isStreaming
+                      ? 'border border-accent-main-100/50 animate-border-pulse'
+                      : 'border border-border-200/60'
+                }`}
+                style={{ maxHeight: isCollapsed ? undefined : inputContainerMaxHeight }}
+              >
+                {/* Drop overlay */}
+                {(isDragging || isInternalFileDragging) && (
+                  <div className="absolute inset-0 z-50 rounded-2xl bg-accent-main-100/5 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
+                    <span className="text-[length:var(--fs-base)] text-accent-main-100 font-medium">
+                      {t('inputBox.dropFilesHere')}
+                    </span>
+                  </div>
+                )}
+
+                {/* 收起态内容层：固定尺寸 + 居中，绝对定位不参与尺寸变化，只切 opacity。
+                  收起时立即淡入（与展开层的淡出交叉），展开时快速淡出。 */}
+                <div
+                  aria-hidden={!isCollapsed || undefined}
+                  className={`absolute inset-0 flex items-center justify-center gap-1.5 text-text-300 pointer-events-none transition-opacity ${
+                    isCollapsed ? 'opacity-100 duration-200' : 'opacity-0 duration-[120ms]'
+                  }`}
+                >
+                  <ArrowUpIcon size={14} />
+                  <span className="text-[length:var(--fs-xs)] whitespace-nowrap">{t('inputActions.reply')}</span>
                 </div>
-              )}
 
-              <div className="relative">
-                <div className="overflow-hidden">
-                  {/* Attachments Preview - 显示在输入框上方 */}
-                  <div
-                    ref={attachmentSectionRef}
-                    className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
-                      attachments.length > 0 ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
-                    }`}
-                  >
-                    <div className="overflow-hidden">
-                      <div className="px-4 pt-3 pb-1">
-                        <div className="relative">
-                          <div
-                            ref={attachmentRailRef}
-                            onScroll={syncAttachmentRailState}
-                            onWheel={handleAttachmentRailWheel}
-                            className="overflow-x-auto overflow-y-hidden overscroll-x-contain no-scrollbar touch-pan-x"
-                            style={{ WebkitOverflowScrolling: 'touch' }}
-                          >
-                            <AttachmentPreview
-                              attachments={attachments}
-                              onRemove={handleRemoveAttachment}
-                              variant="rail"
-                              className={isSubmitting ? 'pr-4 pointer-events-none opacity-70' : 'pr-4'}
-                            />
+                {/* 展开态内容层：收起时绝对定位 + 冻结展开宽度 + 居中，容器收缩时由
+                  overflow-hidden 把文字裁掉，同时淡出——不参与尺寸变化，因此不会逐帧
+                  重排，也不会突然消失。展开时等容器长完（delay）再浮现。 */}
+                <div
+                  ref={expandedContentRef}
+                  aria-hidden={isCollapsed || undefined}
+                  inert={isCollapsed || undefined}
+                  className={`transition-opacity ${
+                    isCollapsed
+                      ? 'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 pointer-events-none duration-[180ms]'
+                      : 'relative opacity-100 delay-[220ms] duration-200'
+                  }`}
+                  style={
+                    isMorphing && isCollapsed && morphContentWidth > 0
+                      ? { width: `${morphContentWidth}px`, contain: 'layout style' }
+                      : undefined
+                  }
+                >
+                  <div className="overflow-hidden">
+                    {/* Attachments Preview - 显示在输入框上方 */}
+                    <div
+                      ref={attachmentSectionRef}
+                      className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                        attachments.length > 0 ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+                      }`}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="px-4 pt-3 pb-1">
+                          <div className="relative">
+                            <div
+                              ref={attachmentRailRef}
+                              onScroll={syncAttachmentRailState}
+                              onWheel={handleAttachmentRailWheel}
+                              className="overflow-x-auto overflow-y-hidden overscroll-x-contain no-scrollbar touch-pan-x"
+                              style={{ WebkitOverflowScrolling: 'touch' }}
+                            >
+                              <AttachmentPreview
+                                attachments={attachments}
+                                onRemove={handleRemoveAttachment}
+                                variant="rail"
+                                className={isSubmitting ? 'pr-4 pointer-events-none opacity-70' : 'pr-4'}
+                              />
+                            </div>
+
+                            {attachmentsOverflowing && showAttachmentLeftFade && (
+                              <div className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-bg-000/50 to-transparent" />
+                            )}
+
+                            {attachmentsOverflowing && showAttachmentRightFade && (
+                              <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-bg-000/50 to-transparent" />
+                            )}
                           </div>
-
-                          {attachmentsOverflowing && showAttachmentLeftFade && (
-                            <div className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-bg-000/50 to-transparent" />
-                          )}
-
-                          {attachmentsOverflowing && showAttachmentRightFade && (
-                            <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-bg-000/50 to-transparent" />
-                          )}
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Text Input - 简单的 textarea，直接显示文本 */}
-                  <div className="pt-4 pb-2">
-                    <textarea
-                      ref={textareaRef}
-                      value={text}
-                      onChange={handleChange}
-                      onKeyDown={handleKeyDown}
-                      onCompositionStart={handleCompositionStart}
-                      onCompositionEnd={handleCompositionEnd}
-                      onPaste={handlePaste}
-                      onScroll={handleScroll}
-                      onFocus={handleFocus}
-                      onBlur={handleBlur}
-                      disabled={inputDisabled}
-                      placeholder={isCompact ? t('inputBox.replyToAgentMobile') : t('inputBox.replyToAgent')}
-                      className={`w-full resize-none focus:outline-none focus:ring-0 bg-transparent text-text-100 placeholder:text-text-400 custom-scrollbar ${isCompact ? 'px-3' : 'px-4'}`}
-                      style={{
-                        ...TEXT_STYLE,
-                        minHeight: '24px',
-                        maxHeight: textareaMaxHeight,
-                      }}
-                      rows={1}
-                    />
-                  </div>
+                    {/* Text Input - 简单的 textarea，直接显示文本 */}
+                    <div className="pt-4 pb-2">
+                      <textarea
+                        ref={textareaRef}
+                        value={text}
+                        onChange={handleChange}
+                        onKeyDown={handleKeyDown}
+                        onCompositionStart={handleCompositionStart}
+                        onCompositionEnd={handleCompositionEnd}
+                        onPaste={handlePaste}
+                        onScroll={handleScroll}
+                        onFocus={handleFocus}
+                        onBlur={handleBlur}
+                        disabled={inputDisabled}
+                        placeholder={isCompact ? t('inputBox.replyToAgentMobile') : t('inputBox.replyToAgent')}
+                        className={`w-full resize-none focus:outline-none focus:ring-0 bg-transparent text-text-100 placeholder:text-text-400 custom-scrollbar ${isCompact ? 'px-3' : 'px-4'}`}
+                        style={{
+                          ...TEXT_STYLE,
+                          minHeight: '24px',
+                          maxHeight: textareaMaxHeight,
+                        }}
+                        rows={1}
+                      />
+                    </div>
 
-                  {/* Bottom Bar -> InputToolbar */}
-                  <div ref={toolbarRef}>
-                    <InputToolbar
-                      agents={agents}
-                      selectedAgent={selectedAgent}
-                      onAgentChange={onAgentChange}
-                      variants={variants}
-                      selectedVariant={selectedVariant}
-                      onVariantChange={onVariantChange}
-                      fileCapabilities={fileCaps}
-                      onFilesSelected={handleFilesSelected}
-                      isStreaming={isStreaming}
-                      isSending={isSubmitting}
-                      onAbort={onAbort}
-                      canSend={canSend || false}
-                      onSend={handleSend}
-                      models={models}
-                      selectedModelKey={selectedModelKey}
-                      onModelChange={onModelChange}
-                      modelsLoading={modelsLoading}
-                      inputContainerRef={inputContainerRef}
-                      modelSelectorRef={modelSelectorRef}
-                    />
+                    {/* Bottom Bar -> InputToolbar */}
+                    <div ref={toolbarRef}>
+                      <InputToolbar
+                        agents={agents}
+                        selectedAgent={selectedAgent}
+                        onAgentChange={onAgentChange}
+                        variants={variants}
+                        selectedVariant={selectedVariant}
+                        onVariantChange={onVariantChange}
+                        fileCapabilities={fileCaps}
+                        onFilesSelected={handleFilesSelected}
+                        isSending={isSubmitting}
+                        models={models}
+                        selectedModelKey={selectedModelKey}
+                        onModelChange={onModelChange}
+                        modelsLoading={modelsLoading}
+                        inputContainerRef={inputContainerRef}
+                        modelSelectorRef={modelSelectorRef}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1560,11 +1704,7 @@ function InputBoxComponent({
           className={`h-8 flex items-center justify-center ${isCollapsed ? 'hidden' : ''}`}
           aria-hidden={isCollapsed || undefined}
         >
-          <InputFooter
-            paneId={paneId}
-            sessionId={sessionId}
-            inputContainerRef={inputContainerRef}
-          />
+          <InputFooter paneId={paneId} sessionId={sessionId} inputContainerRef={inputContainerRef} />
         </div>
       </div>
     </div>

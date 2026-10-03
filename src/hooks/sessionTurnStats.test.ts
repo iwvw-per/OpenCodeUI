@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeSessionTurnStats, mergeIntervalMs, EMPTY_SESSION_TURN_STATS } from './sessionTurnStats'
+import { computeSessionTurnStats, computeSessionTurnStatsCached, mergeIntervalMs, EMPTY_SESSION_TURN_STATS } from './sessionTurnStats'
 import type { Message, Part } from '../types/message'
 
 function userMessage(created: number): Message {
@@ -260,5 +260,21 @@ describe('computeSessionTurnStats', () => {
     ])
     expect(stats.steps).toBe(0)
     expect(stats.tokensPerSec).toBeNull()
+  })
+})
+
+describe('computeSessionTurnStatsCached', () => {
+  it('reuses the result for the same array reference', () => {
+    const messages = [userMessage(0), assistantMessage({ created: 1000, completed: 2000, output: 10 })]
+    const first = computeSessionTurnStatsCached(messages)
+    const second = computeSessionTurnStatsCached(messages)
+    expect(second).toBe(first)
+  })
+
+  it('recomputes when the array reference changes', () => {
+    const first = computeSessionTurnStatsCached([userMessage(0)])
+    const second = computeSessionTurnStatsCached([userMessage(0), userMessage(1)])
+    expect(second).not.toBe(first)
+    expect(second.turns).toBe(2)
   })
 })

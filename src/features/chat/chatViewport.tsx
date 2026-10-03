@@ -59,8 +59,6 @@ interface ComputedViewportInput {
   touchCapable: boolean
   /** 桌面端设置开关：上滚时收起输入框 */
   desktopCollapsedInputDock: boolean
-  /** 宽屏模式：对话列与输入框一起变宽 */
-  wideMode: boolean
   /** Windows 全高侧栏：收起时的最小宽度（顶部按钮行宽度），默认 49px rail */
   sidebarRailWidth?: number
   /** Windows 全高侧栏：拖拽调节宽度的下限（顶部按钮行合计宽度），默认 SIDEBAR_HARD_MIN_WIDTH */
@@ -71,8 +69,6 @@ export interface ChatViewportValue {
   presentation: {
     surfaceVariant: ChatSurfaceVariant
     isCompact: boolean
-    /** 宽屏模式：对话列与输入框一起变宽（见 contentWidth.ts） */
-    isWideMode: boolean
   }
   interaction: {
     mode: ChatInteractionMode
@@ -135,7 +131,6 @@ function computeChatViewport(input: ComputedViewportInput): Omit<ChatViewportVal
     preferTouchUi,
     touchCapable,
     desktopCollapsedInputDock,
-    wideMode,
     sidebarRailWidth,
     sidebarHardMinWidth,
   } = input
@@ -211,7 +206,6 @@ function computeChatViewport(input: ComputedViewportInput): Omit<ChatViewportVal
     presentation: {
       surfaceVariant,
       isCompact: surfaceVariant === 'compact',
-      isWideMode: wideMode,
     },
     interaction: {
       mode: interactionMode,
@@ -307,7 +301,6 @@ export function useChatViewportController({
     themeStore.subscribe,
     () => themeStore.getSnapshot().desktopCollapsedInputDock,
   )
-  const wideMode = useSyncExternalStore(themeStore.subscribe, () => themeStore.getSnapshot().wideMode)
   const [surfaceElement, setSurfaceElement] = useState<HTMLElement | null>(null)
   const surfaceRef = useCallback((node: HTMLElement | null) => {
     setSurfaceElement(node)
@@ -387,7 +380,6 @@ export function useChatViewportController({
         preferTouchUi,
         touchCapable,
         desktopCollapsedInputDock,
-        wideMode,
         sidebarRailWidth,
         sidebarHardMinWidth,
       }),
@@ -403,7 +395,6 @@ export function useChatViewportController({
       preferTouchUi,
       touchCapable,
       desktopCollapsedInputDock,
-      wideMode,
       sidebarRailWidth,
       sidebarHardMinWidth,
     ],

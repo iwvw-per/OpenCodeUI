@@ -4,7 +4,7 @@ const SYNC_STAMPS_KEY = 'opencode-preferences-sync-stamps'
 const TOMBSTONES_KEY = 'opencode-preferences-sync-tombstones'
 
 const GLOBAL_WHITELIST = [
-  'chat-wide-mode',
+  'chat-content-width',
   'code-word-wrap',
   'collapse-user-messages',
   'descriptive-tool-steps',
@@ -400,6 +400,80 @@ describe('preferences sync', () => {
     expect(saved.map((entry: { path: string }) => entry.path)).toEqual(['/a', '/b'])
     // 同 path 重复时保留本地那条（本地顺序优先），不被服务端的旧副本覆盖名称。
     expect(saved[0].name).toBe('A')
+  })
+
+  it('adopts the newer side order for saved directories when local is unchanged', async () => {
+    // 本地相对基线没变、服务端更新 → 顺序跟随服务端（拖拽重排可跨端生效）。
+    const account = await seedAccount()
+    const key = 'srv:aiagent:inst_1:opencode-saved-directories'
+    const base = [
+      { path: '/a', name: 'A', addedAt: 1 },
+      { path: '/b', name: 'B', addedAt: 2 },
+    ]
+    localStorage.setItem(key, JSON.stringify(base))
+    localStorage.setItem(
+      SYNC_STAMPS_KEY,
+      JSON.stringify({
+        stamps: { [key]: '2020-01-01T00:00:00.000Z' },
+        known: { __snapshot__: JSON.stringify({ [key]: JSON.stringify(base) }) },
+      }),
+    )
+
+    stubPreferencesFetch([
+      {
+        key,
+        value: [
+          { path: '/b', name: 'B', addedAt: 2 },
+          { path: '/a', name: 'A', addedAt: 1 },
+        ],
+        updatedAt: '2030-01-01T00:00:00Z',
+      },
+    ])
+
+    const { pullPreferences } = await import('./preferencesSync')
+    await pullPreferences(account)
+
+    const saved = JSON.parse(localStorage.getItem(key) || '[]')
+    expect(saved.map((entry: { path: string }) => entry.path)).toEqual(['/b', '/a'])
+  })
+
+  it('keeps local order when local has an unsynced reorder', async () => {
+    // 本地相对基线变了（尚未上传的拖拽）→ 本地顺序优先，不被服务端冲掉。
+    const account = await seedAccount()
+    const key = 'srv:aiagent:inst_1:opencode-saved-directories'
+    const base = [
+      { path: '/a', name: 'A', addedAt: 1 },
+      { path: '/b', name: 'B', addedAt: 2 },
+    ]
+    const localReordered = [
+      { path: '/b', name: 'B', addedAt: 2 },
+      { path: '/a', name: 'A', addedAt: 1 },
+    ]
+    localStorage.setItem(key, JSON.stringify(localReordered))
+    localStorage.setItem(
+      SYNC_STAMPS_KEY,
+      JSON.stringify({
+        stamps: { [key]: '2020-01-01T00:00:00.000Z' },
+        known: { __snapshot__: JSON.stringify({ [key]: JSON.stringify(base) }) },
+      }),
+    )
+
+    stubPreferencesFetch([
+      {
+        key,
+        value: [
+          { path: '/a', name: 'A', addedAt: 1 },
+          { path: '/b', name: 'B', addedAt: 2 },
+        ],
+        updatedAt: '2030-01-01T00:00:00Z',
+      },
+    ])
+
+    const { pullPreferences } = await import('./preferencesSync')
+    await pullPreferences(account)
+
+    const saved = JSON.parse(localStorage.getItem(key) || '[]')
+    expect(saved.map((entry: { path: string }) => entry.path)).toEqual(['/b', '/a'])
   })
 
   it('keeps legacy hidden-directories on whole-key last-write-wins', async () => {

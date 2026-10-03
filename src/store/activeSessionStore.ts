@@ -12,6 +12,7 @@
 // 与 notificationStore 完全独立，不互相依赖
 
 import { useCallback, useSyncExternalStore } from 'react'
+import i18n from '../i18n'
 import type { SessionStatus, SessionStatusMap } from '../types/api/session'
 
 // ============================================
@@ -111,12 +112,20 @@ class ActiveSessionStore {
   }
 
   private recomputeDerived() {
+    // 先把 pending 按 sessionId 建索引：原实现对每个 busy session 都线性扫一遍
+    // pendingRequests，整体 O(busy × pending)。建一次索引后查询为 O(1)，
+    // 整体降为 O(busy + pending)。
+    const pendingBySession = new Map<string, PendingRequest>()
+    for (const req of this.pendingRequests.values()) {
+      if (!pendingBySession.has(req.sessionId)) pendingBySession.set(req.sessionId, req)
+    }
+
     const entries = Object.entries(this.state.statusMap)
       .filter(([, status]) => status.type === 'busy' || status.type === 'retry')
       .map(([sessionId, status]) => {
         const meta = this.sessionMeta.get(sessionId)
-        // 从自身 pendingRequests 查 pending action
-        const pending = this.findPendingForSession(sessionId)
+        // 从索引查 pending action
+        const pending = pendingBySession.get(sessionId)
         return {
           sessionId,
           status,
@@ -130,13 +139,6 @@ class ActiveSessionStore {
       this.cachedBusySessions = entries
     }
     this.cachedBusyCount = entries.length
-  }
-
-  private findPendingForSession(sessionId: string): PendingRequest | undefined {
-    for (const req of this.pendingRequests.values()) {
-      if (req.sessionId === sessionId) return req
-    }
-    return undefined
   }
 
   private hasPendingForSession(sessionId: string): boolean {
@@ -254,7 +256,7 @@ class ActiveSessionStore {
     }
 
     for (const q of questions) {
-      const desc = q.questions?.[0]?.header || 'Waiting for input'
+      const desc = q.questions?.[0]?.header || i18n.t('chat:activeSession.waitingForInput')
       pendingRequests.set(q.id, {
         requestId: q.id,
         sessionId: q.sessionID,

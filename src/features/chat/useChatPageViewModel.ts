@@ -113,15 +113,51 @@ function stabilizeMergedVisibleEntries(
 ): VisibleMessageEntry[] {
   if (!previous?.length) return next
 
+  // 预建倒排索引：id → 该 id 出现在哪些 previous 条目的下标（升序）。原实现对
+  // 每个 next 条目做 previous.find，条目多时退化为 O(n²)；这里只在与 next 条目
+  // 共享 id 的候选里按下标升序校验，保持与 find 相同的「取最靠前匹配」语义，
+  // 同时避免整表扫描。
+  const indexById = new Map<string, number[]>()
+  const addIndex = (id: string, index: number) => {
+    const list = indexById.get(id)
+    if (list) {
+      if (list[list.length - 1] !== index) list.push(index)
+    } else {
+      indexById.set(id, [index])
+    }
+  }
+  for (let i = 0; i < previous.length; i++) {
+    const candidate = previous[i]
+    if (candidate.sourceIds.length <= 1) continue
+    addIndex(candidate.message.info.id, i)
+    for (const id of candidate.sourceIds) addIndex(id, i)
+  }
+
   let changed = false
   const entries = next.map(entry => {
     if (entry.sourceIds.length <= 1) return entry
 
-    const previousEntry = previous.find(
-      candidate =>
+    const candidateIndices = new Set<number>()
+    const byMessageId = indexById.get(entry.message.info.id)
+    if (byMessageId) for (const index of byMessageId) candidateIndices.add(index)
+    for (const id of entry.sourceIds) {
+      const list = indexById.get(id)
+      if (list) for (const index of list) candidateIndices.add(index)
+    }
+    if (candidateIndices.size === 0) return entry
+
+    let previousEntry: VisibleMessageEntry | undefined
+    for (const index of Array.from(candidateIndices).sort((a, b) => a - b)) {
+      const candidate = previous[index]
+      if (
         candidate.sourceIds.length > 1 &&
-        (candidate.message.info.id === entry.message.info.id || sourceIdsOverlap(candidate.sourceIds, entry.sourceIds)),
-    )
+        (candidate.message.info.id === entry.message.info.id ||
+          sourceIdsOverlap(candidate.sourceIds, entry.sourceIds))
+      ) {
+        previousEntry = candidate
+        break
+      }
+    }
     if (!previousEntry) return entry
     if (previousEntry.message.info.id === entry.message.info.id) return entry
 

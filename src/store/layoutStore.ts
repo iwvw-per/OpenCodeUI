@@ -4,6 +4,7 @@
 
 // 直接引文件而非 '../utils' barrel：barrel 会连带 settingsBackup → store，形成循环依赖
 import { DEFAULT_SESSION_SORT, isSessionSortField, type SessionSortField } from '../utils/sessionSort'
+import i18n from '../i18n'
 
 // 面板位置
 export type PanelPosition = 'bottom' | 'right'
@@ -76,7 +77,7 @@ export interface TerminalTab {
 }
 
 function getResolvedTerminalTitle(tab: Pick<PanelTab, 'title' | 'shellTitle' | 'customTitle'>): string {
-  return tab.customTitle ?? tab.title ?? tab.shellTitle ?? 'Terminal'
+  return tab.customTitle ?? tab.title ?? tab.shellTitle ?? i18n.t('components:terminal.terminal')
 }
 
 function buildTerminalPanelTab(
@@ -1391,7 +1392,7 @@ export class LayoutStore {
     let changed = false
     for (const tab of this.state.panelTabs) {
       if (tab.type !== 'terminal') continue
-      const nextTitle = manualMode ? getResolvedTerminalTitle(tab) : tab.shellTitle ?? tab.title ?? 'Terminal'
+      const nextTitle = manualMode ? getResolvedTerminalTitle(tab) : tab.shellTitle ?? tab.title ?? i18n.t('components:terminal.terminal')
       if (tab.title !== nextTitle) {
         tab.title = nextTitle
         changed = true
@@ -1411,7 +1412,7 @@ export class LayoutStore {
       .filter(t => t.type === 'terminal')
       .map(t => ({
         id: t.id,
-        title: t.title ?? 'Terminal',
+        title: t.title ?? i18n.t('components:terminal.terminal'),
         status: t.status ?? 'connecting',
       }))
   }

@@ -9,7 +9,6 @@ import {
   SunIcon,
   MoonIcon,
   SystemIcon,
-  MaximizeIcon,
   MinimizeIcon,
   ShareIcon,
   ArchiveIcon,
@@ -68,7 +67,7 @@ export function SidebarFooter({
   onOpenSettings,
 }: SidebarFooterProps) {
   const { t } = useTranslation(['chat', 'common'])
-  const { mode: themeMode, setThemeWithAnimation: onThemeChange, isWideMode, toggleWideMode } = useTheme()
+  const { mode: themeMode, setThemeWithAnimation: onThemeChange, chatContentWidth, resetChatContentWidth } = useTheme()
   // 统计与 hasMessages 留在 footer：流式时不让整个 SidePanel 跟着 messages 重渲
   const hasMessages = useHasMessages()
   const stats = useSessionStats(contextLimit)
@@ -281,18 +280,17 @@ export function SidebarFooter({
 
           {/* Menu Items */}
           <div className="flex flex-col gap-0.5 p-1">
-            {toggleWideMode && (
-              <button
-                onClick={() => {
-                  toggleWideMode()
-                  closeMenu()
-                }}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:bg-bg-200 transition-colors text-left"
-              >
-                {isWideMode ? <MinimizeIcon size={14} /> : <MaximizeIcon size={14} />}
-                <span>{isWideMode ? t('sidebar.standardWidth') : t('sidebar.wideMode')}</span>
-              </button>
-            )}
+            <button
+              onClick={() => {
+                resetChatContentWidth()
+                closeMenu()
+              }}
+              disabled={chatContentWidth === null}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:bg-bg-200 transition-colors text-left disabled:opacity-40 disabled:pointer-events-none"
+            >
+              <MinimizeIcon size={14} />
+              <span>{t('sidebar.resetWidth')}</span>
+            </button>
 
             <button
               onClick={() => {

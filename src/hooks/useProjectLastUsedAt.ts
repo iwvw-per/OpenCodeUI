@@ -18,6 +18,29 @@ import { normalizeToForwardSlash } from '../utils'
 const CACHE_TTL_MS = 60_000
 const cache = new Map<string, { at: number; updated?: number }>()
 
+/**
+ * 并发上限：项目多时逐个目录 getSessions 会同时打满浏览器同源连接额度
+ * （约 6 条），把正在切换的会话消息请求挤到队列后面。限制为 3 条并发，
+ * 让出连接给更关键的会话加载；每目录有 60s 缓存，慢一点不影响体验。
+ */
+const MAX_CONCURRENT_FETCHES = 3
+
+async function runWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let cursor = 0
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor
+      cursor += 1
+      await worker(items[index])
+    }
+  })
+  await Promise.all(runners)
+}
+
 function cacheKey(serverId: string, worktree: string): string {
   return `${serverId}\x00${normalizeToForwardSlash(worktree)}`
 }
@@ -65,12 +88,11 @@ export function useProjectLastUsedAt(
     }
     let cancelled = false
     const directories = key.split('\x00')
-    Promise.all(
-      directories.map(async worktree => {
-        const updated = await fetchDirectoryLastUsed(serverId, worktree)
-        return [worktree, updated] as const
-      }),
-    ).then(results => {
+    const results: Array<readonly [string, number | undefined]> = []
+    void runWithConcurrency(directories, MAX_CONCURRENT_FETCHES, async worktree => {
+      const updated = await fetchDirectoryLastUsed(serverId, worktree)
+      results.push([worktree, updated] as const)
+    }).then(() => {
       if (cancelled) return
       const next: Record<string, number> = {}
       for (const [worktree, updated] of results) {

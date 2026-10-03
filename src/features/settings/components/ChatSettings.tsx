@@ -4,7 +4,7 @@ import { PathAutoIcon, PathUnixIcon, PathWindowsIcon } from '../../../components
 import { usePathMode, useTheme } from '../../../hooks'
 import { themeStore, type ReasoningDisplayMode, type CompletedAtFormat } from '../../../store/themeStore'
 import { useLayoutStore, layoutStore } from '../../../store/layoutStore'
-import { Toggle, SegmentedControl, SettingRow, SettingField, SettingsSection, SettingsCardRow } from './SettingsUI'
+import { Toggle, SegmentedControl, SettingRow, SettingsSection, SettingsCardRow } from './SettingsUI'
 import type { PathMode } from '../../../utils/directoryUtils'
 
 const STEP_FINISH_FIELDS = [
@@ -160,6 +160,8 @@ export function ChatSettings() {
                 { value: 'capsule', label: t('chat.capsule') },
                 { value: 'italic', label: t('chat.italic') },
                 { value: 'markdown', label: t('chat.markdown') },
+                { value: 'ticker', label: t('chat.ticker') },
+                { value: 'block', label: t('chat.block') },
               ]}
               onChange={v => {
                 setReasoningDisplayMode(v as ReasoningDisplayMode)
@@ -177,22 +179,20 @@ export function ChatSettings() {
         ))}
 
         {stepFinishDisplay.completedAt && (
-          <SettingField label={t('chat.completedAtFormat')} description={t('chat.completedAtFormatDesc')}>
-            <div className="w-full max-w-[280px]">
-              <SegmentedControl
-                value={completedAtFormat}
-                options={[
-                  { value: 'time', label: t('chat.completedAtTimeOnly') },
-                  { value: 'dateTime', label: t('chat.completedAtDateTime') },
-                ]}
-                onChange={v => {
-                  const next = v as CompletedAtFormat
-                  setCompletedAtFormat(next)
-                  themeStore.setCompletedAtFormat(next)
-                }}
-              />
-            </div>
-          </SettingField>
+          <SettingRow label={t('chat.completedAtFormat')} description={t('chat.completedAtFormatDesc')}>
+            <SegmentedControl
+              value={completedAtFormat}
+              options={[
+                { value: 'time', label: t('chat.completedAtTimeOnly') },
+                { value: 'dateTime', label: t('chat.completedAtDateTime') },
+              ]}
+              onChange={v => {
+                const next = v as CompletedAtFormat
+                setCompletedAtFormat(next)
+                themeStore.setCompletedAtFormat(next)
+              }}
+            />
+          </SettingRow>
         )}
       </SettingsSection>
     </div>

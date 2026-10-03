@@ -869,7 +869,7 @@ function FilePreview({
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // 获取文件名
-  const fileName = path?.split(/[/\\]/).pop() || 'Untitled'
+  const fileName = path?.split(/[/\\]/).pop() || t('fileExplorer.untitled')
   const language = path ? detectLanguage(path) : 'text'
 
   // 下载当前文件

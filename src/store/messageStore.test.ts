@@ -383,41 +383,163 @@ describe('messageStore', () => {
     expect(afterMessage?.parts[1]).toMatchObject({ text: 'live text' })
   })
 
-  it('caps a session at the maximum message count, dropping the oldest', () => {
-    const total = 520
+  it('preserves references of untouched messages when flushing a delta', () => {
+    const rafCallbacks: Array<(time: number) => void> = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => {
+      rafCallbacks.push(cb as (time: number) => void)
+      return 1
+    })
+
+    const first = createMessageWithParts('message-1', 'first')
+    const second = createMessageWithParts('message-2', 'second')
+    messageStore.setMessages('session-1', [first, second])
+
+    const beforeMessages = messageStore.getSessionState('session-1')?.messages
+    const beforeFirst = beforeMessages?.[0]
+    const beforeSecond = beforeMessages?.[1]
+
+    messageStore.handlePartDelta({
+      sessionID: 'session-1',
+      messageID: 'message-2',
+      partID: 'part-message-2',
+      field: 'text',
+      delta: '!',
+    })
+    rafCallbacks[0]?.(0)
+
+    const afterMessages = messageStore.getSessionState('session-1')?.messages
+    expect(afterMessages).not.toBe(beforeMessages)
+    // 未脏消息复用引用，只有热消息换新
+    expect(afterMessages?.[0]).toBe(beforeFirst)
+    expect(afterMessages?.[1]).not.toBe(beforeSecond)
+    expect(afterMessages?.[1].parts[0]).toMatchObject({ text: 'second!' })
+  })
+
+  it('resolves deltas by id after the message array is replaced', () => {
+    const rafCallbacks: Array<(time: number) => void> = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => {
+      rafCallbacks.push(cb as (time: number) => void)
+      return 1
+    })
+
+    messageStore.setMessages('session-1', [
+      createMessageWithParts('message-1', 'a'),
+      createMessageWithParts('message-2', 'b'),
+    ])
+    // 触发一次 flush，让索引缓存绑定到旧数组
+    messageStore.handlePartDelta({
+      sessionID: 'session-1',
+      messageID: 'message-1',
+      partID: 'part-message-1',
+      field: 'text',
+      delta: '1',
+    })
+    rafCallbacks[0]?.(0)
+
+    // 用新数组替换（模拟重载/追加），随后 delta 仍应命中正确消息
+    messageStore.setMessages('session-1', [
+      createMessageWithParts('message-1', 'a1'),
+      createMessageWithParts('message-2', 'b'),
+      createMessageWithParts('message-3', 'c'),
+    ])
+
+    messageStore.handlePartDelta({
+      sessionID: 'session-1',
+      messageID: 'message-3',
+      partID: 'part-message-3',
+      field: 'text',
+      delta: '!',
+    })
+    rafCallbacks[1]?.(0)
+
+    const messages = messageStore.getSessionState('session-1')?.messages
+    expect(messages?.[2].parts[0]).toMatchObject({ text: 'c!' })
+  })
+
+  it('ignores deltas for parts that do not exist', () => {
+    const rafCallbacks: Array<(time: number) => void> = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(cb => {
+      rafCallbacks.push(cb as (time: number) => void)
+      return 1
+    })
+
+    messageStore.setMessages('session-1', [createMessageWithParts('message-1', 'hello')])
+    const before = messageStore.getSessionState('session-1')?.messages[0]
+
+    messageStore.handlePartDelta({
+      sessionID: 'session-1',
+      messageID: 'message-1',
+      partID: 'missing-part',
+      field: 'text',
+      delta: 'x',
+    })
+    rafCallbacks[0]?.(0)
+
+    expect(messageStore.getSessionState('session-1')?.messages[0]).toBe(before)
+  })
+
+  it('keeps a session intact when it fits the byte budget, even far beyond 500 messages', () => {
+    // 投影后单条约 0.8KB：1200 条约 1MB，远低于 12MB 预算。
+    // 旧实现按 500 条裁剪会丢掉最前面 700 条，导致首屏看不到最早几轮。
+    const total = 1200
     const messages = Array.from({ length: total }, (_, i) => createMessageWithParts(`message-${i}`, `text-${i}`))
 
     messageStore.setMessages('session-1', messages)
 
     const state = messageStore.getSessionState('session-1')
-    expect(state?.messages.length).toBe(500)
-    expect(state?.messages[0].info.id).toBe(`message-${total - 500}`)
-    expect(state?.messages[state.messages.length - 1].info.id).toBe(`message-${total - 1}`)
+    expect(state?.messages.length).toBe(total)
+    expect(state?.messages[0].info.id).toBe('message-0')
+    expect(messageStore.getTrimmedCount('session-1')).toBe(0)
   })
 
-  it('marks history as reloadable after capping so dropped messages can be restored', () => {
-    const total = 520
-    const messages = Array.from({ length: total }, (_, i) => createMessageWithParts(`message-${i}`, `text-${i}`))
+  it('caps a session by byte budget, dropping the oldest and keeping the newest', () => {
+    // 每条 ~2MB 文本（命中单条计费上限），10 条即 20MB，超过 12MB 预算。
+    const total = 10
+    const huge = 'x'.repeat(2 * 1024 * 1024)
+    const messages = Array.from({ length: total }, (_, i) => createMessageWithParts(`message-${i}`, huge))
+
+    messageStore.setMessages('session-1', messages)
+
+    const state = messageStore.getSessionState('session-1')
+    expect(state!.messages.length).toBeLessThan(total)
+    expect(state!.messages.length).toBeGreaterThan(0)
+    // 保留的是最新的那一段：末条必须还在，首条必须已被裁掉
+    expect(state?.messages[state.messages.length - 1].info.id).toBe(`message-${total - 1}`)
+    expect(state?.messages[0].info.id).not.toBe('message-0')
+  })
+
+  it('records a trimmed gap after capping without claiming the server has more', () => {
+    const total = 10
+    const huge = 'x'.repeat(2 * 1024 * 1024)
+    const messages = Array.from({ length: total }, (_, i) => createMessageWithParts(`message-${i}`, huge))
 
     messageStore.setMessages('session-1', messages, { hasMoreHistory: false, historyCursor: undefined })
 
     const state = messageStore.getSessionState('session-1')
-    expect(state?.messages.length).toBe(500)
-    // 裁剪后必须标记为可继续加载，并让旧游标失效，避免历史出现永久缺口
-    expect(messageStore.getHasMoreHistory('session-1')).toBe(true)
+    const kept = state!.messages.length
+    expect(kept).toBeLessThan(total)
+    // 裁剪后旧游标必须失效（它已指向被裁窗口之后）
     expect(messageStore.getHistoryCursor('session-1')).toBeUndefined()
+    // 缺口被如实记账，供 loadMoreHistory 识别并按缺口补拉
+    expect(messageStore.getTrimmedCount('session-1')).toBe(total - kept)
+    // 但「服务端是否还有更早」必须仍以服务端为准（此处传入了 false）。
+    // 若这里强行置 true，大会话「一次拉全」后会陷入空拉循环：
+    // 上滑 → 重拉最新一页（与内存重叠、无新内容）→ 仍报还有 → 再上滑。
+    expect(messageStore.getHasMoreHistory('session-1')).toBe(false)
   })
 
   it('clears revert state when its target message is capped away', () => {
-    const total = 520
-    const messages = Array.from({ length: total }, (_, i) => createMessageWithParts(`message-${i}`, `text-${i}`))
+    const total = 10
+    const huge = 'x'.repeat(2 * 1024 * 1024)
+    const messages = Array.from({ length: total }, (_, i) => createMessageWithParts(`message-${i}`, huge))
 
     messageStore.setMessages('session-1', messages, {
       revertState: { messageID: 'message-0' } as never,
     })
 
     const state = messageStore.getSessionState('session-1')
-    expect(state?.messages.length).toBe(500)
+    expect(state!.messages.length).toBeLessThan(total)
+    // revert 指向的 message-0 被裁掉后，撤销点不能悬空
     expect(state?.revertState).toBeNull()
   })
 
@@ -525,5 +647,78 @@ describe('messageStore', () => {
     unsubscribeSession1()
     unsubscribeSession2()
     unsubscribeAll()
+  })
+
+  it('compresses only turns older than the recent window', () => {
+    const userMsg = (id: string, created: number): ApiMessageWithParts => ({
+      info: { id, sessionID: 'session-1', role: 'user', time: { created }, agent: 'build', model: { providerID: 'p', modelID: 'm' } } as ApiMessage,
+      parts: [],
+    })
+    const assistantWithReasoning = (id: string, created: number): ApiMessageWithParts => ({
+      info: { ...createAssistantMessage(id), time: { created, completed: created + 1 } } as ApiMessage,
+      parts: [
+        { id: `reasoning-${id}`, sessionID: 'session-1', messageID: id, type: 'reasoning', text: 'thinking', time: { start: created, end: created + 1 } },
+      ],
+    })
+
+    messageStore.setMessages('session-1', [
+      userMsg('u1', 1),
+      assistantWithReasoning('a1', 2),
+      userMsg('u2', 3),
+      assistantWithReasoning('a2', 4),
+      userMsg('u3', 5),
+      assistantWithReasoning('a3', 6),
+    ])
+
+    // 保留最近 2 轮：u1 轮被压缩，u2/u3 轮保持完整
+    const changed = messageStore.compressHistoricalTurns('session-1', 2)
+    expect(changed).toBe(true)
+
+    const state = messageStore.getSessionState('session-1')!
+    const byId = new Map(state.messages.map(m => [m.info.id, m]))
+    expect(byId.get('a1')!.isCompressed).toBe(true)
+    expect(byId.get('a1')!.parts).toHaveLength(0)
+    expect(byId.get('a1')!.compressedStats).toEqual({ reasoningCount: 1, stepCount: 0 })
+    expect(byId.get('a2')!.isCompressed).toBeUndefined()
+    expect(byId.get('a2')!.parts).toHaveLength(1)
+  })
+
+  it('does not compress when within the recent window', () => {
+    const userMsg: ApiMessageWithParts = {
+      info: { id: 'u1', sessionID: 'session-1', role: 'user', time: { created: 1 }, agent: 'build', model: { providerID: 'p', modelID: 'm' } } as ApiMessage,
+      parts: [],
+    }
+    messageStore.setMessages('session-1', [userMsg, createMessageWithParts('a1', 'answer')])
+    expect(messageStore.compressHistoricalTurns('session-1', 5)).toBe(false)
+  })
+
+  it('hydrates compressed messages back to full parts', () => {
+    const userMsg = (id: string, created: number): ApiMessageWithParts => ({
+      info: { id, sessionID: 'session-1', role: 'user', time: { created }, agent: 'build', model: { providerID: 'p', modelID: 'm' } } as ApiMessage,
+      parts: [],
+    })
+    const assistant = (id: string, created: number, text = ''): ApiMessageWithParts => ({
+      info: { ...createAssistantMessage(id), time: { created, completed: created + 1 } } as ApiMessage,
+      parts: text
+        ? [{ id: `reasoning-${id}`, sessionID: 'session-1', messageID: id, type: 'reasoning', text, time: { start: created, end: created + 1 } }]
+        : [],
+    })
+
+    messageStore.setMessages('session-1', [
+      userMsg('u1', 1),
+      assistant('a1', 2, 'old thinking'),
+      userMsg('u2', 3),
+      assistant('a2', 4),
+    ])
+    messageStore.compressHistoricalTurns('session-1', 1)
+    expect(messageStore.getSessionState('session-1')!.messages[1].isCompressed).toBe(true)
+
+    const changed = messageStore.hydrateMessages('session-1', [assistant('a1', 2, 'restored thinking')])
+    expect(changed).toBe(true)
+
+    const message = messageStore.getSessionState('session-1')!.messages[1]
+    expect(message.isCompressed).toBeUndefined()
+    expect(message.parts).toHaveLength(1)
+    expect((message.parts[0] as { text: string }).text).toBe('restored thinking')
   })
 })

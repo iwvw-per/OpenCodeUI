@@ -11,6 +11,7 @@
 // ============================================
 
 import { isTauri, isTauriMobile } from './tauri'
+import i18n from '../i18n'
 
 export type UpdaterPhase = 'idle' | 'checking' | 'downloading' | 'installing' | 'ready' | 'error'
 
@@ -103,7 +104,7 @@ export class DesktopUpdater {
       } catch (error) {
         this.setProgress({
           phase: 'error',
-          error: error instanceof Error ? error.message : 'Update failed',
+          error: error instanceof Error ? error.message : i18n.t('settings:about.updateFailed'),
         })
       } finally {
         this.running = null

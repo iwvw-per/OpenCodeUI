@@ -582,7 +582,7 @@ export function ServersSettings() {
             <Button
               variant="secondary"
               size="sm"
-              onClick={checkAllHealth}
+              onClick={() => void checkAllHealth()}
               title={t('common:refresh')}
               aria-label={t('common:refresh')}
             >

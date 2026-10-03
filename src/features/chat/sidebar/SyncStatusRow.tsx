@@ -100,7 +100,7 @@ function SyncStatusIconGlyph({ kind }: { kind: SyncIndicatorKind }) {
   }
   return (
     <span className="flex size-4 items-center justify-center text-accent-main-100" aria-hidden="true">
-      <PixelGrid cell={3} animated={false} />
+      <PixelGrid cell={4} animated={false} />
     </span>
   )
 }

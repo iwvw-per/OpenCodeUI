@@ -9,6 +9,7 @@ import {
   formatCompletedAt,
   formatDetailedDateTime,
 } from '../../../utils/formatUtils'
+import { cn } from '../../../utils/cn'
 
 interface StepFinishPartViewProps {
   part: StepFinishPart
@@ -50,32 +51,44 @@ export const StepFinishPartView = memo(function StepFinishPartView({
     (show.completedAt && completedAt != null)
   if (!hasAny) return null
 
+  const itemClass = 'inline-flex items-center whitespace-nowrap'
+
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-0.5 text-[length:var(--fs-xxs)] leading-4 text-text-500">
-      {show.agent && agent && <span className="capitalize">{agent}</span>}
-      {show.model && modelLabel && <span>{modelLabel}</span>}
-      {show.tokens && totalTokens > 0 && (
-        <span
-          title={`${t('stepFinish.inputTokens', { input: tokens.input })}, ${t('stepFinish.outputTokens', { output: tokens.output })}, ${t('stepFinish.reasoningTokens', { reasoning: tokens.reasoning })}, ${t('stepFinish.cacheRead', { read: tokens.cache.read })}, ${t('stepFinish.cacheWrite', { write: tokens.cache.write })}`}
-        >
-          {formatNumber(totalTokens)} {t('tokens')}
-        </span>
-      )}
-      {show.cache && cacheHit > 0 && (
-        <span
-          title={`${t('stepFinish.cacheRead', { read: tokens.cache.read })}, ${t('stepFinish.cacheWrite', { write: tokens.cache.write })}`}
-        >
-          ({t('stepFinish.cached', { count: formatNumber(cacheHit) })})
-        </span>
-      )}
-      {show.cost && cost > 0 && <span>{formatCost(cost)}</span>}
-      {show.duration && duration != null && duration > 0 && <span>{formatDuration(duration)}</span>}
-      {show.turnDuration && turnDuration != null && turnDuration > 0 && (
-        <span>{t('stepFinish.totalDuration', { duration: formatDuration(turnDuration) })}</span>
-      )}
-      {show.completedAt && completedAt != null && (
-        <span title={formatDetailedDateTime(completedAt)}>{formatCompletedAt(completedAt, completedAtFormat)}</span>
-      )}
+    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 py-0.5 text-[length:var(--fs-xxs)] text-text-500">
+      <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-full bg-bg-200 px-2.5 py-1 leading-4">
+        {show.agent && agent && <span className={cn(itemClass, 'capitalize')}>{agent}</span>}
+        {show.model && modelLabel && <span className={itemClass}>{modelLabel}</span>}
+        {show.tokens && totalTokens > 0 && (
+          <span
+            className={itemClass}
+            title={`${t('stepFinish.inputTokens', { input: tokens.input })}, ${t('stepFinish.outputTokens', { output: tokens.output })}, ${t('stepFinish.reasoningTokens', { reasoning: tokens.reasoning })}, ${t('stepFinish.cacheRead', { read: tokens.cache.read })}, ${t('stepFinish.cacheWrite', { write: tokens.cache.write })}`}
+          >
+            {formatNumber(totalTokens)} {t('tokens')}
+          </span>
+        )}
+        {show.cache && cacheHit > 0 && (
+          <span
+            className={itemClass}
+            title={`${t('stepFinish.cacheRead', { read: tokens.cache.read })}, ${t('stepFinish.cacheWrite', { write: tokens.cache.write })}`}
+          >
+            {t('stepFinish.cached', { count: formatNumber(cacheHit) })}
+          </span>
+        )}
+        {show.cost && cost > 0 && <span className={itemClass}>{formatCost(cost)}</span>}
+        {show.duration && duration != null && duration > 0 && (
+          <span className={itemClass}>{formatDuration(duration)}</span>
+        )}
+        {show.turnDuration && turnDuration != null && turnDuration > 0 && (
+          <span className={itemClass}>
+            {t('stepFinish.totalDuration', { duration: formatDuration(turnDuration) })}
+          </span>
+        )}
+        {show.completedAt && completedAt != null && (
+          <span className={itemClass} title={formatDetailedDateTime(completedAt)}>
+            {formatCompletedAt(completedAt, completedAtFormat)}
+          </span>
+        )}
+      </span>
     </div>
   )
 })

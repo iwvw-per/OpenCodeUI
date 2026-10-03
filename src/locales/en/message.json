@@ -43,7 +43,8 @@
     "failed": "Failed",
     "interrupted": "Interrupted",
     "maybeStuck": "Possibly stuck",
-    "abortStuck": "Abort session"
+    "abortStuck": "Abort session",
+    "toolFailed": "Tool failed"
   },
   "toolSteps": {
     "separator": ", ",

@@ -1,3 +1,5 @@
+import i18n from '../../../i18n'
+
 /** 获取路径的父目录部分（用于显示项目位置） */
 export function getParentPath(fullPath: string): string {
   // 处理 Windows 和 Unix 路径
@@ -14,7 +16,7 @@ export function getParentPath(fullPath: string): string {
 /** 格式化通知时间戳为相对时间 */
 export function formatNotificationTime(ts: number): string {
   const diff = Date.now() - ts
-  if (diff < 60_000) return 'just now'
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`
-  return `${Math.floor(diff / 3600_000)}h ago`
+  if (diff < 60_000) return i18n.t('common:relativeTime.justNow')
+  if (diff < 3600_000) return i18n.t('common:relativeTime.minutesAgo', { count: Math.floor(diff / 60_000) })
+  return i18n.t('common:relativeTime.hoursAgo', { count: Math.floor(diff / 3600_000) })
 }

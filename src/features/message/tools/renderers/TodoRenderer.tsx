@@ -8,6 +8,8 @@ import { extractTodos } from './todoUtils'
 import { useUiDisclosureState } from '../../../../utils/uiDisclosureState'
 import { MessageExpandPanel } from '../../messageExpand'
 import { useMessageExpandRender } from '../../messageExpandShared'
+import { useTodos } from '../../../../store'
+import { useSessionNavigation } from '../../../../contexts/SessionNavigationContext'
 
 // ============================================
 // Types
@@ -16,8 +18,8 @@ import { useMessageExpandRender } from '../../messageExpandShared'
 interface TodoItem {
   id: string
   content: string
-  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
-  priority: 'high' | 'medium' | 'low'
+  status: string
+  priority: string
 }
 
 // ============================================
@@ -25,7 +27,11 @@ interface TodoItem {
 // ============================================
 
 export function TodoRenderer({ part }: ToolRendererProps) {
-  const todos = extractTodos(part)
+  const { currentSessionId } = useSessionNavigation()
+  // 实时状态以 todoStore 为准（SSE todo.updated 推送，按作用域复合 key 存储）；
+  // 卡片自带的 metadata/input 快照只作为 store 尚未收到数据时的兜底（如历史消息）。
+  const storeTodos = useTodos(currentSessionId ?? null)
+  const todos: TodoItem[] = storeTodos.length > 0 ? storeTodos : extractTodos(part)
 
   if (todos.length === 0) {
     return null
@@ -104,23 +110,17 @@ function TodoList({ todos, stateKey }: { todos: TodoItem[]; stateKey: string }) 
   )
 }
 
-function getTodoIcon(status: TodoItem['status']) {
+function getTodoIcon(status: string) {
   const size = 14
-  const cls = {
-    completed: 'text-text-400',
-    in_progress: 'text-accent-main-100',
-    cancelled: 'text-text-500',
-    pending: 'text-text-500',
-  }[status]
 
   switch (status) {
     case 'completed':
-      return <CheckIcon size={size} className={cls} strokeWidth={2.5} />
+      return <CheckIcon size={size} className="text-text-400" strokeWidth={2.5} />
     case 'in_progress':
-      return <ClockIcon size={size} className={cls} />
+      return <ClockIcon size={size} className="text-accent-main-100" />
     case 'cancelled':
-      return <CloseIcon size={size} className={cls} />
+      return <CloseIcon size={size} className="text-text-500" />
     default:
-      return <CircleIcon size={size} className={cls} />
+      return <CircleIcon size={size} className="text-text-500" />
   }
 }

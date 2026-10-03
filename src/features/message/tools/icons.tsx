@@ -23,7 +23,7 @@ interface IconProps {
   className?: string
 }
 
-const defaultSize = 14
+const defaultSize = 16
 // 不硬编码颜色：图标颜色由外层容器决定（工具类别多彩 / 运行中 accent / 失败 danger）。
 // 硬编码 text-text-400 会直接作用在 SVG 上，优先级高于外层容器的颜色，导致多彩配色失效。
 const defaultClassName = ''

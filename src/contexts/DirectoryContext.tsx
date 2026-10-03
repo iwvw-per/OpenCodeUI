@@ -41,7 +41,7 @@ function readSavedDirectories(): SavedDirectory[] {
       {
         path,
         name: typeof item.name === 'string' && item.name.trim() ? item.name : getDirectoryName(path) || path,
-        addedAt: typeof item.addedAt === 'number' ? item.addedAt : Date.now(),
+        addedAt: typeof item.addedAt === 'number' ? item.addedAt : 0,
       },
     ]
   })

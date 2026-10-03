@@ -49,12 +49,12 @@ export function useServerStore() {
     return serverStore.setServerEnabled(id, enabled)
   }, [])
 
-  const checkHealth = useCallback((serverId: string) => {
-    return serverStore.checkHealth(serverId)
+  const checkHealth = useCallback((serverId: string, options?: { silent?: boolean }) => {
+    return serverStore.checkHealth(serverId, options)
   }, [])
 
-  const checkAllHealth = useCallback(() => {
-    return serverStore.checkAllHealth()
+  const checkAllHealth = useCallback((options?: { silent?: boolean }) => {
+    return serverStore.checkAllHealth(options)
   }, [])
 
   const getHealth = useCallback(

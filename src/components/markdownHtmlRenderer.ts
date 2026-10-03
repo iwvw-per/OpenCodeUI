@@ -6,6 +6,7 @@ import 'katex/dist/katex.min.css'
 import { inferImageDimensions } from './imageDimensions'
 import { MATH_DELIMITERS, getFootnoteId, isEscapedAt, scanTextSegments } from './markdownSegments'
 import type { MarkdownSegment } from './markdownSegments'
+import i18n from '../i18n'
 
 const LOCAL_FILE_LINK_PREFIX = '#opencode-local-file:'
 
@@ -247,27 +248,27 @@ function getDisplayMathSource(text: string): string | null {
 
 const MARKDOWN_ALERTS = {
   NOTE: {
-    label: 'Note',
+    labelKey: 'common:markdownAlert.note',
     className: 'border-accent-secondary-100/35 border-l-accent-secondary-100 bg-accent-secondary-100/10',
     labelClassName: 'text-accent-secondary-100',
   },
   TIP: {
-    label: 'Tip',
+    labelKey: 'common:markdownAlert.tip',
     className: 'border-success-100/35 border-l-success-100 bg-success-bg/45',
     labelClassName: 'text-success-100',
   },
   IMPORTANT: {
-    label: 'Important',
+    labelKey: 'common:markdownAlert.important',
     className: 'border-accent-main-100/35 border-l-accent-main-100 bg-accent-main-100/10',
     labelClassName: 'text-accent-main-100',
   },
   WARNING: {
-    label: 'Warning',
+    labelKey: 'common:markdownAlert.warning',
     className: 'border-warning-100/35 border-l-warning-100 bg-warning-bg/45',
     labelClassName: 'text-warning-100',
   },
   CAUTION: {
-    label: 'Caution',
+    labelKey: 'common:markdownAlert.caution',
     className: 'border-danger-100/35 border-l-danger-100 bg-danger-bg/45',
     labelClassName: 'text-danger-100',
   },
@@ -366,7 +367,7 @@ function createMarkdownHtmlRenderer(isReasoning: boolean) {
       const alert = MARKDOWN_ALERTS[kind]
       const body = marked.parse(text.slice(alertMatch[0].length), { renderer, async: false }) as string
       const spacingClass = isReasoning ? 'my-2 px-3 py-2' : 'my-4 px-4 py-3'
-      return `<aside data-markdown-alert="${kind.toLowerCase()}" class="${spacingClass} first:mt-0 last:mb-0 rounded-md border border-l-4 not-italic ${alert.className}"><p class="mb-1 font-semibold ${alert.labelClassName}">${alert.label}</p><div class="text-text-300 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">${body}</div></aside>`
+      return `<aside data-markdown-alert="${kind.toLowerCase()}" class="${spacingClass} first:mt-0 last:mb-0 rounded-md border border-l-4 not-italic ${alert.className}"><p class="mb-1 font-semibold ${alert.labelClassName}">${i18n.t(alert.labelKey)}</p><div class="text-text-300 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">${body}</div></aside>`
     }
 
     const className = isReasoning

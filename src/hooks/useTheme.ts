@@ -289,9 +289,10 @@ export function useTheme() {
     reasoningDisplayMode: state.reasoningDisplayMode,
     setReasoningDisplayMode,
 
-    // 宽模式
-    isWideMode: state.wideMode,
-    toggleWideMode: themeStore.toggleWideMode.bind(themeStore),
+    // 对话内容列宽度偏好（null = 自适应）
+    chatContentWidth: state.chatContentWidth,
+    setChatContentWidth: themeStore.setChatContentWidth.bind(themeStore),
+    resetChatContentWidth: themeStore.resetChatContentWidth.bind(themeStore),
 
     // Diff 行标记风格
     diffStyle: state.diffStyle,

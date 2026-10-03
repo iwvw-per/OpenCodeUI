@@ -20,7 +20,8 @@
     "oneToOne": "1:1",
     "revealInExplorer": "Reveal in File Explorer",
     "revealInFinder": "Reveal in Finder",
-    "revealInFileManager": "Reveal in File Manager"
+    "revealInFileManager": "Reveal in File Manager",
+    "untitled": "Untitled"
   },
   "terminal": {
     "terminal": "Terminal",
@@ -104,8 +105,11 @@
     "local": "Local",
     "remote": "Remote",
     "serverName": "Server name",
-    "commandPlaceholder": "Command (e.g., npx -y @modelcontextprotocol/server-github)",
-    "urlPlaceholder": "Server URL (e.g., https://mcp.example.com)",
+    "serverNamePlaceholder": "e.g. github",
+    "command": "Command",
+    "commandPlaceholder": "e.g. npx -y @modelcontextprotocol/server-github",
+    "url": "URL",
+    "urlPlaceholder": "e.g. https://mcp.example.com",
     "nameRequired": "Server name is required",
     "commandRequired": "Command is required",
     "urlRequired": "URL is required",

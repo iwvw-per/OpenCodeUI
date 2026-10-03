@@ -335,7 +335,7 @@ function ReferenceEntry({ alias, entry, setEntry, lang }: { alias: string; entry
       ),
     },
     ...(type === 'string'
-      ? [{ key: 'value', label: 'value', desc: tx('Path, URL, or owner/repo shorthand.', '路径、URL 或 owner/repo 简写。', lang), control: <TextField value={typeof entry === 'string' ? entry : ''} onChange={v => setEntry(alias, v)} mono placeholder="owner/repo or path" /> }]
+      ? [{ key: 'value', label: 'value', desc: tx('Path, URL, or owner/repo shorthand.', '路径、URL 或 owner/repo 简写。', lang), control: <TextField value={typeof entry === 'string' ? entry : ''} onChange={v => setEntry(alias, v)} mono placeholder={tx('owner/repo or path', 'owner/repo 或路径', lang)} /> }]
       : type === 'git'
         ? [
             { key: 'repository', label: 'repository', desc: tx('Repository URL or owner/repo shorthand.', '仓库 URL 或 owner/repo 简写。', lang), control: <TextField value={rec.repository} onChange={v => setEntry(alias, { ...rec, repository: v })} mono placeholder={tx('repository URL or owner/repo', '仓库 URL 或 owner/repo', lang)} /> },

@@ -20,7 +20,8 @@
     "oneToOne": "1:1",
     "revealInExplorer": "在资源管理器中显示",
     "revealInFinder": "在 Finder 中显示",
-    "revealInFileManager": "在文件管理器中显示"
+    "revealInFileManager": "在文件管理器中显示",
+    "untitled": "未命名"
   },
   "terminal": {
     "terminal": "终端",
@@ -49,8 +50,8 @@
     "files": "文件",
     "changes": "变更",
     "mcp": "MCP",
-    "skills": "Skills",
-    "worktrees": "Worktrees",
+    "skills": "技能",
+    "worktrees": "工作树",
     "tab": "标签",
     "addTab": "添加标签",
     "renameTerminal": "重命名终端",
@@ -75,7 +76,7 @@
     "filesScope": "文件",
     "emptyDirectory": "目录为空",
     "fileCount_other": "{{count}} 个文件",
-    "fileCountCompact": "{{count}}f",
+    "fileCountCompact": "{{count}}文件",
     "gitScope": "Git 变更",
     "gitScopeHint": "工作区里还没有提交的变更",
     "branchScope": "分支变更",
@@ -103,8 +104,11 @@
     "local": "本地",
     "remote": "远程",
     "serverName": "服务器名称",
-    "commandPlaceholder": "命令（例如 npx -y @modelcontextprotocol/server-github）",
-    "urlPlaceholder": "服务器 URL（例如 https://mcp.example.com）",
+    "serverNamePlaceholder": "例如 github",
+    "command": "命令",
+    "commandPlaceholder": "例如 npx -y @modelcontextprotocol/server-github",
+    "url": "URL",
+    "urlPlaceholder": "例如 https://mcp.example.com",
     "nameRequired": "服务器名称必填",
     "commandRequired": "命令必填",
     "urlRequired": "URL 必填",
@@ -120,34 +124,34 @@
     "authenticate": "认证"
   },
   "skillPanel": {
-    "title": "Skills",
-    "filterPlaceholder": "筛选 Skills...",
-    "loadingSkills": "加载 Skills...",
-    "failedToLoad": "加载 Skills 失败",
-    "noSkills": "暂无 Skills"
+    "title": "技能",
+    "filterPlaceholder": "筛选技能...",
+    "loadingSkills": "加载技能...",
+    "failedToLoad": "加载技能失败",
+    "noSkills": "暂无技能"
   },
   "worktreePanel": {
-    "selectProject": "选择项目以管理 Worktrees",
+    "selectProject": "选择项目以管理工作树",
     "git": "Git",
-    "worktrees": "Worktrees",
-    "createWorktree": "新建 Worktree",
-    "loadingWorktrees": "加载 Worktrees...",
-    "failedToLoad": "加载 Worktrees 失败",
-    "failedWithMessage": "Worktree 操作失败：{{message}}",
-    "failedToCreate": "新建 Worktree 失败",
-    "failedToRemove": "移除 Worktree 失败",
-    "failedToReset": "重置 Worktree 失败",
-    "noWorktrees": "暂无 Worktree",
-    "removeWorktree": "移除 Worktree",
-    "removeWorktreeConfirm": "确定要移除 Worktree“{{name}}”吗？这会删除对应目录。",
-    "resetWorktree": "重置 Worktree",
-    "resetWorktreeConfirm": "确定要重置 Worktree“{{name}}”吗？这会丢弃所有未提交的更改。",
-    "newWorktree": "新建 Worktree",
-    "worktreeNamePlaceholder": "Worktree 名称（例如 feature-xyz）",
+    "worktrees": "工作树",
+    "createWorktree": "新建工作树",
+    "loadingWorktrees": "加载工作树...",
+    "failedToLoad": "加载工作树失败",
+    "failedWithMessage": "工作树操作失败：{{message}}",
+    "failedToCreate": "新建工作树失败",
+    "failedToRemove": "移除工作树失败",
+    "failedToReset": "重置工作树失败",
+    "noWorktrees": "暂无工作树",
+    "removeWorktree": "移除工作树",
+    "removeWorktreeConfirm": "确定要移除工作树“{{name}}”吗？这会删除对应目录。",
+    "resetWorktree": "重置工作树",
+    "resetWorktreeConfirm": "确定要重置工作树“{{name}}”吗？这会丢弃所有未提交的更改。",
+    "newWorktree": "新建工作树",
+    "worktreeNamePlaceholder": "工作树名称（例如 feature-xyz）",
     "openSessionAfter": "创建后打开会话",
-    "openSession": "在此 Worktree 中打开会话",
-    "resetWorktreeAction": "重置 Worktree",
-    "removeWorktreeAction": "移除 Worktree"
+    "openSession": "在此工作树中打开会话",
+    "resetWorktreeAction": "重置工作树",
+    "removeWorktreeAction": "移除工作树"
   },
   "toast": {
     "clearAll": "清除全部"
@@ -183,7 +187,7 @@
   "contentBlock": {
     "fullscreen": "全屏",
     "exitFullscreen": "退出全屏",
-    "exitCode": "exit {{code}}"
+    "exitCode": "退出码 {{code}}"
   },
   "diffView": {
     "fullscreenView": "全屏查看"

@@ -127,7 +127,7 @@ const SNAPSHOT_KEY = '__snapshot__'
 const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000
 
 const SYNCABLE_EXACT = new Set([
-  'chat-wide-mode',
+  'chat-content-width',
   'code-word-wrap',
   'collapse-user-messages',
   'descriptive-tool-steps',
@@ -398,18 +398,33 @@ function resolveStamps(
 // ============================================
 
 type MergeRule =
-  | { kind: 'array'; id: (entry: Record<string, unknown>) => string | null }
+  | { kind: 'array'; id: (entry: Record<string, unknown>) => string | null; order?: 'newest' }
   | { kind: 'map-number' }
 
 /**
  * 按「键名后缀」识别聚合键，这样裸键（opencode-pinned-sessions）与
  * per-server 分桶键（srv:aiagent:inst_X:opencode-pinned-sessions）走同一套
  * 合并规则。
+ *
+ * order: 'newest' 表示「顺序」也要跨端同步：成员仍取并集，但排列顺序跟随
+ * 较新的一侧（拖拽重排能同步到别的设备）。目前只有项目目录列表需要。
  */
 const MERGE_RULES: Record<string, MergeRule> = {
-  'opencode-pinned-sessions': { kind: 'array', id: entry => (typeof entry.sessionId === 'string' ? entry.sessionId : null) },
-  'opencode-saved-directories': { kind: 'array', id: entry => (typeof entry.path === 'string' ? entry.path : null) },
-  'opencode-pinned-messages': { kind: 'array', id: entry => (typeof entry.sessionId === 'string' ? entry.sessionId : null) },
+  'opencode-pinned-sessions': {
+    kind: 'array',
+    id: entry => (typeof entry.sessionId === 'string' ? entry.sessionId : null),
+    order: 'newest',
+  },
+  'opencode-saved-directories': {
+    kind: 'array',
+    id: entry => (typeof entry.path === 'string' ? entry.path : null),
+    order: 'newest',
+  },
+  'opencode-pinned-messages': {
+    kind: 'array',
+    id: entry => (typeof entry.sessionId === 'string' ? entry.sessionId : null),
+    order: 'newest',
+  },
 }
 
 function keySuffix(key: string): string {
@@ -627,6 +642,7 @@ function mergeSyncValue(
   localRaw: string | null,
   serverValue: unknown,
   dead: Set<string>,
+  serverNewer = false,
 ): MergeResult {
   if (rule.kind === 'array') {
     const baseList = Array.isArray(parseJson(baseRaw ?? '')) ? (parseJson(baseRaw ?? '') as unknown[]) : []
@@ -637,16 +653,39 @@ function mergeSyncValue(
 
     const keep = threeWayMergeIds(entryIds(baseList, rule), entryIds(localList, rule), entryIds(serverList, rule), dead)
 
-    // 以 local 顺序为基准，保留 local 中应留下的条目；再把仅服务端新增的追加进来。
-    const merged: Record<string, unknown>[] = []
-    const seen = new Set<string>()
-    for (const item of [...localList, ...serverList]) {
+    const localById = new Map<string, Record<string, unknown>>()
+    for (const item of localList) {
       const record = asRecord(item)
       if (!record) continue
       const id = rule.id(record)
-      if (!id || seen.has(id) || !keep.has(id)) continue
+      if (id) localById.set(id, record)
+    }
+    const serverById = new Map<string, Record<string, unknown>>()
+    for (const item of serverList) {
+      const record = asRecord(item)
+      if (!record) continue
+      const id = rule.id(record)
+      if (id) serverById.set(id, record)
+    }
+
+    // order: 'newest' 时，排列顺序跟随较新的一侧；否则沿用「本地顺序 + 服务端新增」。
+    // 重复 id 的内容仍优先取本地那条（不让服务端的旧副本覆盖本地名称等字段）。
+    const orderSource = rule.order === 'newest' && serverNewer ? serverList : localList
+    const merged: Record<string, unknown>[] = []
+    const seen = new Set<string>()
+    const push = (record: Record<string, unknown>) => {
+      const id = rule.id(record)
+      if (!id || seen.has(id) || !keep.has(id)) return
       seen.add(id)
-      merged.push(record)
+      merged.push(localById.get(id) ?? record)
+    }
+    for (const item of orderSource) {
+      const record = asRecord(item)
+      if (record) push(record)
+    }
+    for (const item of [...localList, ...serverList]) {
+      const record = asRecord(item)
+      if (record) push(record)
     }
     return { value: merged, changed: true }
   }
@@ -736,8 +775,15 @@ export async function pullPreferences(account?: AiAgentAccount | null): Promise<
 
       // 三方合并：base 是上次同步基线，用来区分「本地新增」与「远端删除」、
       // 「远端新增」与「本地删除」。没有 base 时这两对无法区分，删除会被复活。
+      //
+      // serverNewer：用于 order: 'newest' 的聚合键（项目目录、置顶会话/消息）决定
+      // 排列顺序跟随哪一侧。要求「本地相对基线没变」（没有尚未上传的本地改动）
+      // 且服务端时间戳严格更新；否则本地顺序优先，避免把本地刚拖拽的结果冲掉。
+      const localChanged = baseRaw !== null && localRaw !== baseRaw
+      const serverNewer =
+        !localChanged && Number.isFinite(serverAt) && Number.isFinite(localStamp) && serverAt > localStamp
       const dead = new Set(Object.keys(bucket))
-      const merged = mergeSyncValue(rule, baseRaw, localRaw, item.value, dead)
+      const merged = mergeSyncValue(rule, baseRaw, localRaw, item.value, dead, serverNewer)
       if (merged.changed) {
         const raw = JSON.stringify(merged.value)
         try {
