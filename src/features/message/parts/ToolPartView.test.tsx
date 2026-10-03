@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ToolPartView } from './ToolPartView'
 import type { ToolPart } from '../../../types/message'
 
-const { getActiveCalibratedNowMock } = vi.hoisted(() => ({
+const { getActiveCalibratedNowMock, useSessionStatusMock } = vi.hoisted(() => ({
   getActiveCalibratedNowMock: vi.fn<() => number | undefined>(() => undefined),
+  useSessionStatusMock: vi.fn<() => { type: string } | undefined>(() => ({ type: 'busy' })),
 }))
 
 vi.mock('react-i18next', () => ({
@@ -41,6 +42,10 @@ vi.mock('../../../hooks/useTheme', () => ({
     immersiveMode: false,
     compactInlinePermission: false,
   }),
+}))
+
+vi.mock('../../../store/activeSessionStore', () => ({
+  useSessionStatus: useSessionStatusMock,
 }))
 
 vi.mock('../../../store/serverStore', () => ({
@@ -108,6 +113,8 @@ describe('ToolPartView running duration', () => {
     vi.setSystemTime(10_000)
     getActiveCalibratedNowMock.mockReset()
     getActiveCalibratedNowMock.mockReturnValue(undefined)
+    useSessionStatusMock.mockReset()
+    useSessionStatusMock.mockReturnValue({ type: 'busy' })
   })
 
   afterEach(() => {
@@ -171,8 +178,18 @@ describe('ToolPartView running duration', () => {
     expect(screen.getByText('2.5s')).toBeInTheDocument()
   })
 
-  it('shows a stuck hint with abort entry once a tool runs past the threshold', () => {
+  it('does not flag a long-running tool while the session is still busy', () => {
     getActiveCalibratedNowMock.mockReturnValue(7_500 + 60_000)
+    useSessionStatusMock.mockReturnValue({ type: 'busy' })
+
+    render(<ToolPartView part={createRunningToolPart()} />)
+
+    expect(screen.queryByText('Possibly stuck')).not.toBeInTheDocument()
+  })
+
+  it('flags a suspended tool once the session is no longer running', () => {
+    getActiveCalibratedNowMock.mockReturnValue(7_500 + 60_000)
+    useSessionStatusMock.mockReturnValue(undefined)
 
     render(<ToolPartView part={createRunningToolPart()} />)
 
@@ -180,10 +197,30 @@ describe('ToolPartView running duration', () => {
     expect(screen.getByLabelText('Abort session')).toBeInTheDocument()
   })
 
-  it('does not show the stuck hint before the threshold', () => {
-    getActiveCalibratedNowMock.mockReturnValue(7_500 + 30_000)
+  it('flags a busy session tool whose output has stalled', () => {
+    useSessionStatusMock.mockReturnValue({ type: 'busy' })
+    const part = createRunningToolPart()
+    part.state = { ...part.state, metadata: { output: 'building...' } }
 
-    render(<ToolPartView part={createRunningToolPart()} />)
+    render(<ToolPartView part={part} />)
+
+    act(() => {
+      vi.advanceTimersByTime(130_000)
+    })
+
+    expect(screen.getByText('Possibly stuck')).toBeInTheDocument()
+  })
+
+  it('does not flag a busy session tool whose output stalled below the threshold', () => {
+    useSessionStatusMock.mockReturnValue({ type: 'busy' })
+    const part = createRunningToolPart()
+    part.state = { ...part.state, metadata: { output: 'building...' } }
+
+    render(<ToolPartView part={part} />)
+
+    act(() => {
+      vi.advanceTimersByTime(60_000)
+    })
 
     expect(screen.queryByText('Possibly stuck')).not.toBeInTheDocument()
   })
