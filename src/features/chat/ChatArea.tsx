@@ -19,6 +19,7 @@ import {
   useLayoutEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import {
   useVirtualizer,
@@ -51,7 +52,8 @@ import {
 import { useTheme } from '../../hooks/useTheme'
 import { LoadingState } from '../../components/ui/LoadingState'
 import { getStreamingHotIndexes, getTimelineRowYClass, mergeVirtualRangeIndexes } from './chatAreaUtils'
-import { getContentMaxWidthClass, getContentPaddingClass } from './contentWidth'
+import { chatContentMaxWidthStyle, getContentPaddingClass } from './contentWidth'
+import { getChatWidthDragging, subscribeChatWidthDrag } from './chatWidthDrag'
 import { useAutoScroll } from './virtual/useAutoScroll'
 import { useEmptyWorkingShellGate } from './virtual/useEmptyWorkingShellGate'
 
@@ -77,6 +79,11 @@ type ProcessShellChild = { message: Message; processContentScope: 'process' | 'i
 function processStepCount(children: ProcessShellChild[]): number {
   let count = 0
   for (const child of children) {
+    // 压缩态 reasoning/工具输出已清空，用压缩前记录的统计补齐
+    if (child.message.isCompressed && child.message.compressedStats) {
+      count += child.message.compressedStats.stepCount
+      continue
+    }
     for (const part of child.message.parts) {
       if (part.type === 'tool') count++
     }
@@ -87,6 +94,10 @@ function processStepCount(children: ProcessShellChild[]): number {
 function processReasoningCount(children: ProcessShellChild[]): number {
   let count = 0
   for (const child of children) {
+    if (child.message.isCompressed && child.message.compressedStats) {
+      count += child.message.compressedStats.reasoningCount
+      continue
+    }
     for (const part of child.message.parts) {
       if (part.type === 'reasoning' && part.text?.trim()) count++
     }
@@ -129,7 +140,17 @@ interface ChatAreaProps {
   /** 会话加载失败时的“重新加载”回调（移动端无侧栏，必须有此入口） */
   onReloadSession?: () => void
   hasMoreHistory?: boolean
+  /**
+   * 是否存在因内存上限被裁掉、尚未补回的历史。
+   *
+   * 与 hasMoreHistory 分开：hasMoreHistory 表示服务端还有更早的消息，本字段
+   * 表示本地有缺口。两者任一为真都值得尝试加载，但只有 hasMoreHistory 为真
+   * 才说明「上滑能拿到新内容」——否则会陷入空拉循环。
+   */
+  hasTrimmedHistory?: boolean
   onLoadMore?: () => void | Promise<void>
+  /** 展开被压缩的历史轮次时，按需回拉该轮完整过程内容 */
+  onHydrateTurn?: (turnUserMessageId: string) => void | Promise<void>
   onUndo?: (userMessageId: string) => void
   onFork?: (message: Message, forkMessageId?: string) => void | Promise<void>
   canUndo?: boolean
@@ -216,7 +237,6 @@ const MessageBody = memo(function MessageBody({
 interface RowProps {
   virtualItem: VirtualItem
   item: ProcessTimelineItem
-  maxWidthClass: string
   paddingClass: string
   rowYClass: string
   registerMessage?: (id: string, element: HTMLElement | null) => void
@@ -230,13 +250,13 @@ interface RowProps {
   measureElement: (el: HTMLElement | null) => void
   onEntryGrowComplete?: (messageId: string) => void
   sessionId?: string | null
+  onHydrateTurn?: (turnUserMessageId: string) => void | Promise<void>
 }
 
 const VirtualRow = memo(
   function VirtualRow({
     virtualItem,
     item,
-    maxWidthClass,
     paddingClass,
     rowYClass,
     registerMessage,
@@ -250,6 +270,7 @@ const VirtualRow = memo(
     measureElement,
     onEntryGrowComplete,
     sessionId,
+    onHydrateTurn,
   }: RowProps) {
     const rowRef = useRef<HTMLDivElement | null>(null)
 
@@ -283,7 +304,8 @@ const VirtualRow = memo(
         style={{ position: 'absolute', top: 0, left: 0, width: '100%' }}
       >
         <div
-          className={`w-full ${maxWidthClass} mx-auto ${paddingClass} ${rowYClass} transition-[max-width] duration-300 ease-in-out`}
+          className={`w-full mx-auto ${paddingClass} ${rowYClass} chat-content-width-transition`}
+          style={chatContentMaxWidthStyle}
         >
           {item.kind === 'message' ? (
             <MessageBody
@@ -312,6 +334,13 @@ const VirtualRow = memo(
                   isActive={item.isActive}
                   stepCount={processStepCount(item.children)}
                   reasoningCount={processReasoningCount(item.children)}
+                  onExpand={
+                    item.userMessageId && onHydrateTurn
+                      ? () => {
+                          void onHydrateTurn(item.userMessageId!)
+                        }
+                      : undefined
+                  }
                 >
                   {item.children.map(child => (
                     <MessageBody
@@ -359,7 +388,6 @@ const VirtualRow = memo(
     prev.virtualItem.start === next.virtualItem.start &&
     prev.virtualItem.size === next.virtualItem.size &&
     prev.item === next.item &&
-    prev.maxWidthClass === next.maxWidthClass &&
     prev.paddingClass === next.paddingClass &&
     prev.rowYClass === next.rowYClass &&
     prev.registerMessage === next.registerMessage &&
@@ -372,7 +400,8 @@ const VirtualRow = memo(
     prev.allowStreamingLayoutAnimation === next.allowStreamingLayoutAnimation &&
     prev.measureElement === next.measureElement &&
     prev.onEntryGrowComplete === next.onEntryGrowComplete &&
-    prev.sessionId === next.sessionId,
+    prev.sessionId === next.sessionId &&
+    prev.onHydrateTurn === next.onHydrateTurn,
 )
 
 // ─── 会话缓存（LRU 16） ───────────────────────────────────────
@@ -400,7 +429,9 @@ export const ChatArea = memo(
         onOpenSettings,
         onReloadSession,
         hasMoreHistory = false,
+        hasTrimmedHistory = false,
         onLoadMore,
+        onHydrateTurn,
         onUndo,
         onFork,
         canUndo,
@@ -417,7 +448,6 @@ export const ChatArea = memo(
       const { presentation } = useChatViewport()
       const atBottomThreshold = presentation.isCompact ? 150 : AT_BOTTOM_THRESHOLD_PX
       const paddingClass = getContentPaddingClass(presentation.isCompact)
-      const maxWidthClass = getContentMaxWidthClass(presentation.isWideMode)
 
       // ── 派生数据 ──
       const entries = useMemo(
@@ -508,8 +538,12 @@ export const ChatArea = memo(
       onVisibleIdsRef.current = onVisibleMessageIdsChange
       const onAtBottomRef = useRef(onAtBottomChange)
       onAtBottomRef.current = onAtBottomChange
-      const hasMoreRef = useRef(hasMoreHistory)
-      hasMoreRef.current = hasMoreHistory
+      // 「上滑还能拿到东西」= 服务端还有更早 或 本地有被裁缺口。
+      // 注意：查询已被裁剪的缺口属于恢复性加载，不产出新内容，因此不能用来
+      // 驱动「自动补齐视口」(fill) 之外的循环触发 —— 见 fill 中的二次判定。
+      const canLoadMoreHistory = hasMoreHistory || hasTrimmedHistory
+      const canLoadMoreRef = useRef(canLoadMoreHistory)
+      canLoadMoreRef.current = canLoadMoreHistory
       const loadStateRef = useRef(loadState)
       loadStateRef.current = loadState
       const thresholdRef = useRef(atBottomThreshold)
@@ -536,7 +570,11 @@ export const ChatArea = memo(
       const spacerHeight = bottomSpacerHeight(bottomPadding)
       // 贴底判断必须读 ref：wheel→stop 后 state 还没 re-render，
       // 若仍用 state，同一帧的 ResizeObserver 会误判仍可贴底。
-      const shouldAnchorBottom = () => !userScrolledRef.current
+      //
+      // 用 useCallback 固定引用（依赖 userScrolledRef，后者来自 useAutoScroll 且稳定）：
+      // 它被多个 useLayoutEffect 读取，若每次 render 都是新函数，把这些 effect 的
+      // 依赖补全后会导致它们每帧都重跑，反而破坏贴底/重试条的既有行为。
+      const shouldAnchorBottom = useCallback(() => !userScrolledRef.current, [userScrolledRef])
 
       // ── 滚动状态（同步计算，不使用 rAF） ──
       // prevState.bottom 仍是几何贴底，给 scrollToBottomIfAtBottom 用。
@@ -569,6 +607,10 @@ export const ChatArea = memo(
       const initialCacheRef = useRef(cacheKey ? sessionCache.get(cacheKey)?.measurements : undefined)
       const coldBottomMount = !initialCacheRef.current?.length
       const [renderOverscan, setRenderOverscan] = useState(initialCacheRef.current?.length || coldBottomMount ? 6 : 15)
+      // 内容列宽拖拽中：宽度逐帧变化会让每个已渲染行重排、测量、重渲染。
+      // 期间把 overscan 降到 0，只保留视口内的行参与重排，显著减少每帧工作量。
+      const isWidthDragging = useSyncExternalStore(subscribeChatWidthDrag, getChatWidthDragging, getChatWidthDragging)
+      const effectiveOverscan = isWidthDragging ? 0 : renderOverscan
       const resizePinnedRef = useRef<number[]>([])
       const resizePinFrame = useRef<number | undefined>(undefined)
       const resizeAnchorScheduled = useRef(false)
@@ -614,7 +656,7 @@ export const ChatArea = memo(
         directDomUpdates: true,
         directDomUpdatesMode: 'transform',
         rangeExtractor: range => {
-          const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan })
+          const indexes = defaultRangeExtractor({ ...range, overscan: effectiveOverscan })
           return mergeVirtualRangeIndexes(indexes, resizePinnedRef.current, hotPinnedRef.current)
         },
       })
@@ -812,7 +854,7 @@ export const ChatArea = memo(
       // 这样连续上滚可以「一段接一段」，不必先下滚再上滚。
       useEffect(() => {
         prependSettled.current = () => {
-          if (loadingMoreRef.current || !hasMoreRef.current) return
+          if (loadingMoreRef.current || !canLoadMoreRef.current) return
           const el = scrollRef.current
           if (!el) return
           if (el.scrollTop > LOAD_MORE_TOP_THRESHOLD) return
@@ -833,7 +875,7 @@ export const ChatArea = memo(
           if (userScrolledRef.current || loadingMoreRef.current) return
           const el = scrollRef.current
           if (el && el.scrollHeight > el.clientHeight + 1) return
-          if (!hasMoreRef.current) return
+          if (!canLoadMoreRef.current) return
           void loadMore()
         })
       }, [loadMore, userScrolledRef])
@@ -878,7 +920,7 @@ export const ChatArea = memo(
           !prependLoading.current &&
           (scrollRef.current?.scrollTop ?? 0) < LOAD_MORE_TOP_THRESHOLD &&
           !loadingMoreRef.current &&
-          hasMoreRef.current
+          canLoadMoreRef.current
         ) {
           void loadMore()
         }
@@ -901,14 +943,14 @@ export const ChatArea = memo(
             userScrolledRef.current &&
             !prependLoading.current &&
             !loadingMoreRef.current &&
-            hasMoreRef.current &&
+            canLoadMoreRef.current &&
             el &&
             el.scrollTop <= LOAD_MORE_TOP_THRESHOLD
           ) {
             void loadMore()
           }
         },
-        [autoHandleWheel, releasePrependPin, loadMore, userScrolledRef, hasMoreRef, loadingMoreRef, prependLoading],
+        [autoHandleWheel, releasePrependPin, loadMore, userScrolledRef, canLoadMoreRef, prependLoading],
       )
 
       const onTouchStart = useCallback(() => {
@@ -946,7 +988,7 @@ export const ChatArea = memo(
         if (timeline.length === 0) return
         if (!shouldAnchorBottom() || prependLoading.current) return
         pinToBottom()
-      }, [timeline.length, pinToBottom])
+      }, [timeline.length, pinToBottom, shouldAnchorBottom])
 
       // retry/error 出现消失、输入框高度变 → 底部 footer 高度变，贴底时要跟着滚
       // 否则重试条进出后 scrollTop 停在旧位置，看起来没贴底
@@ -959,7 +1001,7 @@ export const ChatArea = memo(
           if (shouldAnchorBottom()) pinToBottom()
         })
         return () => cancelAnimationFrame(frame)
-      }, [footerPinKey, pinToBottom])
+      }, [footerPinKey, pinToBottom, shouldAnchorBottom])
 
       // 用户返回底部时重新贴底
       const userScrolledInit = useRef(false)
@@ -978,9 +1020,9 @@ export const ChatArea = memo(
 
       // fill effect
       useEffect(() => {
-        if (!sessionId || loadState !== 'loaded' || isLoadingMore || auto.userScrolled || !hasMoreHistory) return
+        if (!sessionId || loadState !== 'loaded' || isLoadingMore || auto.userScrolled || !canLoadMoreHistory) return
         fill()
-      }, [sessionId, loadState, isLoadingMore, auto.userScrolled, hasMoreHistory, fill])
+      }, [sessionId, loadState, isLoadingMore, auto.userScrolled, canLoadMoreHistory, fill])
 
       // unmount：snapshot 写回 cache（对齐 oc onCleanup）
       useLayoutEffect(() => {
@@ -1087,6 +1129,9 @@ export const ChatArea = memo(
           timeline,
           visibleMessages,
           messageIdToTimelineIndex,
+          // refs 恒定，入依赖只是满足 lint 且语义不变
+          userScrolledRef,
+          prevState,
         ],
       )
 
@@ -1130,7 +1175,6 @@ export const ChatArea = memo(
                     key={item.key}
                     virtualItem={item}
                     item={timelineItem}
-                    maxWidthClass={maxWidthClass}
                     paddingClass={paddingClass}
                     rowYClass={getTimelineRowYClass(timelineItem, timeline[item.index - 1], timeline[item.index + 1])}
                     registerMessage={registerMessage}
@@ -1144,6 +1188,7 @@ export const ChatArea = memo(
                     measureElement={virtualizer.measureElement as (el: HTMLElement | null) => void}
                     onEntryGrowComplete={emptyShellGate.onEntryGrowComplete}
                     sessionId={sessionId}
+                    onHydrateTurn={onHydrateTurn}
                   />
                 )
               })}
@@ -1152,7 +1197,7 @@ export const ChatArea = memo(
             {/* 顺序必须是：消息 → 重试/错误提示 → 输入框占位。
                 旧 Virtuoso Footer 就是这样；换 virtualizer 后 paddingEnd 在前、提示在后，会叠到输入框下。 */}
             {retryStatus && (
-              <div className={`w-full ${maxWidthClass} mx-auto ${paddingClass}`}>
+              <div className={`w-full mx-auto ${paddingClass}`} style={chatContentMaxWidthStyle}>
                 <div className="flex justify-start">
                   <div className="w-full min-w-0">
                     <RetryStatusInline status={retryStatus} />
@@ -1162,7 +1207,7 @@ export const ChatArea = memo(
             )}
 
             {visibleMessages.length === 0 && (loadError || connectionError) && (
-              <div className={`w-full ${maxWidthClass} mx-auto ${paddingClass}`}>
+              <div className={`w-full mx-auto ${paddingClass}`} style={chatContentMaxWidthStyle}>
                 <div className="flex justify-start">
                   <div className="w-full min-w-0 space-y-2">
                     <MessageErrorView error={loadError ?? connectionError!} />
@@ -1182,7 +1227,7 @@ export const ChatArea = memo(
                           onClick={onOpenSettings}
                           className="rounded-md border border-border-200 bg-bg-100 px-3 py-1.5 text-[length:var(--fs-sm)] text-text-200 transition-colors hover:bg-bg-200"
                         >
-                          Open server settings
+                          {t('connectionError.openServerSettings')}
                         </button>
                       )}
                     </div>
