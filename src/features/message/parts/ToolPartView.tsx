@@ -104,12 +104,14 @@ export const ToolPartView = memo(function ToolPartView({
 
   // 任务是否还在产出：运行态输出在 metadata.output，完成后在 state.output。
   const progressOutput = state.output ?? (state.metadata?.output as string | undefined)
-  const lastProgressRef = useRef({ output: progressOutput ?? '', at: now })
-  if ((progressOutput ?? '') !== lastProgressRef.current.output) {
-    lastProgressRef.current = { output: progressOutput ?? '', at: now }
-  }
+  const [lastProgress, setLastProgress] = useState(() => ({ output: progressOutput ?? '', at: Date.now() }))
+  useEffect(() => {
+    if ((progressOutput ?? '') !== lastProgress.output) {
+      setLastProgress({ output: progressOutput ?? '', at: Date.now() })
+    }
+  }, [progressOutput, lastProgress.output])
   // 有输出但停更的时长；从未有过输出时返回 undefined，退回「会话是否运行」判断。
-  const stalledFor = progressOutput ? now - lastProgressRef.current.at : undefined
+  const stalledFor = progressOutput ? now - lastProgress.at : undefined
 
   const isStuck = isActive && duration !== undefined && (
     sessionRunning
