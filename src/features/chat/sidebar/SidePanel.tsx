@@ -6,6 +6,7 @@ import { SessionSortMenu } from './SessionSortMenu'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
 import { getProjectGroupIdentity, sortProjects } from './projectGrouping'
+import { hostSlideClass, hostSwitchDirection } from './hostSwitchDirection'
 import { sessionActivityStore } from '../../../store/sessionActivityStore'
 import { mergeExpandedProjectNames } from './expandedProjects'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
@@ -165,12 +166,23 @@ export function SidePanel({
   // 多服务器：Git/路径信息跟随「焦点服务器」（焦点缺省 = 活动服务器）。
   // 不再用 enabled 门控 —— 现在始终连接所有服务器，多服务器是默认行为。
   const multiServerConfig = useMultiServerStore()
-  const { activeServer } = useServerStore()
+  const { servers, activeServer } = useServerStore()
   const catalogServerId = multiServerConfig.focusedServerId ?? activeServer?.id
   // 项目 tab 数据源 = 活动服务器（per-server 存储）里用户显式保存的项目。
   // 不做服务器侧自动发现：项目列表完全由同步的 saved-directories 决定，
   // 这样多端看到的是同一份，用户不必在每台设备上重复隐藏噪音目录。
   const activeServerId = activeServer?.id ?? 'local'
+  // 切换主机时项目列表按方位平移：目标主机在切换条中更靠右则从右滑入，否则从左。
+  // 用「渲染期调整 state」记住上一次索引，只在索引真正变化时重算，避免无关重渲染
+  // 把类名切来切去导致动画重播。列表容器以 activeServerId 为 key 重挂载，动画类随
+  // 重挂载生效；首次渲染不播放动画。
+  const activeServerIndex = servers.findIndex(server => server.id === activeServerId)
+  const [prevServerIndex, setPrevServerIndex] = useState(activeServerIndex)
+  const [hostSlide, setHostSlide] = useState('')
+  if (prevServerIndex !== activeServerIndex) {
+    setPrevServerIndex(activeServerIndex)
+    setHostSlide(hostSlideClass(hostSwitchDirection(prevServerIndex, activeServerIndex)))
+  }
   const { catalog: gitWorkspaceCatalog } = useGitWorkspaceCatalog(catalogDirectories, catalogServerId)
   const { sidebarChildSessions, sidebarProjectSortField, sidebarProjectSortDesc } = useLayoutStore()
   // all = 始终列出全部子会话；active = 只列活跃/正在查看；off = 不额外列出
@@ -1237,7 +1249,8 @@ export function SidePanel({
               主机切换由底部 HostQuickSwitcher 承担，不再单独占一个 tab。 */}
           <div
             ref={recentsSelectionRootRef}
-            className={`flex-1 overflow-hidden animate-in fade-in duration-150 ${isEditMode ? 'select-none' : ''}`}
+            key={activeServerId}
+            className={`flex-1 overflow-hidden ${hostSlide || 'animate-in fade-in duration-150'} ${isEditMode ? 'select-none' : ''}`}
           >
             <FolderRecentList
               projects={sortedFolderProjects}
