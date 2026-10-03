@@ -11,6 +11,7 @@ import { useMinDurationActive } from '../../../hooks/useMinDurationActive'
 import { serverStore } from '../../../store/serverStore'
 import { childSessionStore } from '../../../store/childSessionStore'
 import { messageStore } from '../../../store/messageStore'
+import { useSessionStatus } from '../../../store/activeSessionStore'
 import { useSessionNavigation } from '../../../contexts/SessionNavigationContext'
 import { abortSession } from '../../../api'
 import { makeSessionKey, splitSessionKey } from '../../../utils/sessionKey'
@@ -44,11 +45,19 @@ import { useMessageExpandRender } from '../messageExpandShared'
 // ============================================
 
 /**
- * 工具运行超过该时长仍未收到完成事件，判定为「可能卡住」并给出中止入口。
- * 后端 bash 子进程卡死时不会主动上报，用户只能看到一直转圈；
- * 这里主动提示，避免用户干等。
+ * 「可能卡住」判定：不看是否收到完成事件，而看任务本身是否还在运行/产出。
+ *
+ * 旧实现只看 part 停在 running 的时长，长命令（如构建）只要没回完成事件就误报。
+ * 现在综合两个信号：
+ * - 会话是否还在运行（busy/retry）：会话已停但仍 active，说明 part 悬空；
+ * - 工具是否还在产出（输出内容仍在变化）：仍在产出则不算卡住。
+ *
+ * 会话已停：active 超过 STUCK_TOOL_THRESHOLD_MS 即提示。
+ * 会话仍在运行：此前有输出、但停更超过 STUCK_TOOL_STALL_MS 才提示，
+ * 避免对「还在跑但暂无输出」的长命令误报。
  */
 const STUCK_TOOL_THRESHOLD_MS = 60_000
+const STUCK_TOOL_STALL_MS = 120_000
 
 interface ToolPartViewProps {
   part: ToolPart
@@ -88,7 +97,25 @@ export const ToolPartView = memo(function ToolPartView({
   const endTime = state.time?.end ?? (isActive ? (calibratedNow ?? now) : undefined)
   const rawDuration = startTime !== undefined && endTime !== undefined ? endTime - startTime : undefined
   const duration = rawDuration !== undefined && isActive ? Math.max(0, rawDuration) : rawDuration
-  const isStuck = isActive && duration !== undefined && duration >= STUCK_TOOL_THRESHOLD_MS
+
+  // 会话是否还在运行（busy/retry）。会话已停但 part 仍 active，即为悬空。
+  const sessionStatus = useSessionStatus(part.sessionID)
+  const sessionRunning = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry'
+
+  // 任务是否还在产出：运行态输出在 metadata.output，完成后在 state.output。
+  const progressOutput = state.output ?? (state.metadata?.output as string | undefined)
+  const lastProgressRef = useRef({ output: progressOutput ?? '', at: now })
+  if ((progressOutput ?? '') !== lastProgressRef.current.output) {
+    lastProgressRef.current = { output: progressOutput ?? '', at: now }
+  }
+  // 有输出但停更的时长；从未有过输出时返回 undefined，退回「会话是否运行」判断。
+  const stalledFor = progressOutput ? now - lastProgressRef.current.at : undefined
+
+  const isStuck = isActive && duration !== undefined && (
+    sessionRunning
+      ? stalledFor !== undefined && stalledFor >= STUCK_TOOL_STALL_MS
+      : duration >= STUCK_TOOL_THRESHOLD_MS
+  )
   const { inlineToolRequests, immersiveMode, compactInlinePermission } = useTheme()
 
   const { pendingPermissions, pendingQuestions, onPermissionReply, onQuestionReply, onQuestionReject, isReplying } =
