@@ -8,10 +8,12 @@
 // 3. Undo/Redo 通过 revertState 实现
 // 4. RAF 批量通知 React 组件更新
 
+import i18n from '../i18n'
 import type { Message, MessageError, Part, FilePart, AgentPart } from '../types/message'
 import type { ApiMessageWithParts, ApiMessage, ApiPart, ApiSession, Attachment } from '../api/types'
 import { logger } from '../utils/logger'
 import { isUserUIMessage, toUIMessage, toUIMessageInfo, toUIPart } from '../utils/messageConversion'
+import { compressMessageParts } from './turnCompression'
 import type { RevertState, RevertHistoryItem, SessionState, SendRollbackSnapshot } from './messageStoreTypes'
 
 // Re-export types for consumers
@@ -31,14 +33,39 @@ const MAX_CACHED_SESSIONS_PER_SERVER = 16
 const MAX_CACHED_SESSIONS_TOTAL = 48
 
 /**
- * 单个会话在内存中保留的消息条数上限。
+ * 单个会话在内存中保留的消息预算。
  *
  * 消息列表已虚拟化，DOM 节点数受控，但 JS 堆里的消息对象不会自动释放：
- * 长会话（大量工具调用 + 长输出）会把整段历史常驻。这里给出硬上限，超出时
- * 从最旧端裁剪。裁剪只丢内存副本，不重置 historyCursor —— 该游标始终指向
- * 「比当前最旧一条更早」的位置，继续上滑加载不会与裁剪窗口重叠，因此不会死循环。
+ * 长会话会把整段历史常驻。这里给出硬上限，超出时从最旧端裁剪。
+ *
+ * 上限用**体积**而非条数，原因：轻量投影后单条消息从 ~25KB 降到 ~0.8KB（30 倍），
+ * 条数上限会让「投影后本来很小的会话」被误裁 —— 实测 749 条的投影会话只有
+ * ~618KB，却因为超过 500 条被裁掉最前面 249 条，导致首屏看不到最早几轮。
+ * 按体积记账后，投影会话可以完整保留，而未投影的重会话仍受同等内存约束。
+ *
+ * 防退化：按条数兜底，避免「大量极小消息」把数组本身撑爆（每条仍是对象，
+ * 有固定开销）。两个限制取先命中者。
  */
-const MAX_MESSAGES_PER_SESSION = 500
+const MAX_SESSION_MESSAGE_BYTES = 12 * 1024 * 1024
+const MAX_SESSION_MESSAGE_COUNT = 20_000
+/** 单条消息计费上限：一条超大消息不应独占整个预算而把其余全部裁掉 */
+const MAX_SINGLE_MESSAGE_BYTES = 2 * 1024 * 1024
+
+/**
+ * 估算单条消息的内存占用（按序列化长度近似，不精确但足够做预算）。
+ *
+ * 用 JSON.stringify 的长度而非真实堆占用：堆占用无法廉价测量，且这里只需要
+ * 一个与体积强相关的可比量。超长消息按 MAX_SINGLE_MESSAGE_BYTES 截断计费。
+ */
+function estimateMessageBytes(message: Message): number {
+  try {
+    const size = JSON.stringify(message).length
+    return Math.min(size, MAX_SINGLE_MESSAGE_BYTES)
+  } catch {
+    // 存在循环引用等无法序列化的情况：给一个保守的固定估算，避免整段被误裁。
+    return 4096
+  }
+}
 
 /** 从复合 key 提取 serverId（`${serverId}::${sessionId}`）；无分隔符时归为活动服务器 */
 function serverIdOfSessionKey(sessionId: string): string {
@@ -108,6 +135,15 @@ class MessageStore {
   private rafId: number | null = null
   // delta 批量化：只追踪真正变化的 part，避免同消息内稳定 part 的 memo 引用失效
   private dirtyPartsBySession = new Map<string, Map<string, Set<string>>>()
+  /**
+   * id→索引缓存，消除高频事件路径上的线性 find。
+   *
+   * 缓存绑定在 state.messages / message.parts 的**数组引用**上：只有引用变了才
+   * 重建（每帧 flush 最多一次），同一帧内的多个 delta 共用同一份索引，把每个
+   * token 的 O(m)+O(p) 扫描降为 O(1)。
+   */
+  private messageIndexCache = new Map<string, { messages: Message[]; byId: Map<string, number> }>()
+  private partIndexCache = new Map<string, Map<string, { parts: Part[]; byId: Map<string, number> }>>()
 
   // ============================================
   // Subscription & Notification
@@ -208,6 +244,9 @@ class MessageStore {
   /**
    * 将 delta 期间 mutable 修改过的消息做一次不可变快照。
    * 这样一帧内多个 delta 只产生一次数组拷贝，未变化的 part 继续复用引用。
+   *
+   * 只遍历脏消息（按 id 索引定位），不再对整表 map；只在确有变化时才复制
+   * messages 数组，未脏消息与其 parts 引用原样保留。
    */
   private flushDirtyMessages() {
     if (this.dirtyPartsBySession.size === 0) return
@@ -216,24 +255,32 @@ class MessageStore {
       const state = this.sessions.get(sessionId)
       if (!state) continue
 
-      let changed = false
-      const newMessages = state.messages.map(m => {
-        const dirtyPartIds = dirtyPartsByMessage.get(m.info.id)
-        if (!dirtyPartIds) return m
+      const byId = this.getMessageIndex(sessionId, state)
+      let newMessages: Message[] | null = null
 
+      for (const [messageId, dirtyPartIds] of dirtyPartsByMessage) {
+        const msgIndex = byId.get(messageId)
+        if (msgIndex === undefined) continue
+
+        const message = (newMessages ?? state.messages)[msgIndex]
+        if (!message) continue
+
+        const partIndex = this.getPartIndex(sessionId, messageId, message.parts)
         let partsChanged = false
-        const parts = m.parts.map(part => {
-          if (!dirtyPartIds.has(part.id)) return part
+        const newParts = message.parts.slice()
+        for (const partId of dirtyPartIds) {
+          const partIndexInMessage = partIndex.get(partId)
+          if (partIndexInMessage === undefined) continue
+          newParts[partIndexInMessage] = { ...message.parts[partIndexInMessage] }
           partsChanged = true
-          return { ...part }
-        })
-        if (!partsChanged) return m
+        }
+        if (!partsChanged) continue
 
-        changed = true
-        return { ...m, parts }
-      })
+        if (!newMessages) newMessages = state.messages.slice()
+        newMessages[msgIndex] = { ...message, parts: newParts }
+      }
 
-      if (changed) {
+      if (newMessages) {
         state.messages = newMessages
       }
     }
@@ -297,6 +344,17 @@ class MessageStore {
     return this.sessions.get(sessionId)?.historyCursor
   }
 
+  /**
+   * 内存缺口：被裁剪掉、尚未补回的条数。
+   *
+   * 用于 loadMoreHistory 判断「是否有本地缺口需要补」，与 hasMoreHistory
+   * （服务端是否还有更早）区分开，避免用缺口去驱动空拉循环。
+   */
+  getTrimmedCount(sessionId: string | null): number {
+    if (!sessionId) return 0
+    return this.sessions.get(sessionId)?.trimmedCount ?? 0
+  }
+
   getSessionDirectory(sessionId: string | null): string {
     if (!sessionId) return ''
     return this.sessions.get(sessionId)?.directory ?? ''
@@ -325,6 +383,45 @@ class MessageStore {
   // Session Management
   // ============================================
 
+  /**
+   * 返回 session 的 message id→index 映射，绑定当前 messages 数组引用。
+   * 引用未变时直接复用；变了才重建（每帧最多一次）。
+   */
+  private getMessageIndex(sessionId: string, state: SessionState): Map<string, number> {
+    const cached = this.messageIndexCache.get(sessionId)
+    if (cached && cached.messages === state.messages) return cached.byId
+    const byId = new Map<string, number>()
+    for (let i = 0; i < state.messages.length; i++) {
+      byId.set(state.messages[i].info.id, i)
+    }
+    this.messageIndexCache.set(sessionId, { messages: state.messages, byId })
+    // messages 变更时顺带清理已不在会话内的 part 索引，避免长会话滚动时无界增长
+    const perMessage = this.partIndexCache.get(sessionId)
+    if (perMessage && perMessage.size > byId.size * 2) {
+      for (const messageId of perMessage.keys()) {
+        if (!byId.has(messageId)) perMessage.delete(messageId)
+      }
+    }
+    return byId
+  }
+
+  /** 返回某条消息内 part id→index 映射，绑定当前 parts 数组引用。 */
+  private getPartIndex(sessionId: string, messageId: string, parts: Part[]): Map<string, number> {
+    let perMessage = this.partIndexCache.get(sessionId)
+    if (!perMessage) {
+      perMessage = new Map()
+      this.partIndexCache.set(sessionId, perMessage)
+    }
+    const cached = perMessage.get(messageId)
+    if (cached && cached.parts === parts) return cached.byId
+    const byId = new Map<string, number>()
+    for (let i = 0; i < parts.length; i++) {
+      byId.set(parts[i].id, i)
+    }
+    perMessage.set(messageId, { parts, byId })
+    return byId
+  }
+
   private ensureSession(sessionId: string): SessionState {
     this.sessionAccessTime.set(sessionId, Date.now())
 
@@ -338,6 +435,7 @@ class MessageStore {
         loadState: 'idle',
         hasMoreHistory: false,
         historyCursor: undefined,
+        trimmedCount: 0,
         directory: '',
         title: undefined,
         loadError: undefined,
@@ -380,6 +478,8 @@ class MessageStore {
       logger.log('[MessageStore] Evicting old session:', oldestId)
       this.sessions.delete(oldestId)
       this.sessionAccessTime.delete(oldestId)
+      this.messageIndexCache.delete(oldestId)
+      this.partIndexCache.delete(oldestId)
       return true
     }
 
@@ -409,26 +509,73 @@ class MessageStore {
   /**
    * 单会话消息条数上限：超出时从最旧端裁剪。
    *
-   * 裁剪会丢掉内存里最旧的消息。为了让被裁历史仍可恢复，裁剪发生时强制
-   * `hasMoreHistory = true` 并清空 `historyCursor`：这样上滑时会走「按当前
-   * 条数重新拉取最新一页」的路径，把被裁掉的消息补回来，避免出现永久缺口。
-   * （若保留旧游标，它会指向被裁窗口之前，上滑只会拉到更早的内容，中间这段
-   * 就再也回不来。）
+   * 裁剪会丢掉内存里最旧的消息。为了让被裁历史仍可恢复，裁剪发生时记录
+   * `trimmedCount`：上滑时据此走「按条数重拉一页」的路径把缺口补回来。
+   *
+   * 注意这里**不再**无条件置 `hasMoreHistory = true`。原因是「一次拉全」的
+   * 轻量路径（getSessionLightweightMessages）本就会返回整段会话，裁剪只是丢
+   * 内存副本、服务端并没有更早的内容。若此处强行置 true 且清空游标，
+   * `loadMoreHistory` 的无游标分支会用「当前条数的一半」重拉**最新**一页 ——
+   * 拉回的内容与内存完全重叠，去重后 unique 为 0，没有任何更早历史被补回；
+   * 而 `prependMessages` 又会按该页的 hasMore 覆盖状态，于是「上滑 → 空拉 →
+   * 仍报还有 → 再上滑」自我维持，表现为「加载历史记录」指示条反复出现。
+   *
+   * 因此改为：裁剪只标记缺口；是否「还有更早历史」仍由服务端语义决定
+   * （调用方传入的 hasMoreHistory 或后续 prependMessages 的返回值）。
+   * `loadMoreHistory` 通过 `trimmedCount` 识别缺口并优先补拉。
    *
    * revertState 指向的消息若被裁掉，会一并清空，避免撤销点悬空。
    */
   private capSessionMessages(state: SessionState) {
-    const overflow = state.messages.length - MAX_MESSAGES_PER_SESSION
-    if (overflow <= 0) return
-    const kept = state.messages.slice(overflow)
+    const total = state.messages.length
+    if (total <= MAX_SESSION_MESSAGE_COUNT) {
+      // 条数没超，快速路径：累积体积判断是否需要按体积裁剪。
+      let bytes = 0
+      let cut = 0
+      for (let i = total - 1; i >= 0; i--) {
+        bytes += estimateMessageBytes(state.messages[i])
+        if (bytes > MAX_SESSION_MESSAGE_BYTES) {
+          cut = i + 1
+          break
+        }
+      }
+      if (cut === 0) return
+      this.trimFromOldest(state, cut)
+      return
+    }
+    // 条数超限：至少裁到 MAX_SESSION_MESSAGE_COUNT，再看体积。
+    let bytes = 0
+    let cut = total - MAX_SESSION_MESSAGE_COUNT
+    for (let i = total - 1; i >= cut; i--) {
+      bytes += estimateMessageBytes(state.messages[i])
+      if (bytes > MAX_SESSION_MESSAGE_BYTES) {
+        cut = i + 1
+        break
+      }
+    }
+    this.trimFromOldest(state, cut)
+  }
+
+  /**
+   * 从最旧端裁掉 `cut` 条，并记录缺口。
+   *
+   * 只丢内存副本：被裁内容仍在服务端，`trimmedCount` 让上层能识别缺口并按需补拉。
+   * 这里**不**置 `hasMoreHistory` —— 语义是「服务端是否还有更早」，与「本地有缺口」
+   * 是两回事；混用会导致「上滑 → 空拉 → 仍报还有」的死循环。
+   */
+  private trimFromOldest(state: SessionState, cut: number) {
+    if (cut <= 0) return
+    const kept = state.messages.slice(cut)
     if (state.revertState) {
       const revert = state.revertState
       const revertIndex = kept.findIndex(m => m.info.id === revert.messageId)
       if (revertIndex === -1) state.revertState = null
     }
     state.messages = kept
-    // 被裁掉的历史仍在服务端，标记为可继续加载并让游标失效，走重拉路径恢复
-    state.hasMoreHistory = true
+    // 记录被裁掉的条数，供 loadMoreHistory 识别「内存缺口」并按缺口补拉。
+    state.trimmedCount = (state.trimmedCount ?? 0) + cut
+    // 裁剪后原游标指向被裁窗口之后，继续用它只会拉到与内存重叠的区间；
+    // 清空让补拉走「按缺口重拉最新一页」的路径。
     state.historyCursor = undefined
   }
 
@@ -566,6 +713,8 @@ class MessageStore {
     state.shareUrl = options?.shareUrl
     state.isStale = false
 
+    // 整段替换：先归零缺口，再由 capSessionMessages 按本次实际裁剪量重新记账。
+    state.trimmedCount = 0
     this.capSessionMessages(state)
 
     // Revert 状态
@@ -630,16 +779,108 @@ class MessageStore {
     if (unique.length > 0) {
       state.messages = [...unique, ...state.messages]
     }
+    // 内存缺口被补上多少就扣减多少：本次真正新增的条数即补回的条数。
+    // 空拉（unique 为 0）时缺口不变，但也不会因此把 hasMoreHistory 置真而
+    // 触发下一轮空拉 —— 缺口为 0 时 loadMoreHistory 的进入条件自然不成立。
+    if (state.trimmedCount) {
+      state.trimmedCount = Math.max(0, state.trimmedCount - unique.length)
+    }
     state.hasMoreHistory = hasMore
     state.historyCursor = historyCursor
 
     this.notify([sessionId])
   }
 
+  /**
+   * 压缩较早轮次的过程内容。
+   *
+   * 只保留最近 `keepRecentTurns` 个用户轮次的完整过程；更早轮次的 assistant
+   * 消息清空 reasoning 与工具大输出，只留渲染/统计所需的最小投影，并打上
+   * `isCompressed` 标记。展开对应过程折叠块时按需回拉完整 parts。
+   *
+   * 只压缩已定稿（非流式、有 completed）的消息，避免误伤当前进行中的回合。
+   * 返回是否发生实际变化，供调用方决定是否通知。
+   */
+  compressHistoricalTurns(sessionId: string, keepRecentTurns: number): boolean {
+    const state = this.sessions.get(sessionId)
+    if (!state) return false
+
+    // 找轮次边界：每条 user 消息开启一个新轮次
+    const turnStartIndexes: number[] = []
+    for (let i = 0; i < state.messages.length; i++) {
+      if (state.messages[i].info.role === 'user') turnStartIndexes.push(i)
+    }
+    if (turnStartIndexes.length <= keepRecentTurns) return false
+
+    // 最近 keepRecentTurns 轮的起点，之前的所有消息都属可压缩区。
+    // keepRecentTurns <= 0 时全部压缩；否则下标落在 [1, length) 内，安全。
+    const compressBefore =
+      keepRecentTurns <= 0 ? state.messages.length : turnStartIndexes[turnStartIndexes.length - keepRecentTurns]
+
+    let changed = false
+    const nextMessages = state.messages.slice()
+    for (let i = 0; i < compressBefore; i++) {
+      const message = nextMessages[i]
+      if (message.info.role !== 'assistant') continue
+      if (message.isStreaming || message.info.time.completed == null) continue
+      if (message.isCompressed) continue
+
+      const { parts, reasoningCount, stepCount } = compressMessageParts(message.parts)
+      nextMessages[i] = {
+        ...message,
+        parts,
+        isCompressed: true,
+        compressedStats: { reasoningCount, stepCount },
+      }
+      changed = true
+    }
+
+    if (changed) {
+      state.messages = nextMessages
+      this.notify([sessionId])
+    }
+    return changed
+  }
+
+  /**
+   * 用回拉到的完整消息替换内存中对应的压缩消息。
+   *
+   * 只替换 id 命中且当前仍存在的消息；替换后清掉 isCompressed 标记，使展开的
+   * 折叠块恢复完整过程。不改动顺序，也不新增消息（回拉可能带回同轮其它消息，
+   * 由调用方按需处理）。
+   */
+  hydrateMessages(sessionId: string, apiMessages: ApiMessageWithParts[]): boolean {
+    const state = this.sessions.get(sessionId)
+    if (!state || apiMessages.length === 0) return false
+
+    const byId = new Map(apiMessages.map(message => [message.info.id, message]))
+    let changed = false
+    const nextMessages = state.messages.slice()
+
+    for (let i = 0; i < nextMessages.length; i++) {
+      const message = nextMessages[i]
+      const incoming = byId.get(message.info.id)
+      if (!incoming || !message.isCompressed) continue
+      nextMessages[i] = {
+        ...toUIMessage(incoming),
+        isStreaming: message.isStreaming,
+      }
+      changed = true
+    }
+
+    if (changed) {
+      state.messages = nextMessages
+      this.notify([sessionId])
+    }
+    return changed
+  }
+
   clearAll() {
     this.sessions.clear()
     this.sessionAccessTime.clear()
     this.dirtyPartsBySession.clear()
+    this.messageIndexCache.clear()
+    this.partIndexCache.clear()
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId)
       this.rafId = null
@@ -652,6 +893,8 @@ class MessageStore {
     this.sessions.delete(sessionId)
     this.sessionAccessTime.delete(sessionId)
     this.dirtyPartsBySession.delete(sessionId)
+    this.messageIndexCache.delete(sessionId)
+    this.partIndexCache.delete(sessionId)
     this.notify([sessionId])
   }
 
@@ -698,15 +941,15 @@ class MessageStore {
     const state = this.sessions.get(apiPart.sessionID)
     if (!state) return
 
-    const msgIndex = state.messages.findIndex(m => m.info.id === apiPart.messageID)
-    if (msgIndex === -1) return
+    const msgIndex = this.getMessageIndex(apiPart.sessionID, state).get(apiPart.messageID)
+    if (msgIndex === undefined) return
 
     const oldMessage = state.messages[msgIndex]
     const newParts = [...oldMessage.parts]
-    const existingPartIndex = newParts.findIndex(p => p.id === apiPart.id)
+    const existingPartIndex = this.getPartIndex(apiPart.sessionID, apiPart.messageID, oldMessage.parts).get(apiPart.id)
     const incoming = toUIPart(apiPart)
 
-    if (existingPartIndex >= 0) {
+    if (existingPartIndex !== undefined) {
       const existing = newParts[existingPartIndex]
       // 未定稿：兼容前缀时不回退；已 completed：强制服务端定稿
       newParts[existingPartIndex] = shouldPreserveLiveParts(oldMessage)
@@ -725,11 +968,13 @@ class MessageStore {
     const state = this.sessions.get(data.sessionID)
     if (!state) return
 
-    const msg = state.messages.find(m => m.info.id === data.messageID)
-    if (!msg) return
+    const msgIndex = this.getMessageIndex(data.sessionID, state).get(data.messageID)
+    if (msgIndex === undefined) return
+    const msg = state.messages[msgIndex]
 
-    const part = msg.parts.find(p => p.id === data.partID)
-    if (!part) return
+    const partIndex = this.getPartIndex(data.sessionID, data.messageID, msg.parts).get(data.partID)
+    if (partIndex === undefined) return
+    const part = msg.parts[partIndex]
 
     if (!(data.field === 'text' && 'text' in part))
       return // Mutable 修改：直接拼接 text，不做不可变拷贝。
@@ -755,8 +1000,8 @@ class MessageStore {
     const state = this.sessions.get(data.sessionID)
     if (!state) return
 
-    const msgIndex = state.messages.findIndex(m => m.info.id === data.messageID)
-    if (msgIndex === -1) return
+    const msgIndex = this.getMessageIndex(data.sessionID, state).get(data.messageID)
+    if (msgIndex === undefined) return
 
     const oldMessage = state.messages[msgIndex]
     if (!oldMessage.parts.some(p => p.id === data.partID)) return
@@ -873,7 +1118,7 @@ class MessageStore {
             state: {
               ...part.state,
               status: 'error' as const,
-              error: outcome.error ?? part.state.error ?? 'Tool failed',
+              error: outcome.error ?? part.state.error ?? i18n.t('message:toolPart.toolFailed'),
               time: { ...(part.state.time ?? {}), start, end: now },
             },
           }
