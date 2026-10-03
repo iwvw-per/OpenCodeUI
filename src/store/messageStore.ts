@@ -15,6 +15,14 @@ import { logger } from '../utils/logger'
 import { isUserUIMessage, toUIMessage, toUIMessageInfo, toUIPart } from '../utils/messageConversion'
 import { compressMessageParts } from './turnCompression'
 import { sessionActivityStore } from './sessionActivityStore'
+import {
+  serverIdOfSessionKey,
+  rawSessionIdOfKey,
+  mergePartPreferLiveText,
+  mergePartsPreferLiveText,
+  shouldPreserveLiveParts,
+  isServerPartId,
+} from './messagePartMerge'
 import type { RevertState, RevertHistoryItem, SessionState, SendRollbackSnapshot } from './messageStoreTypes'
 
 // Re-export types for consumers
@@ -66,70 +74,6 @@ function estimateMessageBytes(message: Message): number {
     // 存在循环引用等无法序列化的情况：给一个保守的固定估算，避免整段被误裁。
     return 4096
   }
-}
-
-/** 从复合 key 提取 serverId（`${serverId}::${sessionId}`）；无分隔符时归为活动服务器 */
-function serverIdOfSessionKey(sessionId: string): string {
-  const idx = sessionId.indexOf('::')
-  return idx === -1 ? '' : sessionId.slice(0, idx)
-}
-
-/**
- * 从复合 key 提取原始 sessionId（去掉 serverId 前缀）。
- *
- * 同一后端可能同时以多个 serverId 前缀被连接（如本机 `local` 与隧道
- * `aiagent:inst_xxx` 指向同一 opencode 实例），同一条会话因此会以不同前缀
- * 推事件。原始 sessionId 全局唯一，用它作为「同一会话」的判定依据。
- */
-function rawSessionIdOfKey(sessionId: string): string {
-  const idx = sessionId.indexOf('::')
-  return idx === -1 ? sessionId : sessionId.slice(idx + 2)
-}
-
-/**
- * 同步合并文本：live 更长且与服务端兼容（服务端是前缀）时不回退；
- * 服务端更长则跟上；分叉时以服务端为准。
- */
-function preferCompatibleText(local: string, incoming: string): string {
-  if (local === incoming) return incoming
-  if (local.startsWith(incoming)) return local
-  if (incoming.startsWith(local)) return incoming
-  return incoming
-}
-
-function partHasText(part: Part): part is Part & { text: string } {
-  return 'text' in part && typeof (part as { text?: unknown }).text === 'string'
-}
-
-function mergePartPreferLiveText(local: Part | undefined, incoming: Part): Part {
-  if (!local || local.id !== incoming.id) return incoming
-  if (!partHasText(local) || !partHasText(incoming)) return incoming
-  const text = preferCompatibleText(local.text, incoming.text)
-  if (text === incoming.text) return incoming
-  return { ...incoming, text } as Part
-}
-
-function mergePartsPreferLiveText(localParts: Part[], incomingParts: Part[]): Part[] {
-  if (localParts.length === 0) return incomingParts
-  const localById = new Map(localParts.map(part => [part.id, part]))
-  return incomingParts.map(part => mergePartPreferLiveText(localById.get(part.id), part))
-}
-
-function messageIsIncomplete(message: { isStreaming?: boolean; info: { time?: { completed?: number } } }) {
-  if (message.isStreaming) return true
-  const completed = message.info.time && 'completed' in message.info.time ? message.info.time.completed : undefined
-  return completed == null
-}
-
-/**
- * 仅未定稿时保护更长 live；incoming/本地已 completed 则强制服务端，不再 preserve。
- */
-function shouldPreserveLiveParts(
-  previous: { isStreaming?: boolean; info: { time?: { completed?: number } } },
-  incoming?: { isStreaming?: boolean; info: { time?: { completed?: number } } },
-) {
-  if (incoming && !messageIsIncomplete(incoming)) return false
-  return messageIsIncomplete(previous)
 }
 
 class MessageStore {
@@ -1095,8 +1039,8 @@ class MessageStore {
       // 服务端 canonical part 的 id 以 `prt` 开头；乐观消息的 part id 为本地形式
       // （如 `${messageId}:text`）。同一消息内出现服务端 part 时，先清掉同类型的本地
       // 占位 part，避免正文重复（乐观文本 + 服务端文本）。
-      if (apiPart.id.startsWith('prt')) {
-        newParts = newParts.filter(part => part.id.startsWith('prt') || part.type !== incoming.type)
+      if (isServerPartId(apiPart.id)) {
+        newParts = newParts.filter(part => isServerPartId(part.id) || part.type !== incoming.type)
       }
       newParts.push(incoming)
     }

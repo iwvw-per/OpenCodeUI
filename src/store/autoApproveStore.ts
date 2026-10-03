@@ -340,6 +340,24 @@ class AutoApproveStore {
   }
 
   /**
+   * 重置全部内存态到默认值（不改动持久化 storage）。
+   *
+   * 供测试隔离使用：单例跨用例会残留规则、fullAuto 模式与去重集合。
+   * 生产代码不应调用（用户开关由 storage 承载，需保留）。
+   */
+  reset(): void {
+    this.rulesMap.clear()
+    this._enabled = true
+    this._approvePendingOnFullAuto = false
+    this._questionAutoSelectTimeout = 0
+    this._fullAutoMode = 'off'
+    this._paneFullAutoModes.clear()
+    this._autoReplyRequestIds.clear()
+    this._listeners.clear()
+    this._fullAutoListeners.clear()
+  }
+
+  /**
    * 检查权限请求是否应该自动批准
    * @param sessionId 会话 ID
    * @param permission 工具类型

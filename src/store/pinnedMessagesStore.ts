@@ -159,6 +159,16 @@ class PinnedMessagesStore {
     return () => this.listeners.delete(fn)
   }
 
+  /**
+   * 清空全部内存态与订阅者（不改动 storage）。
+   * 供测试隔离使用；生产代码不应调用。
+   */
+  reset() {
+    this.bySession = {}
+    this.snapshotCache.clear()
+    this.listeners.clear()
+  }
+
   private emit() {
     this.listeners.forEach(fn => fn())
   }
