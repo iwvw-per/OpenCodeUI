@@ -13,7 +13,8 @@
     "editCount": "Edited {{count}} times",
     "hunk": "Edit {{index}}/{{total}}",
     "truncated": "… remaining changes omitted",
-    "openInPanel": "Open {{path}} in the side panel"
+    "openInPanel": "Open {{path}} in the side panel",
+    "tapToPreview": "Tap to preview changes to {{path}}, long-press to open in panel"
   },
   "processedFor": "Worked for {{duration}}",
   "processing": "Processing...",

@@ -1,14 +1,19 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverAnchor, PopoverContent } from '../../../components/ui/Popover'
 import { getMaterialIconUrl } from '../../../utils/materialIcons'
 import { cn } from '../../../utils/cn'
 import { layoutStore } from '../../../store/layoutStore'
+import { useInputCapabilities } from '../../../hooks/useInputCapabilities'
 import { buildDiffPreview, type ChangedFile } from './changedFiles'
 
 const MAX_VISIBLE = 6
 /** 指针离开到关闭的宽限，够用户把指针移进浮层 */
 const CLOSE_DELAY_MS = 120
+/** 触摸端长按判定（ms）：按住超过该时长进入右侧面板 */
+const LONG_PRESS_MS = 450
+/** 长按期间手指移动超过该距离（px）视为「想滚动」，取消长按 */
+const LONG_PRESS_MOVE_TOLERANCE = 8
 
 interface DiffChipsProps {
   files: ChangedFile[]
@@ -18,7 +23,10 @@ interface DiffChipsProps {
 /**
  * DiffChips — 改动文件概览条。
  *
- * 一排 `文件名 +N -M` 的胶囊，hover / 聚焦时弹出该文件的 diff 预览。
+ * 一排 `文件名 +N -M` 的胶囊：桌面端 hover / 聚焦弹出该文件的 diff 预览，
+ * 点击落到右侧面板的 Changes 视图。触摸端没有 hover——手指点一下会合成
+ * `mouseenter → click → mouseleave`，浮层刚开就被关，表现为看不到 + 闪烁——
+ * 因此触摸端改用显式手势：点击切换预览，长按进入右侧面板。
  *
  * 两个实现要点：
  * 1. 同一文件多次修改已在上游合并为一条，chip 上标注 `×N`，
@@ -30,9 +38,15 @@ interface DiffChipsProps {
  */
 export const DiffChips = memo(function DiffChips({ files, className }: DiffChipsProps) {
   const { t } = useTranslation('message')
+  const { preferTouchUi } = useInputCapabilities()
   const [activePath, setActivePath] = useState<string | null>(null)
   const closeTimerRef = useRef<number | null>(null)
   const anchorRef = useRef<HTMLElement | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  // 触摸端长按手势：定时器 + 起点，用于区分「长按进面板」与「点击看预览」。
+  const longPressTimerRef = useRef<number | null>(null)
+  const longPressFiredRef = useRef(false)
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null)
 
   /**
    * Radix 把定位 transform 写在浮层的父级 wrapper 上，transition 必须加在那一层。
@@ -73,6 +87,74 @@ export const DiffChips = memo(function DiffChips({ files, className }: DiffChips
     }, CLOSE_DELAY_MS)
   }, [cancelClose])
 
+  const clearLongPress = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+
+  useEffect(
+    () => () => {
+      cancelClose()
+      clearLongPress()
+    },
+    [cancelClose, clearLongPress],
+  )
+
+  const handlePointerDown = useCallback(
+    (file: ChangedFile) => (event: React.PointerEvent<HTMLButtonElement>) => {
+      // 触摸端才走长按；鼠标交给 hover / click。
+      if (!preferTouchUi || event.pointerType === 'mouse') return
+      longPressFiredRef.current = false
+      pointerStartRef.current = { x: event.clientX, y: event.clientY }
+      clearLongPress()
+      longPressTimerRef.current = window.setTimeout(() => {
+        longPressTimerRef.current = null
+        longPressFiredRef.current = true
+        setActivePath(null)
+        layoutStore.revealChangesFile(file.path, 'right')
+      }, LONG_PRESS_MS)
+    },
+    [preferTouchUi, clearLongPress],
+  )
+
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (!preferTouchUi) return
+      const start = pointerStartRef.current
+      if (!start || longPressTimerRef.current === null) return
+      // 手指移动超过容差视为「想滚动」，取消长按，避免滑动时误触发面板。
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > LONG_PRESS_MOVE_TOLERANCE) {
+        clearLongPress()
+      }
+    },
+    [preferTouchUi, clearLongPress],
+  )
+
+  const handlePointerEnd = useCallback(() => {
+    clearLongPress()
+    pointerStartRef.current = null
+  }, [clearLongPress])
+
+  const handleChipClick = useCallback(
+    (file: ChangedFile) => (event: React.MouseEvent<HTMLButtonElement>) => {
+      if (preferTouchUi) {
+        // 长按已经进过面板，抑制紧随其后的合成 click。
+        if (longPressFiredRef.current) {
+          longPressFiredRef.current = false
+          return
+        }
+        anchorRef.current = event.currentTarget
+        setActivePath(prev => (prev === file.path ? null : file.path))
+        return
+      }
+      scheduleClose()
+      layoutStore.revealChangesFile(file.path, 'right')
+    },
+    [preferTouchUi, scheduleClose],
+  )
+
   const activeFile = useMemo(
     () => (activePath ? (files.find(file => file.path === activePath) ?? null) : null),
     [activePath, files],
@@ -83,26 +165,39 @@ export const DiffChips = memo(function DiffChips({ files, className }: DiffChips
   const overflow = files.length - visible.length
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-1.5', className)} onMouseLeave={scheduleClose}>
+    <div
+      ref={containerRef}
+      className={cn('flex flex-wrap items-center gap-1.5', className)}
+      onMouseLeave={preferTouchUi ? undefined : scheduleClose}
+    >
       {visible.map(file => (
         <button
           key={file.path}
           type="button"
-          // 点击在右侧面板的 Changes 视图里定位该文件的 diff：
-          // hover 只能看预览，想看完整上下文需要落到面板里。
-          onClick={() => {
-            scheduleClose()
-            layoutStore.revealChangesFile(file.path, 'right')
-          }}
-          onMouseEnter={event => {
-            anchorRef.current = event.currentTarget
-            open(file.path)
-          }}
-          onFocus={event => {
-            anchorRef.current = event.currentTarget
-            open(file.path)
-          }}
-          onBlur={scheduleClose}
+          onClick={handleChipClick(file)}
+          onPointerDown={handlePointerDown(file)}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerEnd}
+          onPointerCancel={handlePointerEnd}
+          // hover / 聚焦只在可 hover 的设备上驱动预览；触摸端交给点击手势，
+          // 避免合成的 mouseenter/mouseleave 让浮层一开就关。
+          onMouseEnter={
+            preferTouchUi
+              ? undefined
+              : event => {
+                  anchorRef.current = event.currentTarget
+                  open(file.path)
+                }
+          }
+          onFocus={
+            preferTouchUi
+              ? undefined
+              : event => {
+                  anchorRef.current = event.currentTarget
+                  open(file.path)
+                }
+          }
+          onBlur={preferTouchUi ? undefined : scheduleClose}
           className={cn(
             'inline-flex h-6 max-w-[14rem] items-center gap-1.5 rounded-sm border px-1.5',
             'font-mono text-[length:var(--fs-xxs)]',
@@ -111,8 +206,8 @@ export const DiffChips = memo(function DiffChips({ files, className }: DiffChips
               ? 'border-border-300 bg-bg-200 text-text-100'
               : 'border-border-200/50 bg-bg-100 text-text-300 hover:bg-bg-200',
           )}
-          title={t('diffChips.openInPanel', { path: file.path })}
-          aria-label={t('diffChips.openInPanel', { path: file.path })}
+          title={preferTouchUi ? t('diffChips.tapToPreview', { path: file.path }) : t('diffChips.openInPanel', { path: file.path })}
+          aria-label={preferTouchUi ? t('diffChips.tapToPreview', { path: file.path }) : t('diffChips.openInPanel', { path: file.path })}
         >
           <FileGlyph path={file.path} />
           <span className="min-w-0 truncate">{basename(file.path)}</span>
@@ -144,8 +239,16 @@ export const DiffChips = memo(function DiffChips({ files, className }: DiffChips
           sideOffset={6}
           className="w-[min(34rem,80vw)] p-0 text-[length:var(--fs-xxs)]"
           onOpenAutoFocus={event => event.preventDefault()}
-          onMouseEnter={cancelClose}
-          onMouseLeave={scheduleClose}
+          // 触摸端点 chip 时，Radix 会把这次 pointerdown 当作「点浮层外部」而关闭。
+          // 那是我们自己在处理的手势，阻止它，关闭/切换全由点击逻辑决定；
+          // 点在 chip 之外则照常关闭。
+          onInteractOutside={event => {
+            if (preferTouchUi && event.target instanceof Node && containerRef.current?.contains(event.target)) {
+              event.preventDefault()
+            }
+          }}
+          onMouseEnter={preferTouchUi ? undefined : cancelClose}
+          onMouseLeave={preferTouchUi ? undefined : scheduleClose}
         >
           {activeFile && <DiffPanel file={activeFile} />}
         </PopoverContent>
