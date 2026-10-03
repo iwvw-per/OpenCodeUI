@@ -21,6 +21,7 @@
     "revealInExplorer": "在资源管理器中显示",
     "revealInFinder": "在 Finder 中显示",
     "revealInFileManager": "在文件管理器中显示",
+    "showHiddenPaths": "显示被折叠的路径",
     "untitled": "未命名"
   },
   "terminal": {
