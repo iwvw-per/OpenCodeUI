@@ -21,6 +21,7 @@
     "revealInExplorer": "Reveal in File Explorer",
     "revealInFinder": "Reveal in Finder",
     "revealInFileManager": "Reveal in File Manager",
+    "showHiddenPaths": "Show hidden paths",
     "untitled": "Untitled"
   },
   "terminal": {

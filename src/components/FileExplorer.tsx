@@ -26,6 +26,13 @@ import { Spinner } from './ui/Spinner'
 import { ContextMenuItem } from './ui/ContextMenuItem'
 import { HtmlFilePreviewFrame } from './HtmlFilePreviewFrame'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from './ui/Breadcrumb'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { useFullscreenLayer } from '../contexts'
 import { getMaterialIconUrl } from '../utils/materialIcons'
@@ -1085,6 +1092,34 @@ function FilePreview({
           ) : null
         }
       />
+
+      {/* 路径面包屑：文件路径天然分层，折叠中间段、突出当前文件。 */}
+      {path && (
+        <div className="shrink-0 border-b border-border-200/30 px-3 py-1">
+          <Breadcrumb>
+            <BreadcrumbList maxItems={4} overflowLabel={t('fileExplorer.showHiddenPaths')}>
+              {path
+                .split(/[/\\]/)
+                .filter(Boolean)
+                .map((segment, index, segments) => {
+                  const isLast = index === segments.length - 1
+                  return (
+                    <BreadcrumbItem key={`${index}:${segment}`}>
+                      {index > 0 && <BreadcrumbSeparator />}
+                      {isLast ? (
+                        <BreadcrumbPage>{segment}</BreadcrumbPage>
+                      ) : (
+                        <span className="inline-flex min-h-8 min-w-0 items-center px-2 font-medium text-text-400">
+                          {segment}
+                        </span>
+                      )}
+                    </BreadcrumbItem>
+                  )
+                })}
+            </BreadcrumbList>
+          </Breadcrumb>
+        </div>
+      )}
 
       {/* Preview Content */}
       <div ref={scrollRef} className="flex-1 overflow-auto panel-scrollbar">
