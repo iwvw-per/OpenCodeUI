@@ -5,22 +5,30 @@
 
 import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi, directoryCacheKey } from '../utils/directoryUtils'
-import { singleFlight } from '../utils/singleFlight'
+import { microCache } from '../utils/microCache'
 import { serverStore } from '../store/serverStore'
 import type { ApiAgent } from './types'
 
 /**
  * 获取 agent 列表
  *
- * 首屏 useChatSession 与输入框能力探测会各取一次；合并同 key 在途请求。
- * key 用与传输格式无关的目录键，避免 pathMode 切换导致重复请求。
+ * 首屏 useChatSession 与输入框能力探测会各取一次；key 用与传输格式无关的
+ * 目录键，避免 pathMode 切换导致重复请求。
+ *
+ * 用 microCache（在途合并 + 短 TTL）而非 singleFlight：这两处调用往往先后发生
+ * 而非同帧并发，singleFlight 合并不到第二批，会多走一次约 1.1s 的隧道往返。
+ * agent 清单在一次交互内不变，TTL 内复用是安全的。
  */
 export async function getAgents(directory?: string, serverId?: string): Promise<ApiAgent[]> {
   const sid = serverId ?? serverStore.getActiveServerId()
-  return singleFlight(`agents:${sid}:${directoryCacheKey(directory)}`, async () => {
-    const sdk = getSDKClient(serverId)
-    return unwrap(await sdk.app.agents({ directory: formatPathForApi(directory, serverId) }))
-  })
+  return microCache(
+    `agents:${sid}:${directoryCacheKey(directory)}`,
+    async () => {
+      const sdk = getSDKClient(serverId)
+      return unwrap(await sdk.app.agents({ directory: formatPathForApi(directory, serverId) }))
+    },
+    { ttlMs: 30_000 },
+  )
 }
 
 /**

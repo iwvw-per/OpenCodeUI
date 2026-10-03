@@ -4,6 +4,7 @@
 
 import { API_BASE_URL } from '../constants'
 import { isTauri } from '../utils/tauri'
+import i18n from '../i18n'
 
 // Tauri plugin-http fetch 缓存（避免重复 dynamic import）
 let _tauriFetch: typeof globalThis.fetch | null = null
@@ -75,12 +76,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeConnectionError(err: unknown): string {
-  if (err instanceof DOMException && err.name === 'AbortError') return 'Connection timed out'
-  if (!(err instanceof Error)) return 'Connection failed'
+  if (err instanceof DOMException && err.name === 'AbortError') return i18n.t('settings:servers.connectionTimedOut')
+  if (!(err instanceof Error)) return i18n.t('settings:servers.connectionFailed')
 
-  const message = err.message || 'Connection failed'
+  const message = err.message || i18n.t('settings:servers.connectionFailed')
   if (/certificate|cert|tls|ssl/i.test(message)) {
-    return `TLS/certificate error: ${message}`
+    return i18n.t('settings:servers.tlsError', { message })
   }
   return message
 }
@@ -146,6 +147,8 @@ class ServerStore {
   private activeServerId: string | null = null
   private healthMap = new Map<string, ServerHealth>()
   private healthCheckSeqMap = new Map<string, number>()
+  /** 每台服务器的在途健康检查：并发触发只发一次网络 */
+  private healthInflight = new Map<string, Promise<ServerHealth>>()
   private clockCalibrationMap = new Map<string, ServerClockCalibration>()
   private listeners: Set<Listener> = new Set()
   private localServerUrlOverride: string | null = null
@@ -525,6 +528,7 @@ class ServerStore {
     this.servers = this.servers.filter(s => s.id !== id)
     this.healthMap.delete(id)
     this.healthCheckSeqMap.delete(id)
+    this.healthInflight.delete(id)
     this.clockCalibrationMap.delete(id)
 
     // 如果删除的是当前选中的，切换到默认
@@ -581,11 +585,34 @@ class ServerStore {
   /**
    * 检查服务器健康状态
    */
-  async checkHealth(serverId: string): Promise<ServerHealth> {
+  async checkHealth(serverId: string, options?: { silent?: boolean }): Promise<ServerHealth> {
     const storedServer = this.servers.find(s => s.id === serverId)
     if (!storedServer) {
-      return { status: 'error', error: 'Server not found' }
+      return { status: 'error', error: i18n.t('settings:servers.serverNotFound') }
     }
+
+    // 在途合并：同一服务器的并发健康检查共享一次网络。
+    //
+    // 触发点很多（应用启动、切换服务器、SSE 重连、设置面板多个入口），实测
+    // 打开会话时同一 URL 被打了 5 次。经隧道时每次约 1.1s 固定往返，重复探测
+    // 既慢又无意义 —— 健康状态本身就是「最近一次的结论」，并发场景下取任一
+    // 结果都是等价的。
+    const pendingHealth = this.healthInflight.get(serverId)
+    if (pendingHealth) return pendingHealth
+
+    const request = this.performHealthCheck(serverId, storedServer, options).finally(() => {
+      if (this.healthInflight.get(serverId) === request) this.healthInflight.delete(serverId)
+    })
+    this.healthInflight.set(serverId, request)
+    return request
+  }
+
+  /** 健康检查的实际网络逻辑（由 checkHealth 做在途合并后调用） */
+  private async performHealthCheck(
+    serverId: string,
+    storedServer: ServerConfig,
+    options?: { silent?: boolean },
+  ): Promise<ServerHealth> {
     const server = this.withRuntimeServerUrl(storedServer)
     const checkSeq = (this.healthCheckSeqMap.get(serverId) ?? 0) + 1
     this.healthCheckSeqMap.set(serverId, checkSeq)
@@ -599,9 +626,14 @@ class ServerStore {
       return health
     }
 
-    // 标记为检查中
-    this.healthMap.set(serverId, { status: 'checking' })
-    this.notify()
+    // 标记为检查中：仅在没有已知状态时写入。
+    // 周期性/自动探测若把已确认的 online 短暂改成 checking，界面会先掉成
+    // 「离线」再跳回，看起来像连接在反复刷新。保留上一次结果直到拿到新值，
+    // 只有首次探测（无任何记录）才显示加载态。silent 进一步跳过这一步。
+    if (!options?.silent && !this.healthMap.has(serverId)) {
+      this.healthMap.set(serverId, { status: 'checking' })
+      this.notify()
+    }
 
     const startTime = Date.now()
     const controller = new AbortController()
@@ -634,8 +666,8 @@ class ServerStore {
             latency,
             lastCheck: Date.now(),
             error: contentType.includes('text/html')
-              ? 'Server returned HTML instead of OpenCode health JSON. Check the URL path.'
-              : 'Server did not return OpenCode health JSON',
+              ? i18n.t('settings:servers.healthHtmlInsteadOfJson')
+              : i18n.t('settings:servers.healthNoJson'),
             details,
           }
           return commitHealth(health)
@@ -649,7 +681,7 @@ class ServerStore {
             status: 'error',
             latency,
             lastCheck: Date.now(),
-            error: 'Invalid OpenCode health JSON',
+            error: i18n.t('settings:servers.healthInvalidJson'),
             details,
           }
           return commitHealth(health)
@@ -660,7 +692,7 @@ class ServerStore {
             status: 'error',
             latency,
             lastCheck: Date.now(),
-            error: 'Not an OpenCode server',
+            error: i18n.t('settings:servers.notAnOpenCodeServer'),
             details,
           }
           return commitHealth(health)
@@ -680,7 +712,7 @@ class ServerStore {
           status: 'unauthorized',
           latency,
           lastCheck: Date.now(),
-          error: 'Invalid credentials',
+          error: i18n.t('settings:servers.invalidCredentials'),
           details,
         }
         return commitHealth(health)
@@ -710,8 +742,8 @@ class ServerStore {
   /**
    * 检查所有服务器健康状态
    */
-  async checkAllHealth(): Promise<void> {
-    await Promise.all(this.servers.map(s => this.checkHealth(s.id)))
+  async checkAllHealth(options?: { silent?: boolean }): Promise<void> {
+    await Promise.all(this.servers.map(s => this.checkHealth(s.id, options)))
   }
 }
 

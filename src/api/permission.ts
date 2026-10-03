@@ -7,8 +7,17 @@ import { getSDKClient, unwrap } from './sdk'
 import { resolveSessionTarget } from '../utils/sessionKey'
 import { formatPathForApi, directoryCacheKey } from '../utils/directoryUtils'
 import { serverStore } from '../store/serverStore'
-import { singleFlight } from '../utils/singleFlight'
+import { microCache, invalidateMicroCache } from '../utils/microCache'
 import type { ApiPermissionRequest, PermissionReply, ApiQuestionRequest, QuestionAnswer } from './types'
+
+/**
+ * 待处理列表的缓存有效期。
+ *
+ * 取 1.5s：只吸收「同一次交互引发的重复拉取」（实测同一会话打开时 permission /
+ * question 各被拉 4 次），又不至于让用户看不到刚弹出的审批 —— SSE 推送仍是
+ * 实时通道，这里的缓存只影响「主动轮询式」的兜底拉取。
+ */
+const PENDING_TTL_MS = 1500
 
 /**
  * 全局待处理请求的合并键。
@@ -17,6 +26,11 @@ import type { ApiPermissionRequest, PermissionReply, ApiQuestionRequest, Questio
 function pendingScopeKey(kind: 'permission' | 'question', directory?: string, serverId?: string): string {
   const sid = serverId ?? serverStore.getActiveServerId()
   return `${kind}:${sid}:${directoryCacheKey(directory)}`
+}
+
+/** 回复/拒绝后让待处理列表立即失效，避免继续返回已处理的那条 */
+function invalidatePending(kind: 'permission' | 'question', directory?: string, serverId?: string): void {
+  invalidateMicroCache(pendingScopeKey(kind, directory, serverId))
 }
 
 // ============================================
@@ -34,10 +48,17 @@ export async function getPendingPermissions(
   directory?: string,
   serverId?: string,
 ): Promise<ApiPermissionRequest[]> {
-  const permissions = await singleFlight(pendingScopeKey('permission', directory, serverId), async () => {
-    const sdk = getSDKClient(serverId)
-    return unwrap(await sdk.permission.list({ directory: formatPathForApi(directory, serverId) }))
-  })
+  // microCache 同时覆盖「并发」与「短时间内先后发生」两类重复：
+  // 实测打开一个会话会分几批（挂载 / 目录变化 / SSE 重连）各拉一次，
+  // singleFlight 只能合并同一批，跨批次仍会各走一次约 1.1s 的隧道往返。
+  const permissions = await microCache(
+    pendingScopeKey('permission', directory, serverId),
+    async () => {
+      const sdk = getSDKClient(serverId)
+      return unwrap(await sdk.permission.list({ directory: formatPathForApi(directory, serverId) }))
+    },
+    { ttlMs: PENDING_TTL_MS },
+  )
   if (!sessionId) return permissions
   const target = resolveSessionTarget(sessionId, serverId)
   return permissions.filter((p: ApiPermissionRequest) => p.sessionID === target.sessionId)
@@ -66,6 +87,7 @@ export async function replyPermission(
         response: reply,
       }),
     )
+    invalidatePending('permission', directory, serverId)
     return true
   }
 
@@ -77,6 +99,7 @@ export async function replyPermission(
       message,
     }),
   )
+  invalidatePending('permission', directory, serverId)
   return true
 }
 
@@ -94,10 +117,14 @@ export async function getPendingQuestions(
   directory?: string,
   serverId?: string,
 ): Promise<ApiQuestionRequest[]> {
-  const questions = await singleFlight(pendingScopeKey('question', directory, serverId), async () => {
-    const sdk = getSDKClient(serverId)
-    return unwrap(await sdk.question.list({ directory: formatPathForApi(directory, serverId) }))
-  })
+  const questions = await microCache(
+    pendingScopeKey('question', directory, serverId),
+    async () => {
+      const sdk = getSDKClient(serverId)
+      return unwrap(await sdk.question.list({ directory: formatPathForApi(directory, serverId) }))
+    },
+    { ttlMs: PENDING_TTL_MS },
+  )
   if (!sessionId) return questions
   const target = resolveSessionTarget(sessionId, serverId)
   return questions.filter((q: ApiQuestionRequest) => q.sessionID === target.sessionId)
@@ -120,6 +147,7 @@ export async function replyQuestion(
       answers,
     }),
   )
+  invalidatePending('question', directory, serverId)
   return true
 }
 
@@ -134,5 +162,6 @@ export async function rejectQuestion(requestId: string, directory?: string, serv
       directory: formatPathForApi(directory, serverId),
     }),
   )
+  invalidatePending('question', directory, serverId)
   return true
 }
