@@ -6,7 +6,7 @@ import { SessionSortMenu } from './SessionSortMenu'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
 import { getProjectGroupIdentity, sortProjects } from './projectGrouping'
-import { useHostSlideClass } from './hostSwitchDirection'
+import { useHostSlideState } from './hostSwitchDirection'
 import { sessionActivityStore } from '../../../store/sessionActivityStore'
 import { mergeExpandedProjectNames } from './expandedProjects'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
@@ -174,10 +174,10 @@ export function SidePanel({
   const activeServerId = activeServer?.id ?? 'local'
   // 切换主机时项目列表按方位平移：目标主机在切换条中更靠右则从右滑入，否则从左。
   // 列表容器以 activeServerId 为 key 重挂载，动画类随重挂载生效；首次渲染不播放。
-  const hostSlide = useHostSlideClass(
+  const hostSlide = useHostSlideState(
     useMemo(() => servers.map(server => server.id), [servers]),
     activeServerId,
-  )
+  ).className
   const { catalog: gitWorkspaceCatalog } = useGitWorkspaceCatalog(catalogDirectories, catalogServerId)
   const { sidebarChildSessions, sidebarProjectSortField, sidebarProjectSortDesc } = useLayoutStore()
   // all = 始终列出全部子会话；active = 只列活跃/正在查看；off = 不额外列出

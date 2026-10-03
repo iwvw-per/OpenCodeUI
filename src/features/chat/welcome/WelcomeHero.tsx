@@ -12,6 +12,8 @@ import { greetingSlotForHour, pickGreeting } from './welcomeGreetings'
 
 interface WelcomeHeroProps {
   active: boolean
+  /** 切换主机等场景下临时关闭自身过渡，避免与工作区平移动画打架 */
+  disableTransition?: boolean
 }
 
 // 退场动画 300ms，延迟卸载多留 60ms 余量，避免淡出未完成就被移除。
@@ -22,7 +24,7 @@ const EXIT_DURATION_MS = 360
  * 项目角标不在这里——它作为 InputBox 的 topAccessory 与输入框同一 DOM 子树渲染，
  * 保证两者视觉上是一个整体、层级也一致。
  */
-export function WelcomeHero({ active }: WelcomeHeroProps) {
+export function WelcomeHero({ active, disableTransition = false }: WelcomeHeroProps) {
   const { t } = useTranslation('chat')
   const shouldRender = useDelayedRender(active, EXIT_DURATION_MS)
 
@@ -38,7 +40,9 @@ export function WelcomeHero({ active }: WelcomeHeroProps) {
   return (
     <div
       data-welcome-layer
-      className="absolute bottom-full left-0 right-0 z-40 pb-10 pointer-events-none transition-[opacity,transform] duration-300 ease-out"
+      className={`absolute bottom-full left-0 right-0 z-40 pb-10 pointer-events-none ${
+        disableTransition ? '' : 'transition-[opacity,transform] duration-300 ease-out'
+      }`}
       style={{
         opacity: active ? 1 : 0,
         transform: active ? 'translateY(0)' : 'translateY(-20px)',
