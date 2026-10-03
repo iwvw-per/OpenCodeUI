@@ -67,6 +67,7 @@ function createSnapshot(sessionId: string | null): MessageStoreSnapshot {
     isStreaming: messageStore.getIsStreaming(sessionId),
     revertState: messageStore.getRevertState(sessionId),
     hasMoreHistory: messageStore.getHasMoreHistory(sessionId),
+    hasTrimmedHistory: messageStore.getTrimmedCount(sessionId) > 0,
     sessionDirectory: messageStore.getSessionDirectory(sessionId),
     sessionTitle: messageStore.getSessionTitle(sessionId),
     shareUrl: messageStore.getShareUrl(sessionId),
@@ -86,6 +87,7 @@ function isSameSnapshot(a: MessageStoreSnapshot, b: MessageStoreSnapshot): boole
     a.isStreaming === b.isStreaming &&
     a.revertState === b.revertState &&
     a.hasMoreHistory === b.hasMoreHistory &&
+    a.hasTrimmedHistory === b.hasTrimmedHistory &&
     a.sessionDirectory === b.sessionDirectory &&
     a.sessionTitle === b.sessionTitle &&
     a.shareUrl === b.shareUrl &&
@@ -287,6 +289,7 @@ export function useSessionState(sessionId: string | null): SessionStateSnapshot 
       redoSteps: state.revertState?.history.length ?? 0,
       revertedContent: state.revertState?.history?.[0] ?? null,
       hasMoreHistory: state.hasMoreHistory,
+      hasTrimmedHistory: (state.trimmedCount ?? 0) > 0,
       directory: state.directory,
       title: state.title ?? null,
     }

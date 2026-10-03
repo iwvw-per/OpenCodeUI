@@ -35,6 +35,14 @@ export interface SessionState {
   hasMoreHistory: boolean
   /** 继续向前翻页的游标（服务端 X-Next-Cursor）；缺省表示已到最早一条 */
   historyCursor?: string
+  /**
+   * 因内存上限被从最旧端裁掉、但尚未补回的条数（内存缺口）。
+   *
+   * 与 hasMoreHistory 语义不同：hasMoreHistory 表示「服务端还有更早的消息」，
+   * 而本字段表示「服务端可能有、但已被本地丢弃」。上滑加载时优先按本字段补拉，
+   * 补够后归零；不能用它去置 hasMoreHistory，否则会产生空拉循环。
+   */
+  trimmedCount?: number
   /** session 目录 */
   directory: string
   /** session 标题 */
@@ -56,6 +64,8 @@ export interface MessageStoreSnapshot {
   isStreaming: boolean
   revertState: RevertState | null
   hasMoreHistory: boolean
+  /** 是否存在因内存上限被裁掉、尚未补回的历史（内存缺口） */
+  hasTrimmedHistory: boolean
   sessionDirectory: string
   sessionTitle: string
   shareUrl: string | undefined
@@ -78,6 +88,8 @@ export interface SessionStateSnapshot {
   redoSteps: number
   revertedContent: RevertHistoryItem | null
   hasMoreHistory: boolean
+  /** 是否存在因内存预算被裁掉、尚未补回的历史（内存缺口） */
+  hasTrimmedHistory: boolean
   directory: string
   title: string | null
 }
