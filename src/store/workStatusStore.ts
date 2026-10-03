@@ -170,6 +170,21 @@ class WorkStatusStore {
     return () => this.listeners.delete(fn)
   }
 
+  /**
+   * 重置内存态到默认值并清空订阅者（不改动 localStorage）。
+   * 供测试隔离使用。
+   */
+  reset() {
+    this.state = {
+      enabled: true,
+      order: sanitizeWorkStatusSectionOrder([]),
+      hidden: [],
+      expanded: { ...DEFAULT_EXPANDED },
+      scrollTop: 0,
+    }
+    this.listeners.clear()
+  }
+
   private emit() {
     this.listeners.forEach(fn => fn())
   }
