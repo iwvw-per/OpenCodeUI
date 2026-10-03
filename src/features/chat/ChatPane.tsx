@@ -19,6 +19,7 @@ import { useFolderProjectDrop } from './useFolderProjectDrop'
 import { FolderProjectDropOverlay } from './FolderProjectDropOverlay'
 import { useChatSession, useModels, useModelSelection, useTurnOutlineEntries, useMergeTurnOutline } from '../../hooks'
 import { useServerStore } from '../../hooks/useServerStore'
+import { useHostSlideClass } from './sidebar/hostSwitchDirection'
 import { useCancelHint } from '../../hooks/useCancelHint'
 import { makeSessionKey, sessionKeyToServerId, sessionKeyToSessionId } from '../../utils/sessionKey'
 import { serverStore } from '../../store/serverStore'
@@ -195,8 +196,13 @@ export const ChatPane = memo(function ChatPane({
   // Models（per-server：模型列表跟随当前 pane 绑定的服务器）
   // ============================================
   const { models, isLoading: modelsLoading, refetch: refetchModels } = useModels(paneServerId)
-  const { activeServer, getHealth } = useServerStore()
+  const { servers, activeServer, getHealth } = useServerStore()
   const activeServerHealth = activeServer ? getHealth(activeServer.id) : null
+  // 切换主机时主聊天区同样按方位平移，与侧栏项目列表方向一致。
+  const hostSlide = useHostSlideClass(
+    useMemo(() => servers.map(server => server.id), [servers]),
+    activeServerId,
+  )
   const hiddenModelKeys = useHiddenModelKeys()
   const visibleModels = useMemo(
     () => models.filter(model => !hiddenModelKeys.includes(getModelKey(model))),
@@ -1012,7 +1018,11 @@ export const ChatPane = memo(function ChatPane({
   }, [onOpenProject])
 
   const chatContent = (
-    <div ref={setChatContentRef} className="flex-1 relative overflow-hidden flex flex-col min-h-0">
+    <div
+      ref={setChatContentRef}
+      key={activeServerId}
+      className={`flex-1 relative overflow-hidden flex flex-col min-h-0 ${hostSlide}`}
+    >
       <div className="absolute inset-0">
         <InlineToolRequestContext.Provider value={inlineToolRequestCtx}>
           <ErrorBoundary onOpenSettings={onOpenSettings}>

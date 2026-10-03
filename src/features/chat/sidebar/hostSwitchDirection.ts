@@ -2,9 +2,11 @@
 // hostSwitchDirection — 主机切换的平移方向
 // ============================================
 //
-// 侧栏项目列表在切换主机时按「目标主机相对当前主机在切换条中的方位」平移：
-// 切到更靠右的主机 → 列表从右侧滑入；更靠左 → 从左侧滑入。
-// 抽成纯函数便于单测，不依赖 DOM。
+// 侧栏项目列表与主聊天区在切换主机时按「目标主机相对当前主机在切换条中的方位」
+// 平移：切到更靠右的主机 → 从右侧滑入；更靠左 → 从左侧滑入。
+// 抽成纯函数 + 一个 hook，便于单测与复用，不依赖 DOM。
+
+import { useState } from 'react'
 
 export type HostSlideDirection = 'from-right' | 'from-left'
 
@@ -24,3 +26,21 @@ export function hostSwitchDirection(previousIndex: number, nextIndex: number): H
 export function hostSlideClass(direction: HostSlideDirection): string {
   return direction === 'from-right' ? 'host-slide-from-right' : 'host-slide-from-left'
 }
+
+/**
+ * 观察当前活动主机索引变化，返回本次切换应播放的动画类名。
+ *
+ * 用「渲染期调整 state」记住上一次索引，只在索引真正变化时重算，避免无关重渲染
+ * 把类名切来切去导致动画重播。首次渲染返回空串（不播放）。
+ */
+export function useHostSlideClass(serverIds: readonly string[], activeServerId: string): string {
+  const activeIndex = serverIds.indexOf(activeServerId)
+  const [prevIndex, setPrevIndex] = useState(activeIndex)
+  const [className, setClassName] = useState('')
+  if (prevIndex !== activeIndex) {
+    setPrevIndex(activeIndex)
+    setClassName(hostSlideClass(hostSwitchDirection(prevIndex, activeIndex)))
+  }
+  return className
+}
+
