@@ -1108,7 +1108,7 @@ class MessageStore {
     if (msgIndex === undefined) return
 
     const oldMessage = state.messages[msgIndex]
-    const newParts = [...oldMessage.parts]
+    let newParts = [...oldMessage.parts]
     const existingPartIndex = this.getPartIndex(sessionKey, apiPart.messageID, oldMessage.parts).get(apiPart.id)
     const incoming = toUIPart(apiPart)
 
@@ -1119,6 +1119,12 @@ class MessageStore {
         ? mergePartPreferLiveText(existing, incoming)
         : incoming
     } else {
+      // 服务端 canonical part 的 id 以 `prt` 开头；乐观消息的 part id 为本地形式
+      // （如 `${messageId}:text`）。同一消息内出现服务端 part 时，先清掉同类型的本地
+      // 占位 part，避免正文重复（乐观文本 + 服务端文本）。
+      if (apiPart.id.startsWith('prt')) {
+        newParts = newParts.filter(part => part.id.startsWith('prt') || part.type !== incoming.type)
+      }
       newParts.push(incoming)
     }
 

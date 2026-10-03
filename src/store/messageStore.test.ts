@@ -777,3 +777,78 @@ describe('multi-prefix session coalescing', () => {
     expect(messageStore.getSessionState('local::ses_b')!.messages[0].info.id).toBe('b1')
   })
 })
+
+/**
+ * 发送时用客户端生成的 msg id，服务端 prompt 复用同一 id。canonical 用户消息
+ * 到达时应靠 id 精确替换乐观消息，而不是再追加一条；且服务端 part 到达时要清掉
+ * 乐观的本地占位 part，避免正文重复。
+ */
+describe('optimistic user message reconciliation by id', () => {
+  beforeEach(() => {
+    messageStore.clearAll()
+  })
+
+  const KEY = 'local::ses_dup'
+  const MSG_ID = 'msg_abc123'
+
+  function optimisticUserMessage(): import('../api/types').ApiMessageWithParts {
+    return {
+      info: {
+        id: MSG_ID,
+        sessionID: 'ses_dup',
+        role: 'user',
+        time: { created: 100 },
+        agent: 'build',
+        model: { providerID: 'p', modelID: 'm' },
+      } as ApiMessage,
+      parts: [
+        {
+          id: `${MSG_ID}:text`,
+          sessionID: 'ses_dup',
+          messageID: MSG_ID,
+          type: 'text',
+          text: 'hello world',
+        } as ApiPart & { sessionID: string; messageID: string },
+      ],
+    }
+  }
+
+  it('replaces the optimistic row instead of appending a duplicate', () => {
+    messageStore.upsertLocalMessage(optimisticUserMessage())
+
+    // 服务端 canonical user 消息（不带 parts）到达，id 与乐观消息相同
+    messageStore.handleMessageUpdated({
+      id: MSG_ID,
+      sessionID: 'ses_dup',
+      role: 'user',
+      time: { created: 100 },
+      agent: 'build',
+      model: { providerID: 'p', modelID: 'm' },
+    } as ApiMessage)
+
+    const userRows = messageStore
+      .getSessionState(KEY)!
+      .messages.filter(m => m.info.role === 'user')
+    expect(userRows).toHaveLength(1)
+    // 乐观 part 被保留（canonical 事件不带 parts）
+    expect(userRows[0].parts).toHaveLength(1)
+  })
+
+  it('drops the local placeholder part when the canonical part arrives', () => {
+    messageStore.upsertLocalMessage(optimisticUserMessage())
+
+    // 服务端 part 使用 prt 前缀 id
+    messageStore.handlePartUpdated({
+      id: 'prt_0001',
+      sessionID: 'ses_dup',
+      messageID: MSG_ID,
+      type: 'text',
+      text: 'hello world',
+    } as ApiPart & { sessionID: string; messageID: string })
+
+    const row = messageStore.getSessionState(KEY)!.messages.find(m => m.info.id === MSG_ID)!
+    const textParts = row.parts.filter(p => p.type === 'text')
+    expect(textParts).toHaveLength(1)
+    expect(textParts[0].id).toBe('prt_0001')
+  })
+})
