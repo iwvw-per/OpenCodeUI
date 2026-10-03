@@ -468,22 +468,32 @@ export const WorkStatusContextSourcesSection = memo(function WorkStatusContextSo
   useEffect(() => {
     let cancelled = false
     void (async () => {
-      try {
-        const skills = await getSkills(directory)
-        if (!cancelled) setSkillCount(skills.length)
-      } catch {
-        if (!cancelled) setSkillCount(0)
-      }
-      try {
-        // 只数已连接的服务器：断开的服务器对上下文没有贡献，
-        // 在这里计入会和上方的 MCP 板块自相矛盾
-        const status = await getMcpStatus(directory)
-        if (!cancelled) {
-          setMcpCount(Object.values(status).filter(entry => entry?.status === 'connected').length)
-        }
-      } catch {
-        if (!cancelled) setMcpCount(0)
-      }
+      // 这两个请求只为渲染「N 个技能 · N 个 MCP」这行摘要，属于装饰性信息，
+      // 不该挡住首屏。经隧道时 getSkills 响应可达 190KB 且固定约 1.1s，若与
+      // 消息拉取同时发出会抢隧道并发额度，因此推迟到空闲时再拉。
+      await new Promise<void>(resolve => {
+        const idle = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number })
+          .requestIdleCallback
+        if (typeof idle === 'function') idle(() => resolve(), { timeout: 2500 })
+        else globalThis.setTimeout(resolve, 400)
+      })
+      if (cancelled) return
+
+      // 两个请求彼此独立，并行发出；此前串行 await 让两个 1.1s 往返叠加成 ~2.2s
+      const [skillsResult, mcpResult] = await Promise.allSettled([
+        getSkills(directory),
+        getMcpStatus(directory),
+      ])
+      if (cancelled) return
+
+      setSkillCount(skillsResult.status === 'fulfilled' ? skillsResult.value.length : 0)
+      setMcpCount(
+        mcpResult.status === 'fulfilled'
+          ? // 只数已连接的服务器：断开的服务器对上下文没有贡献，
+            // 在这里计入会和上方的 MCP 板块自相矛盾
+            Object.values(mcpResult.value).filter(entry => entry?.status === 'connected').length
+          : 0,
+      )
     })()
     return () => {
       cancelled = true

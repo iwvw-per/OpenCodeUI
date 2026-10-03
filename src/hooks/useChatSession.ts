@@ -54,6 +54,7 @@ import { STORAGE_KEY_SELECTED_AGENT } from '../constants'
 import type { ChatAreaHandle } from '../features/chat'
 import { followupQueueStore, useFollowupQueue } from '../store/followupQueueStore'
 import { themeStore } from '../store/themeStore'
+import i18n from '../i18n'
 
 const handleError = createErrorHandler('session')
 
@@ -77,6 +78,7 @@ const EMPTY_SESSION_STATE = {
   redoSteps: 0,
   revertedContent: null,
   hasMoreHistory: false,
+  hasTrimmedHistory: false,
   directory: '',
   title: null,
 } as const
@@ -176,6 +178,7 @@ export function useChatSession({
   const redoSteps = perSessionState.redoSteps
   const revertedContent = perSessionState.revertedContent
   const hasMoreHistory = perSessionState.hasMoreHistory
+  const hasTrimmedHistory = perSessionState.hasTrimmedHistory
   const loadState = routeSessionId ? perSessionState.loadState : ('idle' as const)
   const loadError = routeSessionId ? perSessionState.loadError : undefined
 
@@ -196,7 +199,7 @@ export function useChatSession({
     (sessionId?: string) => {
       const session = sessions.find(s => s.id === sessionId)
       if (session?.title) return session.title
-      if (sessionId) return `Session ${sessionId.slice(0, 6)}`
+      if (sessionId) return i18n.t('chat:header.sessionFallback', { id: sessionId.slice(0, 6) })
       return 'OpenCode'
     },
     [sessions],
@@ -214,7 +217,7 @@ export function useChatSession({
   const sessionFamily = useSessionFamily(routeSessionId)
 
   // Session Manager
-  const { loadSession, loadMoreHistory, requestUndo, commitUndo, handleRedo, handleRedoAll, clearRevert } =
+  const { loadSession, loadMoreHistory, loadUntilMessage, hydrateTurn, requestUndo, commitUndo, handleRedo, handleRedoAll, clearRevert } =
     useSessionManager({
       sessionId: routeSessionId,
       directory: currentDirectory,
@@ -445,7 +448,7 @@ export function useChatSession({
 
         // 页面不在前台时通知用户有权限请求等待批准
         const permDesc = request.patterns?.length ? `${request.permission}: ${request.patterns[0]}` : request.permission
-        const title = buildNotificationTitle(request.sessionID, 'Permission Required')
+        const title = buildNotificationTitle(request.sessionID, i18n.t('chat:notification.permissionRequired'))
         if (notificationEventSettingsStore.isSystemEnabled('permission')) {
           sendNotification(title, permDesc, {
             sessionId: request.sessionID,
@@ -466,8 +469,8 @@ export function useChatSession({
         })
 
         // 页面不在前台时通知用户有问题等待回答
-        const questionDesc = request.questions?.[0]?.header || 'AI is waiting for your input'
-        const title = buildNotificationTitle(request.sessionID, 'Question')
+        const questionDesc = request.questions?.[0]?.header || i18n.t('chat:notification.aiWaitingForInput')
+        const title = buildNotificationTitle(request.sessionID, i18n.t('chat:notification.question'))
         if (notificationEventSettingsStore.isSystemEnabled('question')) {
           sendNotification(title, questionDesc, {
             sessionId: request.sessionID,
@@ -487,9 +490,9 @@ export function useChatSession({
       },
       onSessionIdle: (sessionID: string) => {
         // 页面不在前台时发送浏览器通知
-        const title = buildNotificationTitle(sessionID, 'Session completed')
+        const title = buildNotificationTitle(sessionID, i18n.t('chat:notification.sessionCompleted'))
         if (notificationEventSettingsStore.isSystemEnabled('completed')) {
-          sendNotification(title, 'Session completed', {
+          sendNotification(title, i18n.t('chat:notification.sessionCompleted'), {
             sessionId: sessionID,
             directory: effectiveDirectory,
           })
@@ -498,9 +501,9 @@ export function useChatSession({
       },
       onSessionError: (sessionID: string) => {
         // 页面不在前台时通知用户 session 出错
-        const title = buildNotificationTitle(sessionID, 'Session error')
+        const title = buildNotificationTitle(sessionID, i18n.t('chat:notification.sessionError'))
         if (notificationEventSettingsStore.isSystemEnabled('error')) {
-          sendNotification(title, 'Session error', {
+          sendNotification(title, i18n.t('chat:notification.sessionError'), {
             sessionId: sessionID,
             directory: effectiveDirectory,
           })
@@ -591,15 +594,46 @@ export function useChatSession({
     getSelectableAgents(currentDirectory, paneServerId)
       .then(setAgents)
       .catch(err => handleError('fetch agents', err))
-  }, [currentDirectory])
+    // paneServerId 必须入依赖：切换主机后 agent 清单可能完全不同，
+    // 漏掉它会让面板继续显示上一台主机的 agent。
+  }, [currentDirectory, paneServerId])
 
   // Preload @ root directory and / commands for current session directory
+  //
+  // 这两个预取都只在「用户真的要用 @ 提及或 / 命令」时才需要，但它们不小
+  // （实测 /file?path=. 约 6KB、/command 约 369KB），且经隧道时每个请求约 1.1s
+  // 固定往返。若在会话打开时立刻发出，会和消息拉取抢同一条隧道的并发额度，
+  // 把首屏往后推。
+  //
+  // 因此推迟到首屏渲染完成之后（用 requestIdleCallback 让出主线程，退化为
+  // setTimeout）。预取仍然发生，只是不再挡在首屏前面。
   useEffect(() => {
     if (!routeSessionId || !effectiveDirectory) return
 
-    prefetchRootDirectory(effectiveDirectory, paneServerId).catch(() => {})
-    prefetchCommands(effectiveDirectory, paneServerId).catch(() => {})
-  }, [routeSessionId, effectiveDirectory])
+    let cancelled = false
+    const run = () => {
+      if (cancelled) return
+      prefetchRootDirectory(effectiveDirectory, paneServerId).catch(() => {})
+      prefetchCommands(effectiveDirectory, paneServerId).catch(() => {})
+    }
+
+    const idle = (globalThis as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number })
+      .requestIdleCallback
+    let handle: number
+    if (typeof idle === 'function') {
+      handle = idle(run, { timeout: 2000 })
+    } else {
+      handle = globalThis.setTimeout(run, 300) as unknown as number
+    }
+
+    return () => {
+      cancelled = true
+      const cancelIdle = (globalThis as { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback
+      if (typeof cancelIdle === 'function') cancelIdle(handle)
+      else globalThis.clearTimeout(handle)
+    }
+    // paneServerId 入依赖：切换主机后需要对新主机重新预取
+  }, [routeSessionId, effectiveDirectory, paneServerId])
 
   // agents 列表加载后，校验当前选中的 agent 是否存在于列表中
   useEffect(() => {
@@ -699,6 +733,7 @@ export function useChatSession({
   }, [
     routeSessionId,
     effectiveDirectory,
+    paneServerId,
     resetPendingRequests,
     setPendingPermissionRequests,
     setPendingQuestionRequests,
@@ -804,7 +839,7 @@ export function useChatSession({
         return false
       }
     },
-    [routeSessionId, navigateToSession, createSession],
+    [routeSessionId, navigateToSession, createSession, paneServerId],
   )
 
   // Send message handler
@@ -1014,7 +1049,7 @@ export function useChatSession({
         handleError('fork session', error)
       }
     },
-    [effectiveDirectory, navigateToSession],
+    [effectiveDirectory, navigateToSession, paneServerId],
   )
 
   // Abort handler
@@ -1107,7 +1142,7 @@ export function useChatSession({
         return false
       }
     },
-    [routeSessionId, effectiveDirectory, createSession, navigateToSession, currentModel, navigateHome, handleNewChat],
+    [routeSessionId, effectiveDirectory, createSession, navigateToSession, currentModel, navigateHome, handleNewChat, paneServerId],
   )
 
   // Undo with animation
@@ -1159,7 +1194,7 @@ export function useChatSession({
     } catch (error) {
       handleError('archive session', error)
     }
-  }, [routeSessionId, effectiveDirectory, navigateHome, handleNewChat])
+  }, [routeSessionId, effectiveDirectory, navigateHome, handleNewChat, paneServerId])
 
   // Navigate to previous session
   const handlePreviousSession = useCallback(() => {
@@ -1248,6 +1283,7 @@ export function useChatSession({
     loadState,
     loadError,
     hasMoreHistory,
+    hasTrimmedHistory,
     retryStatus,
     agents,
     selectedAgent,
@@ -1267,6 +1303,8 @@ export function useChatSession({
 
     // Session management
     loadMoreHistory,
+    loadUntilMessage,
+    hydrateTurn,
     handleRedoAll,
     clearRevert: clearRestoredContent,
     /** 强制重载当前会话（用于加载失败后的“重新加载”按钮） */

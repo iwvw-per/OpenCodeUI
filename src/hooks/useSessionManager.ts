@@ -13,7 +13,11 @@ import { isUserUIMessage, toApiMessageWithParts } from '../utils/messageConversi
 import { messageStore, type RevertState, type SessionState } from '../store'
 import { sessionKeyToServerId } from '../utils/sessionKey'
 import {
+  getSessionTurnPage,
   getSessionMessagePage,
+  getSessionLightweightMessages,
+  probeLightweightSupport,
+  encodeMessageCursor,
   getSession,
   revertMessage,
   unrevertSession,
@@ -22,11 +26,21 @@ import {
 } from '../api'
 import { sessionErrorHandler } from '../utils'
 import { isSessionNotFoundError } from '../utils/sessionErrors'
-import { INITIAL_MESSAGE_LIMIT, HISTORY_LOAD_BATCH_SIZE } from '../constants'
+import { INITIAL_TURN_LIMIT, HISTORY_TURN_BATCH_SIZE, RECENT_FULL_TURNS } from '../constants'
+import i18n from '../i18n'
 import type { MessageError } from '../types/message'
 
+/**
+ * 补内存缺口时额外多拉的余量。
+ *
+ * 缺口补拉按「现有 + 缺失 + 余量」请求，余量留一点是为了顺带探测是否还有更早
+ * 的内容（服务端以轮次边界对齐，条数不是精确对应）。不额外多拉的话，补完缺口
+ * 后无法判断「是否真的到最早一条」，会把 hasMoreHistory 误判成 false。
+ */
+const GAP_RECOVERY_HEADROOM = 50
+
 function toLoadMessageError(error: unknown): MessageError {
-  const message = error instanceof Error ? error.message : String(error || 'Failed to load session')
+  const message = error instanceof Error ? error.message : String(error || i18n.t('chat:errors.loadSession'))
   return {
     name: 'APIError',
     data: {
@@ -49,6 +63,9 @@ function toLoadMessageError(error: unknown): MessageError {
  */
 function isRetryableLoadError(error: unknown): boolean {
   if (isSessionNotFoundError(error)) return false
+  // 主动取消不算瞬态错误，不重试
+  if (error instanceof DOMException && error.name === 'AbortError') return false
+  if (error instanceof Error && error.name === 'AbortError') return false
 
   const record = error && typeof error === 'object' ? (error as Record<string, unknown>) : null
   const status =
@@ -80,16 +97,6 @@ async function withLoadRetry<T>(fn: () => Promise<T>, isStale: () => boolean): P
     }
   }
   throw lastError
-}
-
-/**
- * 判定服务端是否支持游标分页。
- * 支持时返回 nextCursor；不支持（旧版 serve 忽略 before）时只给 hasMoreHistory，
- * 调用方退回「limit 递增后重拉」的旧分页。
- */
-function resolveHistoryPaging(page: { messages: ApiMessageWithParts[]; nextCursor?: string }, pageSize: number) {
-  if (page.nextCursor) return { hasMoreHistory: true, historyCursor: page.nextCursor }
-  return { hasMoreHistory: page.messages.length >= pageSize, historyCursor: undefined }
 }
 
 interface UseSessionManagerOptions {
@@ -167,6 +174,20 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
   /** 每个 session 是否正在加载更早的历史，防止并发 loadMore 造成分页错位 */
   const isLoadingMoreRef = useRef<Map<string, boolean>>(new Map())
   const loadSessionRef = useRef<(sid: string, options?: { force?: boolean }) => Promise<void>>(async () => {})
+  /**
+   * 补回「因内存预算被裁掉的最旧一段」的入口。
+   *
+   * loadSession 定义在 loadMoreHistory 之前，无法直接引用后者，故经 ref 转发。
+   * 用途：首屏一次拉全后被裁剪时自动补缺口，避免会话最前面几轮永久不可见。
+   */
+  const recoverTrimmedHistoryRef = useRef<((sid: string) => Promise<void>) | null>(null)
+  /**
+   * 每个 session 初始页加载的 AbortController：切走时取消在途请求。
+   * 快速连点多个会话时，旧会话的消息请求即使晚归也会被 seq 丢弃，但取消能
+   * 立刻释放连接与解析开销，让新会话的请求更快拿到带宽。
+   * 仅用于初始页（getSessionTurnPage 底层不走 singleFlight，取消不会误伤共享请求）。
+   */
+  const loadAbortRef = useRef<Map<string, AbortController>>(new Map())
 
   // 使用 ref 保存 directory，避免依赖变化
   const directoryRef = useRef(directory)
@@ -187,6 +208,11 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
       loadSequenceRef.current.set(sid, seq)
       const isStale = () => loadSequenceRef.current.get(sid) !== seq
 
+      // 每次加载前取消该 session 上一次在途的初始页请求（重载/切走都会走到这里）
+      loadAbortRef.current.get(sid)?.abort()
+      const abortController = new AbortController()
+      loadAbortRef.current.set(sid, abortController)
+
       const dir = directoryRef.current
 
       // 检查是否已有消息（SSE 可能已经推送了）
@@ -204,15 +230,22 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
         const serverId = sessionKeyToServerId(sid)
         Promise.all([
           getSession(sid, dir, serverId).catch(() => null),
-          getSessionMessagePage(sid, INITIAL_MESSAGE_LIMIT, undefined, dir, serverId)
+          getSessionTurnPage(sid, INITIAL_TURN_LIMIT, undefined, dir, serverId, {
+            signal: abortController.signal,
+          })
             .then(page => ({ ok: true as const, page }))
-            .catch(() => ({ ok: false as const, page: { messages: [] as ApiMessageWithParts[], nextCursor: undefined } })),
+            .catch(() => ({
+              ok: false as const,
+              page: { messages: [] as ApiMessageWithParts[], nextCursor: undefined, hasMore: false },
+            })),
         ])
           .then(([sessionInfo, pageResult]) => {
             if (isStale()) return
 
             messageStore.updateSessionMetadata(sid, {
-              ...(pageResult.ok ? resolveHistoryPaging(pageResult.page, INITIAL_MESSAGE_LIMIT) : {}),
+              ...(pageResult.ok
+                ? { hasMoreHistory: pageResult.page.hasMore, historyCursor: pageResult.page.nextCursor }
+                : {}),
               directory: sessionInfo?.directory ?? dir ?? '',
               title: sessionInfo?.title,
               shareUrl: sessionInfo?.share?.url,
@@ -245,11 +278,29 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
         // 瞬态网络失败（本地 serve 短暂未就绪、传输层抖动）自动重试，避免
         // 首屏或重连时一次 Failed to fetch 就把用户卡在错误页。
         const serverId = sessionKeyToServerId(sid)
+        // 主机 Agent 支持轻量投影时：一次拉全整个会话（只含对话），首屏即完整、
+        // 无需上滑补历史。不支持则退回按轮次分页的既有路径。
+        //
+        // 探测（limit=1）与 session 元数据并行发出：探测结果只决定「消息走哪条
+        // 路径」，不依赖元数据。此前三者串行 —— 探测约 1.2s 往返，元数据约 1.2s，
+        // 白白叠加成 ~2.4s。现在探测与 getSession 同时起飞，只有消息请求必须等
+        // 探测结论（因为路径不同），总体从「探测+元数据+消息」压到「探测+消息」。
+        const probePromise = probeLightweightSupport(sid, dir, serverId)
+        const sessionInfoPromise = getSession(sid, dir, serverId).catch(() => null)
+        const supportsLightweight = await probePromise
         const [sessionInfo, page] = await withLoadRetry(
           () =>
             Promise.all([
-              getSession(sid, dir, serverId).catch(() => null),
-              getSessionMessagePage(sid, INITIAL_MESSAGE_LIMIT, undefined, dir, serverId),
+              sessionInfoPromise,
+              supportsLightweight
+                ? getSessionLightweightMessages(sid, dir, serverId, { signal: abortController.signal }).then(r => ({
+                    messages: r.messages,
+                    nextCursor: undefined as string | undefined,
+                    hasMore: r.hasMore,
+                  }))
+                : getSessionTurnPage(sid, INITIAL_TURN_LIMIT, undefined, dir, serverId, {
+                    signal: abortController.signal,
+                  }),
             ]),
           isStale,
         )
@@ -267,7 +318,7 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
           currentState.loadState === 'loaded' &&
           currentState.messages.length > apiMessages.length
 
-        const paging = resolveHistoryPaging(page, INITIAL_MESSAGE_LIMIT)
+        const paging = { hasMoreHistory: page.hasMore, historyCursor: page.nextCursor }
 
         if (shouldKeepStreamingOnly) {
           // SSE 推送的消息比 API 返回的多，说明有新消息，跳过覆盖
@@ -293,13 +344,25 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
           revertState: sessionInfo?.revert ?? null,
           shareUrl: sessionInfo?.share?.url,
         })
+        // 首屏只覆盖最近 INITIAL_TURN_LIMIT 轮，无需压缩；保留调用以应对
+        // SSE 已把更早轮次推入内存的情况。
+        messageStore.compressHistoricalTurns(sid, RECENT_FULL_TURNS)
 
         // force 模式（如 SSE 重连）只静默刷新数据，不触发滚动
         if (!force) {
           onLoadComplete?.()
         }
+
+        // 首屏若因内存预算裁掉了最旧的一段，自动把缺口补回来。
+        //
+        // 不这么做的话缺口只能靠用户手动上滑到顶才可能补 —— 而那条路径还有
+        // userScrolled 判定问题，实际表现为「会话最前面几轮永远看不到」。
+        // 这里在加载完成后主动补一次，让首屏即完整；补拉失败不影响已渲染内容。
+        if (messageStore.getTrimmedCount(sid) > 0) {
+          void recoverTrimmedHistoryRef.current?.(sid)
+        }
       } catch (error) {
-        if (isStale()) return
+        if (isStale() || abortController.signal.aborted) return
         sessionErrorHandler('load session', error)
         messageStore.setLoadError(sid, toLoadMessageError(error))
         if (isSessionNotFoundError(error)) {
@@ -320,57 +383,180 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
   // Load More History
   // ============================================
 
-  const loadMoreHistory = useCallback(async () => {
-    if (!sessionId) return
+  const loadMoreHistory = useCallback(
+    async (targetSessionId?: string) => {
+      const sid = targetSessionId ?? sessionId
+      if (!sid) return
 
-    // 并发保护：同一 session 只允许一个 loadMore 在途
-    if (isLoadingMoreRef.current.get(sessionId)) return
+      // 并发保护：同一 session 只允许一个 loadMore 在途
+      if (isLoadingMoreRef.current.get(sid)) return
 
-    const state = messageStore.getSessionState(sessionId)
-    if (!state) return
+      const state = messageStore.getSessionState(sid)
+      if (!state) return
 
-    const dir = state.directory || directoryRef.current
-    const before = state.historyCursor
-    // 既没有游标、服务端又声称还有历史：旧版 serve（不支持 before 游标），
-    // 退回「limit 递增后重拉」的旧分页
-    const legacyLimit = !before ? Math.max(INITIAL_MESSAGE_LIMIT, state.messages.length) + HISTORY_LOAD_BATCH_SIZE : 0
-    if (!before && !state.hasMoreHistory) return
+      const dir = state.directory || directoryRef.current
+      const before = state.historyCursor
+      // 进入条件：要么有服务端游标，要么服务端说还有更早，要么本地存在被裁剪的
+      // 内存缺口。最后一项必须有 —— 裁剪不再置 hasMoreHistory（否则大会话会陷入
+      // 空拉循环），缺口信息只能从 trimmedCount 拿到。
+      const trimmed = messageStore.getTrimmedCount(sid)
+      if (!before && !state.hasMoreHistory && trimmed === 0) return
 
-    // 与 loadSession 相同的序号校验：仅当本次请求仍是最新请求时才应用结果
-    const seq = (loadSequenceRef.current.get(sessionId) ?? 0) + 1
-    loadSequenceRef.current.set(sessionId, seq)
-    const isStale = () => loadSequenceRef.current.get(sessionId) !== seq
+      // 与 loadSession 相同的序号校验：仅当本次请求仍是最新请求时才应用结果
+      const seq = (loadSequenceRef.current.get(sid) ?? 0) + 1
+      loadSequenceRef.current.set(sid, seq)
+      const isStale = () => loadSequenceRef.current.get(sid) !== seq
 
-    isLoadingMoreRef.current.set(sessionId, true)
-    try {
-      const serverId = sessionKeyToServerId(sessionId)
-      const page = before
-        ? await getSessionMessagePage(sessionId, HISTORY_LOAD_BATCH_SIZE, before, dir, serverId)
-        : await getSessionMessagePage(sessionId, legacyLimit, undefined, dir, serverId)
+      isLoadingMoreRef.current.set(sid, true)
+      try {
+        const serverId = sessionKeyToServerId(sid)
+        // 按完整轮次向前加载：
+        // - 有游标：以游标为界向前取一批。
+        // - 无游标但有内存缺口：按「当前条数 + 缺口」重拉最新一页，把被裁掉的
+        //   那段补回来；多留一档余量以便顺带探测更早内容。
+        // - 无游标也无缺口：服务端说还有更早（旧版 serve 不给游标），从最新端
+        //   按增大条数重拉，避免 limit 递增的 O(N²) 重拉。
+        const targetTurns = HISTORY_TURN_BATCH_SIZE
+        let page: Awaited<ReturnType<typeof getSessionTurnPage>>
+        if (before) {
+          page = await getSessionTurnPage(sid, targetTurns, before, dir, serverId)
+        } else {
+          // 缺口补拉要一次覆盖「内存现有 + 缺失」的全部条数，否则补不干净会残留
+          // 缺口（下次还得再补一轮）。多留一档余量以便顺带探测更早内容。
+          const wanted =
+            trimmed > 0
+              ? state.messages.length + trimmed + GAP_RECOVERY_HEADROOM
+              : Math.max(targetTurns, Math.ceil(state.messages.length / 2))
+          page = await getSessionTurnPage(sid, wanted, undefined, dir, serverId)
+        }
 
-      // 期间发生了新的加载（loadSession 或再次 loadMore），丢弃本次结果
-      if (isStale()) return
+        // 期间发生了新的加载（loadSession 或再次 loadMore），丢弃本次结果
+        if (isStale()) return
 
-      const latestState = messageStore.getSessionState(sessionId)
-      if (!latestState) return
+        const latestState = messageStore.getSessionState(sid)
+        if (!latestState) return
 
-      // 去重 + 按时间排序
-      const existingIds = new Set(latestState.messages.map(m => m.info.id))
-      const prependCandidates = page.messages
-        .filter(m => !existingIds.has(m.info.id))
-        .sort((a, b) => (a.info.time?.created ?? 0) - (b.info.time?.created ?? 0))
+        // 去重 + 按时间排序
+        const existingIds = new Set(latestState.messages.map(m => m.info.id))
+        const prependCandidates = page.messages
+          .filter(m => !existingIds.has(m.info.id))
+          .sort((a, b) => (a.info.time?.created ?? 0) - (b.info.time?.created ?? 0))
 
-      const paging = before
-        ? resolveHistoryPaging(page, HISTORY_LOAD_BATCH_SIZE)
-        : resolveHistoryPaging(page, legacyLimit)
+      // 补拉结果必须与「本次是否真的补到了更早的连续内容」一致。
+      //
+      // 无游标的重拉路径拉回的是**最新**一页：它与内存窗口高度重叠，去重后
+      // 可能一条不剩。此时若照抄 page.hasMore，就会把「其实没有更早内容」写成
+      // 「还有历史」，ChatArea 随即再次触发上滑加载 —— 空拉循环。
+      // 因此：无游标时只在「确实补进了更早内容」且服务端仍报 hasMore 时，
+      // 才认定还有历史。
+      const hasMoreAfter = before
+        ? page.hasMore
+        : prependCandidates.length > 0 && page.hasMore
 
-      messageStore.prependMessages(sessionId, prependCandidates, paging.hasMoreHistory, paging.historyCursor)
-    } catch (error) {
-      sessionErrorHandler('load more history', error)
-    } finally {
-      isLoadingMoreRef.current.set(sessionId, false)
+        messageStore.prependMessages(sid, prependCandidates, hasMoreAfter, page.nextCursor)
+        // 前插后，超出最近 RECENT_FULL_TURNS 轮的旧轮次压缩，控制内存与渲染成本
+        messageStore.compressHistoricalTurns(sid, RECENT_FULL_TURNS)
+      } catch (error) {
+        sessionErrorHandler('load more history', error)
+      } finally {
+        isLoadingMoreRef.current.set(sid, false)
+      }
+    },
+    [sessionId],
+  )
+
+  /**
+   * 向前翻页直到目标消息进入内存（侧边轴点到未加载轮次时调用）。
+   *
+   * 有界循环：最多补拉 MAX_PAGES 批，避免目标不可达时无限翻页；每批仍走
+   * loadMoreHistory 的完整轮次分页，命中即停。返回是否已加载到目标。
+   */  const loadUntilMessage = useCallback(
+    async (messageId: string): Promise<boolean> => {
+      if (!sessionId) return false
+      const MAX_PAGES = 20
+      for (let i = 0; i < MAX_PAGES; i++) {
+        const state = messageStore.getSessionState(sessionId)
+        if (!state) return false
+        if (state.messages.some(m => m.info.id === messageId)) return true
+        if (!state.hasMoreHistory && !state.historyCursor) return false
+        await loadMoreHistory()
+        // loadMoreHistory 未产生新历史时提前结束，避免空转
+        const after = messageStore.getSessionState(sessionId)
+        if (!after || after.messages.length === state.messages.length) return after?.messages.some(m => m.info.id === messageId) ?? false
+      }
+      const finalState = messageStore.getSessionState(sessionId)
+      return finalState?.messages.some(m => m.info.id === messageId) ?? false
+    },
+    [sessionId, loadMoreHistory],
+  )
+
+  // 把「补缺口」入口暴露给 loadSession（后者定义在前，无法直接引用）。
+  useEffect(() => {
+    recoverTrimmedHistoryRef.current = async (sid: string) => {
+      // 补拉失败不冒泡：已渲染内容保持可用，缺口留待下次加载或用户上滑再补。
+      await loadMoreHistory(sid).catch(() => {})
     }
-  }, [sessionId])
+    return () => {
+      recoverTrimmedHistoryRef.current = null
+    }
+  }, [loadMoreHistory])
+
+  // ============================================
+  // Hydrate Compressed Turn
+  // ============================================
+
+  /**
+   * 按需回拉某个轮次的完整 parts（展开被压缩的「已处理」折叠块时调用）。
+   *
+   * 用内存中已有消息的 {id,time} 构造游标，从「下一轮首条 user 消息」向前取
+   * 本轮的若干条，恰好覆盖该轮，无需单条消息接口。回拉结果经 hydrateMessages
+   * 原地替换压缩投影，清掉 isCompressed 标记。
+   */
+  const hydrateTurn = useCallback(
+    async (turnUserMessageId: string) => {
+      if (!sessionId) return
+
+      const state = messageStore.getSessionState(sessionId)
+      if (!state) return
+
+      const messages = state.messages
+      const startIndex = messages.findIndex(m => m.info.id === turnUserMessageId)
+      if (startIndex === -1) return
+
+      // 找到下一轮首条 user 消息，作为本轮结束边界
+      let endIndex = messages.length
+      for (let i = startIndex + 1; i < messages.length; i++) {
+        if (messages[i].info.role === 'user') {
+          endIndex = i
+          break
+        }
+      }
+      const turnMessages = messages.slice(startIndex, endIndex)
+      if (turnMessages.length === 0) return
+
+      // 本轮已被压缩的消息才需要回拉
+      const hasCompressed = turnMessages.some(m => m.isCompressed)
+      if (!hasCompressed) return
+
+      const dir = state.directory || directoryRef.current
+      const serverId = sessionKeyToServerId(sessionId)
+      const nextTurnUser = endIndex < messages.length ? messages[endIndex] : undefined
+      const before = nextTurnUser
+        ? encodeMessageCursor({ info: nextTurnUser.info, parts: [] } as ApiMessageWithParts, false)
+        : undefined
+
+      const seq = loadSequenceRef.current.get(sessionId)
+      try {
+        const page = await getSessionMessagePage(sessionId, turnMessages.length, before, dir, serverId)
+        // 期间切走了 session 则丢弃
+        if (loadSequenceRef.current.get(sessionId) !== seq) return
+        messageStore.hydrateMessages(sessionId, page.messages)
+      } catch (error) {
+        sessionErrorHandler('hydrate turn', error)
+      }
+    },
+    [sessionId],
+  )
 
   // ============================================
   // Undo
@@ -530,11 +716,28 @@ export function useSessionManager({ sessionId, directory, onLoadComplete, onErro
       logger.log('[SessionManager] switch:fetch-session', { sessionId })
       void loadSessionRef.current(sessionId)
     }
+
+    // 切走时取消上一个 session 在途的初始页请求，避免其占用连接与带宽
+    const abortMap = loadAbortRef.current
+    return () => {
+      if (sessionId) abortMap.get(sessionId)?.abort()
+    }
   }, [sessionId])
+
+  // 卸载时取消所有在途请求
+  useEffect(() => {
+    const abortMap = loadAbortRef.current
+    return () => {
+      for (const controller of abortMap.values()) controller.abort()
+      abortMap.clear()
+    }
+  }, [])
 
   return {
     loadSession,
     loadMoreHistory,
+    loadUntilMessage,
+    hydrateTurn,
     handleUndo,
     requestUndo,
     commitUndo,

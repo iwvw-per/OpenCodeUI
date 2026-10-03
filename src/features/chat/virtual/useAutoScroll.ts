@@ -127,6 +127,17 @@ export function useAutoScroll(bottomThreshold = 10) {
     autoMark.current = undefined
     const nested = (e.target instanceof Element ? e.target : undefined)?.closest('[data-scrollable]')
     if (nested && nested !== el) return
+
+    // 已在顶部时上滚：scrollTop 无法再下降，永远等不到「确认移动」，
+    // 于是 userScrolled 一直为 false，上滑加载更早历史的判定（依赖
+    // userScrolledRef）就永远不会成立 —— 表现为「会话最前面几轮看不到、
+    // 怎么滚都不加载」。此时上滚手势本身就是「用户想往上看」的确证，
+    // 直接置位。
+    if (el.scrollTop <= 0) {
+      if (!userScrolledRef.current) setScrolled(true)
+      return
+    }
+
     if (userScrolledRef.current) return
     // 不要在这里立即置位。wheel 事件到达时 scrollTop 往往还没变（浏览器在下一帧
     // 才真正滚动），此时置位会让「收起输入框」比滚动早一帧触发；若这次 wheel
