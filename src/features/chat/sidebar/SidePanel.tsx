@@ -6,7 +6,7 @@ import { SessionSortMenu } from './SessionSortMenu'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
 import { getProjectGroupIdentity, sortProjects } from './projectGrouping'
-import { hostSlideClass, hostSwitchDirection } from './hostSwitchDirection'
+import { useHostSlideClass } from './hostSwitchDirection'
 import { sessionActivityStore } from '../../../store/sessionActivityStore'
 import { mergeExpandedProjectNames } from './expandedProjects'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
@@ -173,16 +173,11 @@ export function SidePanel({
   // 这样多端看到的是同一份，用户不必在每台设备上重复隐藏噪音目录。
   const activeServerId = activeServer?.id ?? 'local'
   // 切换主机时项目列表按方位平移：目标主机在切换条中更靠右则从右滑入，否则从左。
-  // 用「渲染期调整 state」记住上一次索引，只在索引真正变化时重算，避免无关重渲染
-  // 把类名切来切去导致动画重播。列表容器以 activeServerId 为 key 重挂载，动画类随
-  // 重挂载生效；首次渲染不播放动画。
-  const activeServerIndex = servers.findIndex(server => server.id === activeServerId)
-  const [prevServerIndex, setPrevServerIndex] = useState(activeServerIndex)
-  const [hostSlide, setHostSlide] = useState('')
-  if (prevServerIndex !== activeServerIndex) {
-    setPrevServerIndex(activeServerIndex)
-    setHostSlide(hostSlideClass(hostSwitchDirection(prevServerIndex, activeServerIndex)))
-  }
+  // 列表容器以 activeServerId 为 key 重挂载，动画类随重挂载生效；首次渲染不播放。
+  const hostSlide = useHostSlideClass(
+    useMemo(() => servers.map(server => server.id), [servers]),
+    activeServerId,
+  )
   const { catalog: gitWorkspaceCatalog } = useGitWorkspaceCatalog(catalogDirectories, catalogServerId)
   const { sidebarChildSessions, sidebarProjectSortField, sidebarProjectSortDesc } = useLayoutStore()
   // all = 始终列出全部子会话；active = 只列活跃/正在查看；off = 不额外列出
