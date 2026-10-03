@@ -18,6 +18,8 @@ import {
   dedupeSessionListRequest,
 } from './sessionListCache'
 import { singleFlight } from '../utils/singleFlight'
+import { microCache } from '../utils/microCache'
+import { ttlCacheGet, ttlCacheSet, ttlCacheInvalidate } from '../utils/ttlCache'
 import { stripSessionListDetails } from './sanitize'
 import { collectTurnDiffsFromMessages } from '../features/message/parts/turnDiffs'
 import type { ApiSession, SessionListParams, FileDiff, ApiMessageWithParts, ApiUserMessage } from './types'
@@ -38,15 +40,22 @@ function normalizeSessionList(value: unknown): ApiSession[] {
 /**
  * 获取所有 session 的当前状态
  *
- * 同 (server, directory) 的并发调用共享一次网络请求：初始化、目录切换、
- * SSE 重连都会触发全量拉取，不去重会在同一帧发出多份相同请求。
+ * 用 microCache 而非 singleFlight：这类「状态兜底拉取」会在初始化、目录切换、
+ * SSE 重连时分几批先后触发（实测打开一个会话被拉 2 次），singleFlight 只能合并
+ * 同一批。经隧道时每次约 1.1s，跨批次重复代价很高。
+ *
+ * TTL 取 1.5s 且不影响实时性：session 状态的权威更新走 SSE，这里只是兜底。
  */
 export async function getSessionStatus(directory?: string, serverId?: string): Promise<SessionStatusMap> {
   const sid = serverId ?? serverStore.getActiveServerId()
-  return singleFlight(`status:${sid}:${directoryCacheKey(directory)}`, async () => {
-    const sdk = getSDKClient(serverId)
-    return unwrap(await sdk.session.status({ directory: formatPathForApi(directory, serverId) }))
-  })
+  return microCache(
+    `status:${sid}:${directoryCacheKey(directory)}`,
+    async () => {
+      const sdk = getSDKClient(serverId)
+      return unwrap(await sdk.session.status({ directory: formatPathForApi(directory, serverId) }))
+    },
+    { ttlMs: 1500 },
+  )
 }
 
 /**
@@ -187,18 +196,44 @@ export async function restoreSession(sessionId: string, directory?: string, serv
 
 /**
  * 获取单个 session
+ *
+ * 会话元数据变动不频繁，加一层短 TTL 缓存：首屏时 loadSession、SidePanel
+ * 元数据补齐、getLastTurnDiff 会先后各取一次同一会话，singleFlight 只能合并
+ * 同时在途的请求，串行调用仍会各发一次。TTL 内命中缓存直接返回，避免串行重复
+ * 拉取；create/update/delete/revert 等写操作后按前缀失效，保证不长期陈旧。
  */
+const SESSION_META_TTL_MS = 15_000
+const SESSION_META_CACHE_PREFIX = 'session-meta:'
+
+function sessionMetaCacheKey(serverId: string, sessionId: string, directory?: string): string {
+  return `${SESSION_META_CACHE_PREFIX}${serverId}:${sessionId}:${directoryCacheKey(directory)}`
+}
+
+/** 写操作后失效某会话的元数据缓存（含各目录键，简单起见按 server:session 前缀） */
+function invalidateSessionMetaCache(serverId: string, sessionId: string): void {
+  ttlCacheInvalidate(`${SESSION_META_CACHE_PREFIX}${serverId}:${sessionId}:`)
+}
+
 export async function getSession(sessionId: string, directory?: string, serverId?: string): Promise<ApiSession> {
   const target = resolveSessionTarget(sessionId, serverId)
+  const cacheKey = sessionMetaCacheKey(target.serverId, target.sessionId, directory)
+  const cached = ttlCacheGet<ApiSession>(cacheKey, SESSION_META_TTL_MS)
+  if (cached) return cached
+
   // 首屏时 loadSession、SidePanel、元数据补齐会各取一次同一会话，
   // 合并同 key 在途请求。key 用与传输格式无关的目录键，
   // 避免 pathMode 在 auto 检测期间切换导致 key 失配。
-  return singleFlight(`session:${target.serverId}:${target.sessionId}:${directoryCacheKey(directory)}`, async () => {
-    const sdk = getSDKClient(target.serverId)
-    return unwrap(
-      await sdk.session.get({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }),
-    )
-  })
+  const session = await singleFlight(
+    `session:${target.serverId}:${target.sessionId}:${directoryCacheKey(directory)}`,
+    async () => {
+      const sdk = getSDKClient(target.serverId)
+      return unwrap(
+        await sdk.session.get({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }),
+      )
+    },
+  )
+  ttlCacheSet(cacheKey, session, SESSION_META_TTL_MS)
+  return session
 }
 
 /**
@@ -244,6 +279,7 @@ export async function updateSession(
       ...params,
     }),
   )
+  invalidateSessionMetaCache(target.serverId, target.sessionId)
   invalidateSessionListCache(target.serverId)
   return session
 }
@@ -257,6 +293,7 @@ export async function deleteSession(sessionId: string, directory?: string, serve
   unwrap(
     await sdk.session.delete({ sessionID: target.sessionId, directory: formatPathForApi(directory, target.serverId) }),
   )
+  invalidateSessionMetaCache(target.serverId, target.sessionId)
   invalidateSessionListCache(target.serverId)
   return true
 }
@@ -289,7 +326,7 @@ export async function revertMessage(
 ): Promise<ApiSession> {
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
-  return unwrap(
+  const session = unwrap(
     await sdk.session.revert({
       sessionID: target.sessionId,
       directory: formatPathForApi(directory, target.serverId),
@@ -297,6 +334,8 @@ export async function revertMessage(
       partID: partId,
     }),
   )
+  invalidateSessionMetaCache(target.serverId, target.sessionId)
+  return session
 }
 
 /**
@@ -305,12 +344,14 @@ export async function revertMessage(
 export async function unrevertSession(sessionId: string, directory?: string, serverId?: string): Promise<ApiSession> {
   const target = resolveSessionTarget(sessionId, serverId)
   const sdk = getSDKClient(target.serverId)
-  return unwrap(
+  const session = unwrap(
     await sdk.session.unrevert({
       sessionID: target.sessionId,
       directory: formatPathForApi(directory, target.serverId),
     }),
   )
+  invalidateSessionMetaCache(target.serverId, target.sessionId)
+  return session
 }
 
 /**
