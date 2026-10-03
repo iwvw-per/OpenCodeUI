@@ -54,6 +54,7 @@ import { LoadingState } from '../../components/ui/LoadingState'
 import { getStreamingHotIndexes, getTimelineRowYClass, mergeVirtualRangeIndexes } from './chatAreaUtils'
 import { chatContentMaxWidthStyle, getContentPaddingClass } from './contentWidth'
 import { getChatWidthDragging, subscribeChatWidthDrag } from './chatWidthDrag'
+import { getChatMorphing, subscribeChatMorphing } from './chatMorph'
 import { useAutoScroll } from './virtual/useAutoScroll'
 import { useEmptyWorkingShellGate } from './virtual/useEmptyWorkingShellGate'
 
@@ -610,7 +611,10 @@ export const ChatArea = memo(
       // 内容列宽拖拽中：宽度逐帧变化会让每个已渲染行重排、测量、重渲染。
       // 期间把 overscan 降到 0，只保留视口内的行参与重排，显著减少每帧工作量。
       const isWidthDragging = useSyncExternalStore(subscribeChatWidthDrag, getChatWidthDragging, getChatWidthDragging)
-      const effectiveOverscan = isWidthDragging ? 0 : renderOverscan
+      // 输入框收起/展开变形中：几何逐帧变化，同样把 overscan 降到 0，
+      // 只保留视口内的行参与重排，给动画腾出主线程（与宽度拖拽同源）。
+      const isInputMorphing = useSyncExternalStore(subscribeChatMorphing, getChatMorphing, getChatMorphing)
+      const effectiveOverscan = isWidthDragging || isInputMorphing ? 0 : renderOverscan
       const resizePinnedRef = useRef<number[]>([])
       const resizePinFrame = useRef<number | undefined>(undefined)
       const resizeAnchorScheduled = useRef(false)
