@@ -83,7 +83,15 @@ export interface StepFinishDisplay {
 
 export type CompletedAtFormat = 'time' | 'dateTime'
 
-export type ReasoningDisplayMode = 'capsule' | 'italic' | 'markdown'
+export type ReasoningDisplayMode = 'capsule' | 'italic' | 'markdown' | 'ticker' | 'block'
+
+const REASONING_DISPLAY_MODES: readonly ReasoningDisplayMode[] = ['capsule', 'italic', 'markdown', 'ticker', 'block']
+
+function normalizeReasoningDisplayMode(value: string | null | undefined): ReasoningDisplayMode {
+  return REASONING_DISPLAY_MODES.includes(value as ReasoningDisplayMode)
+    ? (value as ReasoningDisplayMode)
+    : DEFAULT_REASONING_DISPLAY_MODE
+}
 
 export type ExternalFileDropMode = 'upload-first' | 'mention'
 
@@ -139,8 +147,13 @@ const DEFAULT_OUTLINE_CURRENT_HIGHLIGHT = true
 const DEFAULT_ACTIONS_ON_LATEST_ASSISTANT_ONLY = true
 /** 桌面端是否启用输入框上滚收起（移动端始终可用） */
 const DEFAULT_DESKTOP_COLLAPSED_INPUT_DOCK = true
-/** 过程折叠：按用户消息把中间过程收成计时折叠块 */
-const DEFAULT_PROCESS_COLLAPSE_ENABLED = false
+/**
+ * 过程折叠：按用户消息把中间过程收成计时折叠块。
+ *
+ * 默认开启：思考与工具调用默认收进「已处理」折叠块，只留正文，避免长会话被
+ * 中间过程淹没。用户可在设置里关掉（关掉后思考/工具平铺）。
+ */
+const DEFAULT_PROCESS_COLLAPSE_ENABLED = true
 
 export interface ThemeState {
   /** 当前选中的主题风格 ID */
@@ -163,8 +176,8 @@ export interface ThemeState {
   completedAtFormat: CompletedAtFormat
   /** 思考内容展示样式 */
   reasoningDisplayMode: ReasoningDisplayMode
-  /** 宽模式 */
-  wideMode: boolean
+  /** 对话内容列宽度偏好（px）；null 表示按列宽自适应 */
+  chatContentWidth: number | null
   /** Diff 行标记风格 */
   diffStyle: DiffStyle
   /** 是否启用带工具描述的 steps 摘要 */
@@ -221,7 +234,7 @@ const STORAGE_KEY_RENDER_USER_MARKDOWN = 'render-user-markdown'
 const STORAGE_KEY_STEP_FINISH_DISPLAY = 'step-finish-display'
 const STORAGE_KEY_COMPLETED_AT_FORMAT = 'completed-at-format'
 const STORAGE_KEY_REASONING_DISPLAY_MODE = 'reasoning-display-mode'
-const STORAGE_KEY_WIDE_MODE = 'chat-wide-mode'
+const STORAGE_KEY_CHAT_CONTENT_WIDTH = 'chat-content-width'
 const STORAGE_KEY_DIFF_STYLE = 'diff-style'
 const STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS = 'descriptive-tool-steps'
 const STORAGE_KEY_INLINE_TOOL_REQUESTS = 'inline-tool-requests'
@@ -295,10 +308,7 @@ class ThemeStore {
     const renderUserMarkdown =
       savedRenderUserMarkdown === null ? DEFAULT_RENDER_USER_MARKDOWN : savedRenderUserMarkdown === 'true'
     const savedReasoningDisplay = localStorage.getItem(STORAGE_KEY_REASONING_DISPLAY_MODE)
-    const reasoningDisplayMode: ReasoningDisplayMode =
-      savedReasoningDisplay === 'italic' || savedReasoningDisplay === 'markdown'
-        ? savedReasoningDisplay
-        : DEFAULT_REASONING_DISPLAY_MODE
+    const reasoningDisplayMode: ReasoningDisplayMode = normalizeReasoningDisplayMode(savedReasoningDisplay)
 
     let stepFinishDisplay = DEFAULT_STEP_FINISH_DISPLAY
     try {
@@ -312,7 +322,11 @@ class ThemeStore {
     const completedAtFormat: CompletedAtFormat =
       savedCompletedAtFormat === 'dateTime' ? 'dateTime' : DEFAULT_COMPLETED_AT_FORMAT
 
-    const savedWideMode = localStorage.getItem(STORAGE_KEY_WIDE_MODE) === 'true'
+    const savedChatContentWidthRaw = localStorage.getItem(STORAGE_KEY_CHAT_CONTENT_WIDTH)
+    const savedChatContentWidthValue = savedChatContentWidthRaw === null ? NaN : Number(savedChatContentWidthRaw)
+    const chatContentWidth = Number.isFinite(savedChatContentWidthValue) && savedChatContentWidthValue > 0
+      ? savedChatContentWidthValue
+      : null
     const savedDiffStyle = localStorage.getItem(STORAGE_KEY_DIFF_STYLE) as DiffStyle | null
     const diffStyle: DiffStyle = savedDiffStyle === 'changeBars' ? 'changeBars' : DEFAULT_DIFF_STYLE
 
@@ -408,7 +422,7 @@ class ThemeStore {
       stepFinishDisplay,
       completedAtFormat,
       reasoningDisplayMode,
-      wideMode: savedWideMode,
+      chatContentWidth,
       diffStyle,
       descriptiveToolSteps,
       inlineToolRequests,
@@ -467,8 +481,8 @@ class ThemeStore {
   get reasoningDisplayMode() {
     return this.state.reasoningDisplayMode
   }
-  get wideMode() {
-    return this.state.wideMode
+  get chatContentWidth() {
+    return this.state.chatContentWidth
   }
   get diffStyle() {
     return this.state.diffStyle
@@ -687,15 +701,19 @@ class ThemeStore {
     this.emit()
   }
 
-  setWideMode(enabled: boolean) {
-    if (this.state.wideMode === enabled) return
-    this.state = { ...this.state, wideMode: enabled }
-    localStorage.setItem(STORAGE_KEY_WIDE_MODE, String(enabled))
+  setChatContentWidth(width: number | null) {
+    if (this.state.chatContentWidth === width) return
+    this.state = { ...this.state, chatContentWidth: width }
+    if (width === null) {
+      localStorage.removeItem(STORAGE_KEY_CHAT_CONTENT_WIDTH)
+    } else {
+      localStorage.setItem(STORAGE_KEY_CHAT_CONTENT_WIDTH, String(width))
+    }
     this.emit()
   }
 
-  toggleWideMode() {
-    this.setWideMode(!this.state.wideMode)
+  resetChatContentWidth() {
+    this.setChatContentWidth(null)
   }
 
   setDiffStyle(style: DiffStyle) {
@@ -1059,11 +1077,13 @@ function normalizeThemeBackup(raw: unknown): ThemeBackup {
         ? { ...DEFAULT_STEP_FINISH_DISPLAY, ...(parsed.stepFinishDisplay as Partial<StepFinishDisplay>) }
         : DEFAULT_STEP_FINISH_DISPLAY,
     completedAtFormat: parsed?.completedAtFormat === 'dateTime' ? 'dateTime' : DEFAULT_COMPLETED_AT_FORMAT,
-    reasoningDisplayMode:
-      parsed?.reasoningDisplayMode === 'italic' || parsed?.reasoningDisplayMode === 'markdown'
-        ? parsed.reasoningDisplayMode
-        : DEFAULT_REASONING_DISPLAY_MODE,
-    wideMode: parsed?.wideMode === true,
+    reasoningDisplayMode: normalizeReasoningDisplayMode(
+      typeof parsed?.reasoningDisplayMode === 'string' ? parsed.reasoningDisplayMode : undefined,
+    ),
+    chatContentWidth:
+      typeof parsed?.chatContentWidth === 'number' && Number.isFinite(parsed.chatContentWidth) && parsed.chatContentWidth > 0
+        ? parsed.chatContentWidth
+        : null,
     diffStyle: parsed?.diffStyle === 'changeBars' ? 'changeBars' : DEFAULT_DIFF_STYLE,
     descriptiveToolSteps:
       typeof parsed?.descriptiveToolSteps === 'boolean' ? parsed.descriptiveToolSteps : DEFAULT_DESCRIPTIVE_TOOL_STEPS,
@@ -1145,7 +1165,11 @@ export function importThemeBackup(raw: unknown): void {
   localStorage.setItem(STORAGE_KEY_STEP_FINISH_DISPLAY, JSON.stringify(backup.stepFinishDisplay))
   localStorage.setItem(STORAGE_KEY_COMPLETED_AT_FORMAT, backup.completedAtFormat)
   localStorage.setItem(STORAGE_KEY_REASONING_DISPLAY_MODE, backup.reasoningDisplayMode)
-  localStorage.setItem(STORAGE_KEY_WIDE_MODE, String(backup.wideMode))
+  if (backup.chatContentWidth === null) {
+    localStorage.removeItem(STORAGE_KEY_CHAT_CONTENT_WIDTH)
+  } else {
+    localStorage.setItem(STORAGE_KEY_CHAT_CONTENT_WIDTH, String(backup.chatContentWidth))
+  }
   localStorage.setItem(STORAGE_KEY_DIFF_STYLE, backup.diffStyle)
   localStorage.setItem(STORAGE_KEY_DESCRIPTIVE_TOOL_STEPS, String(backup.descriptiveToolSteps))
   localStorage.setItem(STORAGE_KEY_INLINE_TOOL_REQUESTS, String(backup.inlineToolRequests))
