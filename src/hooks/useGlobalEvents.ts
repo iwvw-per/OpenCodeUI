@@ -365,7 +365,10 @@ function collectActiveServerIds(): string[] {
   }
   const activeId = serverStore.getActiveServerId()
   if (activeId) ids.add(activeId)
-  return Array.from(ids)
+  // 过滤未注册服务器：getServerBaseUrl 对未知 id 会静默回退到 local，不过滤就会
+  // 把 local 的数据写到该 id 的键下（数据串服）。服务器注册进 serverStore 时
+  // 会 notify，届时重算自然入集。
+  return Array.from(ids).filter(id => serverStore.getServer(id) !== null)
 }
 
 export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readonly string[]>) {

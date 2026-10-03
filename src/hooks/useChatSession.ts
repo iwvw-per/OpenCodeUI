@@ -47,7 +47,6 @@ import {
 import { getMessageText, isUserMessage, type AssistantMessageInfo, type Message as UIMessage } from '../types/message'
 import { clipboardErrorHandler, copyTextToClipboard, createErrorHandler } from '../utils'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
-import { diag } from '../utils/diag'
 import { serverStorage } from '../utils/perServerStorage'
 import { sessionKeyToServerId, splitSessionKey, makeSessionKey } from '../utils/sessionKey'
 import { serverStore } from '../store/serverStore'
@@ -150,17 +149,6 @@ export function useChatSession({
     () => (routeSessionId ? sessionKeyToServerId(routeSessionId) : activeServerId),
     [routeSessionId, activeServerId],
   )
-
-  // 诊断：暴露 pane 绑定的会话 key 与服务器，用于比对 SSE 事件的 serverId
-  useEffect(() => {
-    diag('PANE', 'binding', {
-      routeSessionId,
-      paneServerId,
-      activeServerId,
-      isComposite: routeSessionId ? routeSessionId.includes('::') : null,
-      storeHasBucket: routeSessionId ? !!messageStore.getSessionState(routeSessionId) : null,
-    })
-  }, [routeSessionId, paneServerId, activeServerId])
 
   const handleMissingRouteSession = useCallback(
     (missingSessionId: string) => {
@@ -781,13 +769,6 @@ export function useChatSession({
           sessionId = newSession.id
           navigateToSession(sessionId, newSession.directory)
         }
-        diag('SEND', 'sendMessageNow', {
-          inputSessionId: input.sessionId,
-          resolvedSessionId: sessionId,
-          isComposite: sessionId.includes('::'),
-          paneServerId,
-          activeServerId: serverStore.getActiveServerId(),
-        })
 
         if (rollbackSnapshot) {
           messageStore.truncateAfterRevert(sessionId)
@@ -811,10 +792,6 @@ export function useChatSession({
           }),
           input.directory,
         )
-        diag('SEND', 'optimistic upserted', {
-          storeBucket: sessionId,
-          count: messageStore.getSessionState(sessionId)?.messages.length ?? -1,
-        })
         // 基线在乐观消息之后取，兜底回拉仍能识别服务端的 canonical user message。
         const msgCountBeforeSend = messageStore.getSessionState(sessionId)?.messages.length ?? 0
 
