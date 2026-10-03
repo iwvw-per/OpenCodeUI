@@ -1,5 +1,23 @@
 # Changelog
 
+## [v0.6.114] - 2026-10-03
+
+- refactor(tools): 卡住判定改用 useState+useEffect，避免渲染期写 ref (3fe614ae)
+- chore: bump version to 0.6.114-canary.5 (aab60789)
+- test(tools): 补工具卡住判定测试（会话运行态与产出停更） (f94efa7a)
+- fix(tools): 工具卡住判定综合会话运行态与产出，避免长命令误报 (506821fd)
+- chore: 清理临时诊断 + 移植上游未注册服务器过滤 + 删死代码 (8120c4cf)
+- chore: bump version to 0.6.114-canary.4 (28d10191)
+- fix(outline): 回滚轮次轴全量渲染，恢复视口附近裁剪，修复内容区空白 (3fd0ad4f)
+- chore: bump version to 0.6.114-canary.3 (6bca47d2)
+- test(store): 修正乐观消息去重测试的类型（用 store Message 而非 ApiMessageWithParts） (0d0fe069)
+- chore: bump version to 0.6.114-canary.2 (6360251f)
+- fix(chat): 用客户端 msg id 精确替换乐观消息，修复发送后用户消息重复 (dd030d56)
+- chore: bump version to 0.6.114-canary.1 (ea0a4bde)
+- feat(sessions): 会话活动锚点排序 + 多前缀事件归并 + 欢迎页 (32bf77b3)
+- fix(tauri): SSE 流式请求补 Accept 头，修复经网关事件流超时 (39a3e4c0)
+- chore: ignore local agent debug artifacts (d696a9c1)
+
 ## [v0.6.114-canary.5] - 2026-10-03 (Pre-release)
 
 - test(tools): 补工具卡住判定测试（会话运行态与产出停更） (f94efa7a)
