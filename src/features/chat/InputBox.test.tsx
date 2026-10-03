@@ -19,9 +19,11 @@ vi.mock('../attachment', () => ({
   AttachmentPreview: () => null,
 }))
 
+const viewportState = vi.hoisted(() => ({ enableCollapsedInputDock: false }))
+
 vi.mock('./chatViewport', () => ({
   useChatViewport: () => ({
-    presentation: { surfaceVariant: 'desktop', isCompact: false, isWideMode: false },
+    presentation: { surfaceVariant: 'desktop', isCompact: false },
     interaction: {
       mode: 'pointer',
       touchCapable: false,
@@ -29,7 +31,7 @@ vi.mock('./chatViewport', () => ({
       rightPanelBehavior: 'docked',
       bottomPanelBehavior: 'docked',
       outlineInteraction: 'pointer',
-      enableCollapsedInputDock: false,
+      enableCollapsedInputDock: viewportState.enableCollapsedInputDock,
     },
   }),
 }))
@@ -73,12 +75,9 @@ vi.mock('../slash-command', () => ({
   ),
 }))
 
+// 发送/停止已迁到右下角的 ChatFab；工具栏 mock 只保留结构占位。
 vi.mock('./input/InputToolbar', () => ({
-  InputToolbar: ({ onSend, canSend }: { onSend: () => void; canSend: boolean }) => (
-    <button type="button" onClick={onSend} disabled={!canSend}>
-      send
-    </button>
-  ),
+  InputToolbar: () => null,
 }))
 
 vi.mock('./input/InputFooter', () => ({
@@ -106,18 +105,67 @@ vi.mock('../../store/keybindingStore', () => ({
 }))
 
 describe('InputBox 收起动画', () => {
-  it('展开态：输入区不缩不放、可见，且无胶囊', () => {
+  beforeEach(() => {
+    viewportState.enableCollapsedInputDock = false
+  })
+
+  it('展开态：输入区可见、无 data-collapsed、无胶囊内容层', () => {
     render(<InputBox paneId="pane-test" onSend={vi.fn()} />)
 
-    const textarea = screen.getByRole('textbox')
-    const inputWrapper = textarea.closest('[class*="opacity-100"]')
-
-    expect(inputWrapper).not.toBeNull()
-    expect(inputWrapper?.className).toContain('scale-100')
-    expect(inputWrapper?.className).toContain('origin-bottom')
-    // 收起用的位移与缩放不应出现在展开态
-    expect(inputWrapper?.className).not.toContain('scale-[0.94]')
+    const inputBox = document.querySelector('[data-input-box]') as HTMLElement
+    expect(inputBox).not.toBeNull()
+    // 收起态由容器自身的 data-collapsed + CSS 几何变形表达，展开态不应带该属性
+    expect(inputBox.hasAttribute('data-collapsed')).toBe(false)
+    // 独立胶囊组件已移除，收起文案改为容器内的绝对定位层
     expect(document.querySelector('.animate-composer-capsule-in')).toBeNull()
+  })
+
+  it('启用收起且离底时：同一个输入框容器带上 data-collapsed（单元素形变）', () => {
+    viewportState.enableCollapsedInputDock = true
+    render(<InputBox paneId="pane-test" onSend={vi.fn()} isAtBottom={false} />)
+
+    const inputBox = document.querySelector('[data-input-box]') as HTMLElement
+    expect(inputBox).not.toBeNull()
+    expect(inputBox.hasAttribute('data-collapsed')).toBe(true)
+    // 仍然是同一个容器，没有被替换成独立的胶囊元素
+    expect(document.querySelector('.animate-composer-capsule-in')).toBeNull()
+  })
+
+  it('收起翻转时：挂上 data-morphing 打开 CSS 几何过渡，并把高度写成药丸像素值', () => {
+    viewportState.enableCollapsedInputDock = true
+    const { rerender } = render(<InputBox paneId="pane-test" onSend={vi.fn()} isAtBottom />)
+
+    const inputBox = document.querySelector('[data-input-box]') as HTMLElement
+    expect(inputBox.hasAttribute('data-morphing')).toBe(false)
+
+    rerender(<InputBox paneId="pane-test" onSend={vi.fn()} isAtBottom={false} />)
+
+    // 几何动画交给 CSS：翻转那一帧挂 data-morphing，收起态再叠加 data-collapsed。
+    expect(inputBox.hasAttribute('data-morphing')).toBe(true)
+    expect(inputBox.hasAttribute('data-collapsed')).toBe(true)
+    // 高度两端都是确定像素值，CSS 才能插值（展开态由 syncBoxHeight 写自然高度）。
+    // 收起态药丸高度与 ChatFab 收起态等高（--chat-fab-collapsed-size = 36px），
+    // 两者并排时视觉上是一组；见 InputBox.tsx 的 COLLAPSED_BOX_HEIGHT。
+    expect(inputBox.style.height).toBe('36px')
+  })
+
+  it('FAB 在收起态是「回到底部」，展开态是「发送」，且是锚点的子节点', () => {
+    viewportState.enableCollapsedInputDock = false
+    const { rerender } = render(<InputBox paneId="pane-test" onSend={vi.fn()} />)
+
+    const anchor = document.querySelector('.chat-fab-anchor') as HTMLElement
+    expect(anchor).not.toBeNull()
+    // FAB 必须挂在锚点内部，right 才会相对输入框右缘解析
+    const fab = anchor.querySelector('.chat-fab') as HTMLButtonElement
+    expect(fab).not.toBeNull()
+    expect(fab.dataset.collapsed).toBe('false')
+    expect(fab.dataset.mode).toBe('send')
+
+    // 离底 + 启用收起 → 收起态，FAB 变回底
+    viewportState.enableCollapsedInputDock = true
+    rerender(<InputBox paneId="pane-test" onSend={vi.fn()} isAtBottom={false} />)
+    expect(fab.dataset.collapsed).toBe('true')
+    expect(fab.dataset.mode).toBe('scroll')
   })
 })
 
@@ -166,7 +214,7 @@ describe('InputBox slash command selection', () => {
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     fireEvent.change(textarea, { target: { value: 'hello world' } })
-    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
     await waitFor(() => {
       expect(onSend).toHaveBeenCalledWith('hello world', [], { agent: undefined, variant: undefined })
@@ -188,7 +236,7 @@ describe('InputBox slash command selection', () => {
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     fireEvent.change(textarea, { target: { value: 'pending send' } })
-    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
     expect(textarea.value).toBe('')
 
@@ -214,7 +262,7 @@ describe('InputBox slash command selection', () => {
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     fireEvent.change(textarea, { target: { value: 'will fail' } })
-    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
     expect(textarea.value).toBe('')
 
@@ -240,7 +288,7 @@ describe('InputBox slash command selection', () => {
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     fireEvent.change(textarea, { target: { value: 'first' } })
-    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
     expect(textarea.value).toBe('')
 
@@ -275,7 +323,7 @@ describe('InputBox slash command selection', () => {
       expect(textarea.value).toBe('/review ')
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
     expect(onCommand).toHaveBeenCalledWith('/review')
     expect(textarea.value).toBe('')
@@ -309,7 +357,7 @@ describe('InputBox slash command selection', () => {
       expect(textarea.value).toBe('/review ')
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
     expect(textarea.value).toBe('')
 
     await act(async () => {
@@ -335,7 +383,7 @@ describe('InputBox slash command selection', () => {
       expect(textarea.value).toBe('/review ')
     })
 
-    fireEvent.click(screen.getByRole('button', { name: 'send' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
     await waitFor(() => {
       expect(textarea.value).toBe('/review ')

@@ -57,3 +57,11 @@ scripts/trace-session-load.mjs
 
 # 临时探针脚本（可能含凭据，禁止提交）
 probe-*.mjs
+
+# 会话历史导出（体量大且含完整对话内容，禁止提交）
+opencode-session-*.json
+
+# 性能测量脚本的输出产物（每次运行都会生成，不纳入版本控制）
+perf-*.json
+scratch-*.cjs
+scratch-*.mjs
