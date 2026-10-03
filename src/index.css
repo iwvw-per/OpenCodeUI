@@ -1759,6 +1759,7 @@ html[data-chat-width-dragging] .glass-alt {
 @media (prefers-reduced-motion: reduce) {
   [data-input-box],
   [data-floating-actions],
+  [data-welcome-layer],
   .todo-swap-panel {
     transition: none;
   }

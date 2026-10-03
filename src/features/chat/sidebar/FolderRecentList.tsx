@@ -457,7 +457,8 @@ export function FolderRecentList({
     registerRef,
   } = useReorderableList({
     ids: projects.map(project => project.id),
-    canDrag: id => !!projectById.get(id)?.canReorder && !isEditMode,
+    // 项目列表始终按最后对话时间自动排序，不再支持拖拽重排
+    canDrag: () => false,
     onCommit: (draggedId, targetId) => {
       const draggedProject = projectById.get(draggedId)
       const targetProject = projectById.get(targetId)

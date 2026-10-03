@@ -171,6 +171,11 @@ export interface InputBoxProps {
   // Collapsed dialog capsules
   collapsedPermission?: CollapsedDialogInfo
   collapsedQuestion?: CollapsedDialogInfo
+  // 欢迎态（home 空态）隐藏底部 token/统计栏
+  hideFooter?: boolean
+  // 附加在输入框顶边的角标（如欢迎页项目选择按钮）。
+  // 作为输入框容器的子节点渲染，跟随输入框几何与层级，避免被输入框盖住或错位。
+  topAccessory?: React.ReactNode
 }
 
 // ============================================
@@ -211,6 +216,8 @@ function InputBoxComponent({
   onScrollToBottom,
   collapsedPermission,
   collapsedQuestion,
+  hideFooter = false,
+  topAccessory,
 }: InputBoxProps) {
   const { t } = useTranslation('chat')
   const { sendOnEnter } = useLayoutStore()
@@ -225,7 +232,7 @@ function InputBoxComponent({
       },
     [fileCapabilitiesProp, supportsImages],
   )
-  const { externalFileDropMode } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
+  const { externalFileDropMode, showInputStatusBar } = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot)
 
   // 是否有任何文件附件能力
   const supportsAnyFile = fileCaps.image || fileCaps.pdf || fileCaps.audio || fileCaps.video
@@ -379,6 +386,8 @@ function InputBoxComponent({
     const nextComposerMaxHeight = getComposerMaxHeight(paneHeight, isCompact)
     const attachmentHeight = attachments.length > 0 ? (attachmentSectionRef.current?.offsetHeight ?? 0) : 0
     const toolbarHeight = toolbarRef.current?.offsetHeight || INPUT_TOOLBAR_FALLBACK_HEIGHT
+    // footer 的布局高度恒为 h-8（2rem），与信息栏内容是否渲染无关：
+    // 它是底部缓冲不变量的一半，不能随 showInputStatusBar 变化，否则收起/展开总高不等。
     const footerHeight = isCollapsed ? 0 : footerRef.current?.offsetHeight || INPUT_FOOTER_FALLBACK_HEIGHT
     const inputContainerChrome = attachmentHeight + toolbarHeight + TEXTAREA_VERTICAL_CHROME
     const nextInputContainerMaxHeight = Math.max(
@@ -1326,13 +1335,18 @@ function InputBoxComponent({
     return set
   }, [attachments])
 
+  // 底部缓冲基准值：
+  // - 信息栏可见：底部那条 h-8(2rem) 信息栏本身就撑出了呼吸空间，基准 = 2rem；
+  // - 信息栏隐藏（默认）：没有信息栏托底，若不留缓冲输入框会直接贴底，
+  //   所以把基准改为 0.75rem(12px)，用 padding 补出与信息栏相当的呼吸空间。
   // 底部 padding 计算：
   // 核心约束：收起/展开态的总底部缓冲必须相等，否则折叠时 inputBoxHeight 变化
   // → bottomPadding 变化 → virtualizer paddingEnd 变化（virtual-core 不补偿 paddingEnd）
   // → dist 平移 → isCollapsed 翻转回 → 振荡闪烁。
   //
-  // 展开态总缓冲 = Footer(h-8=2rem) + padding = 2rem + max(0, env-2rem) = max(2rem, env)
-  // 收起态总缓冲 = 0(无 Footer) + padding → padding 必须 = max(2rem, env)
+  // Footer 的布局高度恒为 h-8=2rem（信息栏内容是否渲染都一样），所以：
+  //   展开态总缓冲 = Footer(2rem) + padding = 2rem + max(0, env-2rem) = max(2rem, env)
+  //   收起态总缓冲 = 0(无 Footer) + padding → padding 必须 = max(2rem, env)
   //
   // - env ≥ 2rem（iPhone home indicator）：收起 = env，胶囊贴 safe-area 顶，无多截
   // - env < 2rem（PC / 部分 Android）：收起 = 2rem，胶囊与展开态 Footer 位置对齐
@@ -1346,7 +1360,10 @@ function InputBoxComponent({
   const collapsedVisualOffset = isCollapsed ? 'translateY(calc(2rem - 0.75rem))' : 'none'
 
   // ---- FAB 模式：收起态回到底部，展开态发送 / 停止（与工具栏共用同一套判定） ----
-  const fabMode: ChatFabMode = isCollapsed ? 'scroll' : !canSend && isStreaming && !isSubmitting ? 'stop' : 'send'
+  // 运行中（isStreaming）且输入框为空即进入停止态，不再排除 isSubmitting：
+  // prompt 请求往返期间 isSubmitting 仍为 true，若据此回退到 send 分支，按钮会被
+  // disabled 变灰，用户看到「正在运行却点不了停止」。
+  const fabMode: ChatFabMode = isCollapsed ? 'scroll' : !canSend && isStreaming ? 'stop' : 'send'
   const fabDisabled = fabMode === 'send' && (!canSend || isSubmitting)
   const handleFabClick = useCallback(() => {
     if (fabMode === 'scroll') {
@@ -1537,6 +1554,11 @@ function InputBoxComponent({
                 FAB 是锚点的子节点，因此 right 相对输入框右缘解析——
                 收起时挂在药丸右侧，展开时滑到输入框右下角。 */}
             <div className="relative">
+              {/* 顶边角标（欢迎页项目选择）：骑在输入框顶边线上，与输入框同一子树、
+                  同一层级，随输入框一起移动，不会被输入框覆盖。 */}
+              {topAccessory && (
+                <div className="absolute left-0 top-0 z-40 -translate-y-1/2">{topAccessory}</div>
+              )}
               <div className="chat-fab-anchor" data-collapsed={isCollapsed}>
                 <ChatFab
                   collapsed={isCollapsed}
@@ -1697,14 +1719,21 @@ function InputBoxComponent({
           </div>
         </div>
 
-        {/* Footer: 常驻 DOM，收起用 hidden。避免 isCollapsed 抖一下时卸载整行（自动放行/免责声明闪烁） */}
+        {/* Footer: 常驻 DOM，收起用 hidden。避免 isCollapsed 抖一下时卸载整行（自动放行/免责声明闪烁）。
+            布局高度恒为 h-8（不随信息栏显隐变化）——它是底部缓冲不变量的一半，
+            收起/展开总高必须相等，否则 inputBoxHeight 跳变、消息区跟着跳。
+            信息栏内容本身按设置/欢迎态条件渲染：
+            - 欢迎态（hideFooter）：空会话没有 token/任务统计；
+            - 设置项 showInputStatusBar 关闭（默认）：用户不想看这条信息栏。 */}
         <div
           ref={footerRef}
           onPointerDown={handleContainerPointerDown}
-          className={`h-8 flex items-center justify-center ${isCollapsed ? 'hidden' : ''}`}
+          className={`h-8 ${isCollapsed ? 'hidden' : 'flex items-center justify-center'}`}
           aria-hidden={isCollapsed || undefined}
         >
-          <InputFooter paneId={paneId} sessionId={sessionId} inputContainerRef={inputContainerRef} />
+          {!hideFooter && showInputStatusBar && (
+            <InputFooter paneId={paneId} sessionId={sessionId} inputContainerRef={inputContainerRef} />
+          )}
         </div>
       </div>
     </div>

@@ -175,19 +175,17 @@ function nearestIndexFromY(count: number, cursorY: number, railCenterY: number, 
  *  若只有一条匹配则退化为第一条。 */
 function findBiasedVisibleIndex(entries: OutlineEntry[], ownerVisibleIds?: Set<string>): number {
   if (!ownerVisibleIds || ownerVisibleIds.size === 0) return -1
-  let first = -1
-  let second = -1
+  let last = -1
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i]
     if (entry && ownerVisibleIds.has(entry.messageId)) {
-      if (first === -1) first = i
-      else {
-        second = i
-        break
-      }
+      last = i
     }
   }
-  return second !== -1 ? second : first
+  // When several turns intersect the viewport, the lower one is the one the
+  // user is currently reading. This also keeps the final turn highlighted at
+  // the bottom of a long conversation.
+  return last
 }
 
 
@@ -198,35 +196,6 @@ function formatEntries(entries: OutlineSourceEntry[], visual: VisualConfig): Out
     railLabel: truncateOutlineLabel(entry.title, visual.railLabelMax),
     overlayLabel: truncateOutlineLabel(entry.title, visual.overlayLabelMax),
   }))
-}
-
-/** 条目超过上限时，取可见区域附近的 N 条 */
-function sliceAroundVisible(entries: OutlineEntry[], visibleIds: string[], max: number): OutlineEntry[] {
-  if (entries.length <= max) return entries
-
-  const visibleSet = new Set(visibleIds)
-  let first = -1
-  let last = -1
-  for (let i = 0; i < entries.length; i++) {
-    if (visibleSet.has(entries[i].messageId)) {
-      if (first === -1) first = i
-      last = i
-    }
-  }
-  if (first === -1) return entries.slice(-max)
-
-  const center = Math.floor((first + last) / 2)
-  let start = center - Math.floor(max / 2)
-  let end = start + max
-  if (start < 0) {
-    start = 0
-    end = max
-  }
-  if (end > entries.length) {
-    end = entries.length
-    start = Math.max(0, end - max)
-  }
-  return entries.slice(start, end)
 }
 
 // ─── Shared: TickRail ───────────────────────
@@ -361,10 +330,10 @@ export const OutlineIndex = memo(function OutlineIndex({
   const visual = presentation.isCompact ? COMPACT_VISUAL : DESKTOP_VISUAL
   const outlineSourceEntries = useMemo(() => sourceEntries ?? buildOutlineSourceEntries(messages), [messages, sourceEntries])
   const allEntries = useMemo(() => formatEntries(outlineSourceEntries, visual), [outlineSourceEntries, visual])
-  const entries = useMemo(
-    () => sliceAroundVisible(allEntries, visibleMessageIds ?? [], visual.maxEntries),
-    [allEntries, visibleMessageIds, visual.maxEntries],
-  )
+  // Keep the complete outline available. The rail itself is viewport-clipped
+  // and scrollable, so long sessions no longer lose older/final turns behind
+  // the fixed entry cap.
+  const entries = allEntries
   const resolvedOwnerByMessageId = useMemo(() => {
     if (ownerByMessageId) return ownerByMessageId
 
@@ -521,7 +490,7 @@ const PointerFisheye = memo(function PointerFisheye({ entries, onSelect, visual,
         }}
         onMouseEnter={onTickEnter}
       >
-        <div ref={railRef} className="pointer-events-none flex flex-col items-end" style={buildRailVars(entries.length, visual.fisheye)}>
+        <div ref={railRef} className="pointer-events-none max-h-[78vh] overflow-y-auto flex flex-col items-end" style={buildRailVars(entries.length, visual.fisheye)}>
           <TickRail entries={entries} visual={visual} />
         </div>
       </div>
@@ -693,7 +662,7 @@ const TouchFisheye = memo(function TouchFisheye({ entries, onSelect, visual, own
 
       <div
         ref={railRef}
-        className="absolute top-1/2 -translate-y-1/2 z-[15] flex flex-col items-end select-none"
+        className="absolute top-1/2 -translate-y-1/2 z-[15] max-h-[78vh] overflow-y-auto flex flex-col items-end select-none"
         style={{ right: `${visual.rightOffset}px`, ...buildRailVars(entries.length, visual.fisheye) }}
       >
         <TickRail entries={entries} visual={visual} />

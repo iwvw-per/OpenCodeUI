@@ -5,7 +5,8 @@ import { HostQuickSwitcher } from './HostQuickSwitcher'
 import { SessionSortMenu } from './SessionSortMenu'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
-import { getProjectGroupIdentity, sortProjectsByMode } from './projectGrouping'
+import { getProjectGroupIdentity, sortProjects } from './projectGrouping'
+import { sessionActivityStore } from '../../../store/sessionActivityStore'
 import { mergeExpandedProjectNames } from './expandedProjects'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { IconButton } from '../../../components/ui/IconButton'
@@ -171,8 +172,7 @@ export function SidePanel({
   // 这样多端看到的是同一份，用户不必在每台设备上重复隐藏噪音目录。
   const activeServerId = activeServer?.id ?? 'local'
   const { catalog: gitWorkspaceCatalog } = useGitWorkspaceCatalog(catalogDirectories, catalogServerId)
-  const { sidebarChildSessions, sidebarSessionSortField, sidebarSessionSortDesc, sidebarProjectSortMode } =
-    useLayoutStore()
+  const { sidebarChildSessions, sidebarProjectSortField, sidebarProjectSortDesc } = useLayoutStore()
   // all = 始终列出全部子会话；active = 只列活跃/正在查看；off = 不额外列出
   const showAllChildSessions = sidebarChildSessions === 'all'
   const showActiveChildSessions = sidebarChildSessions !== 'off'
@@ -725,8 +725,16 @@ export function SidePanel({
     return [...folderProjects]
   }, [folderProjects])
 
-  // ---- 项目行「最后使用时间」----
-  // 来源：按目录单独拉取服务端会话时间；本地点击记录（recentProjects）作兜底。
+  // 锚点变化版本：用户发送/加载会话时触发器通知，用于实时重算项目顺序与时间。
+  const activityVersion = useSyncExternalStore(
+    cb => sessionActivityStore.subscribe(() => cb()),
+    () => sessionActivityStore.getVersion(),
+    () => sessionActivityStore.getVersion(),
+  )
+
+  // ---- 项目行「最后对话时间」----
+  // 优先用会话活动锚点（用户最后一条消息时间，实时、单调）；冷启动时回退到
+  // 服务端按目录拉取的最大会话时间；再兜底本地点击记录（recentProjects）。
   const uncoveredProjectWorktrees = useMemo(
     () => allDisplayedProjects.map(project => normalizeToForwardSlash(project.worktree || '')).filter(Boolean),
     [allDisplayedProjects],
@@ -736,41 +744,30 @@ export function SidePanel({
   const projectLastUsedAt = useMemo(() => {
     const map: Record<string, number> = { ...recentProjects }
     for (const [directory, updated] of Object.entries(fetchedProjectLastUsed)) map[directory] = updated
+    // 锚点优先级最高：本地最新活动覆盖服务端/本地点击记录的旧值
+    for (const worktree of uncoveredProjectWorktrees) {
+      const anchor = sessionActivityStore.getDirectoryAnchor(activeServerId, worktree)
+      if (anchor !== undefined) map[worktree] = anchor
+    }
     return map
-  }, [recentProjects, fetchedProjectLastUsed])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentProjects, fetchedProjectLastUsed, uncoveredProjectWorktrees, activeServerId, activityVersion])
 
   /**
-   * 项目（文件夹）的最终显示顺序。
+   * 项目（文件夹）的最终显示顺序：始终自动排序，不保留手动拖拽顺序。
    *
-   * 只对「已保存项目」（canReorder）排序，派生项目（当前打开目录 / 会话推导）
-   * 保持 folderProjects 里的固定位置：它们随会话/目录切换而变，参与重排就会让
-   * 项目行乱跳。
-   *
-   * auto + created：按项目保存时间（稳定值）排序，会话活动不改变顺序；
-   * auto + updated：按最后使用时间排序（顺序会随活动变化）；
-   * manual：保持用户拖拽保存的顺序。
+   * created：按项目保存时间（稳定值）；updated：按最后一次对话时间（默认）。
+   * 时间缺失的项目排到末尾（created 下派生项目无 addedAt，自然沉底）。
    */
   const sortedFolderProjects = useMemo(() => {
-    if (sidebarProjectSortMode === 'manual') return folderProjects
-
-    const saved = folderProjects.filter(project => project.canReorder)
-    if (saved.length === 0) return folderProjects
-
-    const sortedSaved = sortProjectsByMode(
-      saved,
-      sidebarProjectSortMode,
-      sidebarSessionSortField,
-      projectLastUsedAt,
-      sidebarSessionSortDesc,
-    )
-    const sortedById = new Map(sortedSaved.map(project => [project.id, project]))
-    return folderProjects.map(project => sortedById.get(project.id) ?? project)
+    return sortProjects(folderProjects, sidebarProjectSortField, projectLastUsedAt, sidebarProjectSortDesc)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     folderProjects,
     projectLastUsedAt,
-    sidebarSessionSortField,
-    sidebarSessionSortDesc,
-    sidebarProjectSortMode,
+    sidebarProjectSortField,
+    sidebarProjectSortDesc,
+    activityVersion,
   ])
 
   // 需求 3：点击项目目录/名称不跳转（只展开/收起），只有点击会话才导航。
@@ -785,6 +782,7 @@ export function SidePanel({
     [allDisplayedProjects],
   )
 
+  // 仅用于 git workspace 内部「工作区文件夹」的拖拽重排（项目行本身不再可拖拽）。
   const handleReorderProjectGroup = useCallback(
     (draggedId: string, targetId: string) => {
       const draggedIdx = folderProjects.findIndex(project => project.id === draggedId)
@@ -796,8 +794,6 @@ export function SidePanel({
       const targetReorderPath = folderProjects[targetIdx].reorderPath
       if (!draggedReorderPath || !targetReorderPath) return
       reorderDirectories(draggedReorderPath, targetReorderPath)
-      // 拖拽即切换到手动顺序：否则下一次自动排序会把刚拖的结果覆盖掉
-      layoutStore.setSidebarProjectSortMode('manual')
     },
     [folderProjects, reorderDirectories],
   )

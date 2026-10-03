@@ -594,6 +594,10 @@ function App() {
   }, [openSettingsTab])
   const closeSettings = useCallback(() => setSettingsDialogOpen(false), [])
 
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false)
+  const openProject = useCallback(() => setProjectDialogOpen(true), [])
+  const closeProjectDialog = useCallback(() => setProjectDialogOpen(false), [])
+
   const renderPaneLeaf = useCallback(
     (paneId: string, paneSessionId: string | null) => (
       <ChatPane
@@ -610,6 +614,7 @@ function App() {
         onSplitPane={splitPaneEnabled && !paneLayout.fullscreenPaneId ? handleEnterSplitMode : undefined}
         onTogglePaneFullscreen={paneLayout.isSplit ? handleToggleFocusedPaneFullscreen : undefined}
         onOpenSettings={openSettings}
+        onOpenProject={openProject}
         navigatePaneToSession={navigatePaneToSession}
         navigatePaneHome={navigatePaneHome}
       />
@@ -626,14 +631,11 @@ function App() {
       handleEnterSplitMode,
       handleToggleFocusedPaneFullscreen,
       openSettings,
+      openProject,
       navigatePaneToSession,
       navigatePaneHome,
     ],
   )
-
-  const [projectDialogOpen, setProjectDialogOpen] = useState(false)
-  const openProject = useCallback(() => setProjectDialogOpen(true), [])
-  const closeProjectDialog = useCallback(() => setProjectDialogOpen(false), [])
 
   // 桌面端把应用顶栏并入标题栏：仅当聚焦 pane 是 single（非 split，或 split 中被全屏）
   // 时传入 Header handlers，让 DesktopTitlebar 内嵌渲染 Header 内容。

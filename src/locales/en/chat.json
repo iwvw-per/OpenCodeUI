@@ -37,7 +37,22 @@
     "current": "(current)",
     "enterCustomPath": "Enter custom path...",
     "startConversation": "Start Conversation",
-    "orJustType": "Or just type a message below to start with the current directory"
+    "orJustType": "Or just type a message below to start with the current directory",
+    "noProject": "No project",
+    "switchProject": "Switch project",
+    "searchProjects": "Search projects",
+    "noMatchingProjects": "No matching projects",
+    "newProject": "New project",
+    "workOutsideProject": "Work without a project",
+    "greetings": {
+      "lateNight": ["Night owl, what are we building?", "It's late, and inspiration is right on time.", "Code written at 3am hits different."],
+      "earlyMorning": ["Good morning, start with a build.", "Early hours, big ideas. What's up?", "The early bird fixes the bug."],
+      "morning": ["Good morning. What are we building?", "Peak focus. Tell me your idea.", "Let's get to work. What's on your mind?"],
+      "noon": ["Lunch break? Perfect time to code.", "Midday. What's on the afternoon list?", "Refueled. Let's build."],
+      "afternoon": ["Good afternoon, grab a coffee.", "Tea time. What are we building?", "You're in the zone. What's the plan?"],
+      "evening": ["Good evening. What are we building?", "After hours are for creating.", "Night mode on. Let's go."],
+      "night": ["Late night, did inspiration strike?", "Up late again? Tell me your idea.", "Quiet night, good for code."]
+    }
   },
   "inputBox": {
     "dropFilesHere": "Drop files here",
@@ -222,6 +237,8 @@
     "sortDirection": "Direction",
     "sortByUpdated": "Last updated",
     "sortByCreated": "Created",
+    "sortProjectsByUpdated": "Last message",
+    "sortProjectsByCreated": "Date added",
     "sortDesc": "Newest first",
     "sortAsc": "Oldest first",
     "archivedChats": "Archived chats",

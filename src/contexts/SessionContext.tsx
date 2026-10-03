@@ -15,9 +15,9 @@ import {
   type SessionListBucketKey,
 } from '../store/sessionListIndexStore'
 import { useDirectory } from './useDirectory'
-import { sessionErrorHandler, normalizeToForwardSlash, autoDetectPathStyle, sortSessions, isSameDirectory } from '../utils'
+import { sessionErrorHandler, normalizeToForwardSlash, autoDetectPathStyle, isSameDirectory } from '../utils'
 import { makeSessionKey } from '../utils/sessionKey'
-import { layoutStore } from '../store/layoutStore'
+import { sortSessionsByAnchor } from '../store/sessionActivityStore'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { SessionContext, type SessionContextValue } from './SessionContext.shared'
 
@@ -64,16 +64,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     searchRef.current = search
   }, [search])
-
-  // 排序偏好：搜索态用它就地排序；常规列表由 index store 负责排序。
-  // 直接读当前值（不进 effect/ref，避免偏好变化那一帧用到旧值）
-  const getSortPreference = useCallback(
-    () => ({
-      field: layoutStore.getState().sidebarSessionSortField,
-      desc: layoutStore.getState().sidebarSessionSortDesc,
-    }),
-    [],
-  )
 
   const targetDir = normalizeToForwardSlash(currentDirectory) || undefined
   const searching = search !== ''
@@ -139,7 +129,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
 
         if (isSearch) {
-          setSearchSessions(sortSessions(data.slice(0, requestedLimit), getSortPreference()))
+          setSearchSessions(sortSessionsByAnchor(data.slice(0, requestedLimit)))
         } else {
           // 索引存全量页数据（含多取的那条），读取侧按 loadedLimit 切片
           sessionListIndexStore.replace(bucket, data, {
@@ -310,11 +300,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [hasMore, sessions.length, fetchSessions])
 
   const createSession = useCallback(
-    async (title?: string) => {
-      // 使用正斜杠格式传给后端
+    async (title?: string, directory?: string) => {
+      // 使用正斜杠格式传给后端；directory 用于在创建瞬间切换工作目录，
+      // targetDir 是渲染时冻结的值，同一时机传入可避免「切换项目后立即新建」
+      // 与目录同步到达顺序竞争，导致新会话仍落到旧目录。
       const newSession = await apiCreateSession({
         title,
-        directory: targetDir,
+        directory: directory ?? targetDir,
       })
       return newSession
     },

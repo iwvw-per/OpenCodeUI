@@ -97,7 +97,7 @@ describe('preferences sync', () => {
     expect(isSyncableKey('opencode:notification-event-settings')).toBe(true)
 
     expect(isSyncableKey('opencode-keybindings')).toBe(true)
-    expect(isSyncableKey('opencode-sidebar-session-sort')).toBe(true)
+    expect(isSyncableKey('opencode-sidebar-project-sort')).toBe(true)
     expect(isSyncableKey('opencode-bottom-panel-height')).toBe(true)
     expect(isSyncableKey('opencode-right-panel-width')).toBe(true)
     expect(isSyncableKey('opencode-pinned-sessions')).toBe(true)

@@ -3,7 +3,7 @@
 // ============================================
 
 // 直接引文件而非 '../utils' barrel：barrel 会连带 settingsBackup → store，形成循环依赖
-import { DEFAULT_SESSION_SORT, isSessionSortField, type SessionSortField } from '../utils/sessionSort'
+import { DEFAULT_PROJECT_SORT_FIELD, DEFAULT_PROJECT_SORT_DESC, isSessionSortField, type SessionSortField } from '../utils/sessionSort'
 import i18n from '../i18n'
 
 // 面板位置
@@ -106,13 +106,6 @@ function buildTerminalPanelTab(
 // 旧的 RightPanelView 类型 - 兼容
 export type RightPanelView = 'files' | 'changes'
 
-/** 项目文件夹排序模式：auto = 按最后使用时间实时排序；manual = 用户拖拽保存的顺序 */
-export type ProjectSortMode = 'auto' | 'manual'
-
-function isProjectSortMode(value: unknown): value is ProjectSortMode {
-  return value === 'auto' || value === 'manual'
-}
-
 interface LayoutState {
   // 统一的面板标签系统
   panelTabs: PanelTab[]
@@ -132,18 +125,16 @@ interface LayoutState {
    * - all：始终在父会话下列出全部子会话
    */
   sidebarChildSessions: ChildSessionsDisplayMode
-  /** 侧栏会话排序字段 */
-  sidebarSessionSortField: SessionSortField
-  /** 侧栏会话排序方向：true = 倒序（新→旧），false = 正序（旧→新） */
-  sidebarSessionSortDesc: boolean
   /**
-   * 侧栏「项目文件夹」排序模式：
-   * - auto：按最后使用时间自动排序（跟随会话活动实时更新）
-   * - manual：按用户拖拽保存的顺序（saved-directories 的顺序）
+   * 项目文件夹排序字段：
+   * - updated：按最后一次对话时间排序（默认）
+   * - created：按项目保存时间排序
    *
-   * 拖拽项目即切到 manual 并持久化；在排序菜单重新选择字段/方向时切回 auto。
+   * 会话列表固定「最新对话置顶」，不再提供排序选项，此偏好只作用于项目列表。
    */
-  sidebarProjectSortMode: ProjectSortMode
+  sidebarProjectSortField: SessionSortField
+  /** 项目排序方向：true = 倒序（新→旧），false = 正序（旧→新） */
+  sidebarProjectSortDesc: boolean
   /**
    * 侧栏展开的项目（按项目名记录，而非 id）。
    *
@@ -177,8 +168,7 @@ const STORAGE_KEY_SIDEBAR = 'opencode-sidebar-expanded'
 const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS = 'opencode-sidebar-folder-recents'
 const STORAGE_KEY_SIDEBAR_FOLDER_RECENTS_SHOW_DIFF = 'opencode-sidebar-folder-recents-show-diff'
 const STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS = 'opencode-sidebar-show-child-sessions'
-const STORAGE_KEY_SIDEBAR_SESSION_SORT = 'opencode-sidebar-session-sort'
-const STORAGE_KEY_SIDEBAR_PROJECT_SORT_MODE = 'opencode-sidebar-project-sort-mode'
+const STORAGE_KEY_SIDEBAR_PROJECT_SORT = 'opencode-sidebar-project-sort'
 const STORAGE_KEY_SIDEBAR_EXPANDED_PROJECTS = 'opencode-sidebar-expanded-projects'
 const STORAGE_KEY_SEND_ON_ENTER = 'opencode-send-on-enter'
 const STORAGE_KEY_PANEL_LAYOUT = 'opencode-panel-layout'
@@ -369,9 +359,8 @@ export class LayoutStore {
     sidebarFolderRecents: false,
     sidebarFolderRecentsShowDiff: true,
     sidebarChildSessions: 'active',
-    sidebarSessionSortField: DEFAULT_SESSION_SORT.field,
-    sidebarSessionSortDesc: DEFAULT_SESSION_SORT.desc,
-    sidebarProjectSortMode: 'auto',
+    sidebarProjectSortField: DEFAULT_PROJECT_SORT_FIELD,
+    sidebarProjectSortDesc: DEFAULT_PROJECT_SORT_DESC,
     sidebarExpandedProjects: [],
     sendOnEnter: true,
     rightPanelOpen: false,
@@ -511,25 +500,21 @@ export class LayoutStore {
         }
       }
 
-      // 排序偏好存成 JSON；解析失败/字段非法时保持默认（updated + 倒序）
+      // 项目排序偏好存成 JSON（沿用旧键以兼容历史设置）；解析失败/字段非法时
+      // 保持默认（updated + 倒序）
       try {
-        const rawSort = localStorage.getItem(STORAGE_KEY_SIDEBAR_SESSION_SORT)
+        const rawSort = localStorage.getItem(STORAGE_KEY_SIDEBAR_PROJECT_SORT)
         if (rawSort !== null) {
           const parsed = JSON.parse(rawSort) as { field?: unknown; desc?: unknown }
           if (isSessionSortField(parsed?.field)) {
-            this.state.sidebarSessionSortField = parsed.field
+            this.state.sidebarProjectSortField = parsed.field
           }
           if (typeof parsed?.desc === 'boolean') {
-            this.state.sidebarSessionSortDesc = parsed.desc
+            this.state.sidebarProjectSortDesc = parsed.desc
           }
         }
       } catch {
         // ignore malformed preference
-      }
-
-      const savedProjectSortMode = localStorage.getItem(STORAGE_KEY_SIDEBAR_PROJECT_SORT_MODE)
-      if (isProjectSortMode(savedProjectSortMode)) {
-        this.state.sidebarProjectSortMode = savedProjectSortMode
       }
 
       // 展开的项目名列表（跨端对齐用项目名，见 sidebarExpandedProjects 注释）
@@ -686,29 +671,13 @@ export class LayoutStore {
     this.notify()
   }
 
-  setSidebarSessionSort(field: SessionSortField, desc: boolean) {
-    if (this.state.sidebarSessionSortField === field && this.state.sidebarSessionSortDesc === desc) return
-    this.state.sidebarSessionSortField = field
-    this.state.sidebarSessionSortDesc = desc
+  /** 设置项目文件夹排序字段与方向（会话列表固定置顶，不受此偏好影响）。 */
+  setSidebarProjectSort(field: SessionSortField, desc: boolean) {
+    if (this.state.sidebarProjectSortField === field && this.state.sidebarProjectSortDesc === desc) return
+    this.state.sidebarProjectSortField = field
+    this.state.sidebarProjectSortDesc = desc
     try {
-      localStorage.setItem(STORAGE_KEY_SIDEBAR_SESSION_SORT, JSON.stringify({ field, desc }))
-    } catch {
-      /* ignore */
-    }
-    this.notify()
-  }
-
-  /**
-   * 项目文件夹排序模式。
-   *
-   * 拖拽项目后切到 manual（记住用户手工顺序）；在排序菜单重新选择字段/方向时
-   * 切回 auto（用户表达了「按时间重新排」的意图）。
-   */
-  setSidebarProjectSortMode(mode: ProjectSortMode) {
-    if (this.state.sidebarProjectSortMode === mode) return
-    this.state.sidebarProjectSortMode = mode
-    try {
-      localStorage.setItem(STORAGE_KEY_SIDEBAR_PROJECT_SORT_MODE, mode)
+      localStorage.setItem(STORAGE_KEY_SIDEBAR_PROJECT_SORT, JSON.stringify({ field, desc }))
     } catch {
       /* ignore */
     }
@@ -1444,9 +1413,8 @@ export interface LayoutBackup {
   sidebarFolderRecents: boolean
   sidebarFolderRecentsShowDiff: boolean
   sidebarChildSessions: ChildSessionsDisplayMode
-  sidebarSessionSortField: SessionSortField
-  sidebarSessionSortDesc: boolean
-  sidebarProjectSortMode: ProjectSortMode
+  sidebarProjectSortField: SessionSortField
+  sidebarProjectSortDesc: boolean
   sendOnEnter: boolean
   wakeLock: boolean
   rightPanelWidth: number
@@ -1492,9 +1460,8 @@ export function exportLayoutBackup(): LayoutBackup {
     sidebarFolderRecents: state.sidebarFolderRecents,
     sidebarFolderRecentsShowDiff: state.sidebarFolderRecentsShowDiff,
     sidebarChildSessions: state.sidebarChildSessions,
-    sidebarSessionSortField: state.sidebarSessionSortField,
-    sidebarSessionSortDesc: state.sidebarSessionSortDesc,
-    sidebarProjectSortMode: state.sidebarProjectSortMode,
+    sidebarProjectSortField: state.sidebarProjectSortField,
+    sidebarProjectSortDesc: state.sidebarProjectSortDesc,
     sendOnEnter: state.sendOnEnter,
     wakeLock: state.wakeLock,
     rightPanelWidth: state.rightPanelWidth,
@@ -1551,14 +1518,11 @@ export function importLayoutBackup(raw: unknown): void {
       : parsed?.sidebarShowChildSessions === true
         ? 'all'
         : 'active',
-    sidebarSessionSortField: isSessionSortField(parsed?.sidebarSessionSortField)
-      ? parsed.sidebarSessionSortField
-      : DEFAULT_SESSION_SORT.field,
-    sidebarSessionSortDesc:
-      typeof parsed?.sidebarSessionSortDesc === 'boolean' ? parsed.sidebarSessionSortDesc : DEFAULT_SESSION_SORT.desc,
-    sidebarProjectSortMode: isProjectSortMode(parsed?.sidebarProjectSortMode)
-      ? parsed.sidebarProjectSortMode
-      : 'auto',
+    sidebarProjectSortField: isSessionSortField(parsed?.sidebarProjectSortField)
+      ? parsed.sidebarProjectSortField
+      : DEFAULT_PROJECT_SORT_FIELD,
+    sidebarProjectSortDesc:
+      typeof parsed?.sidebarProjectSortDesc === 'boolean' ? parsed.sidebarProjectSortDesc : DEFAULT_PROJECT_SORT_DESC,
     sendOnEnter: parsed?.sendOnEnter !== false,
     wakeLock: parsed?.wakeLock === true,
     rightPanelWidth,
@@ -1577,10 +1541,9 @@ export function importLayoutBackup(raw: unknown): void {
   )
   localStorage.setItem(STORAGE_KEY_SIDEBAR_SHOW_CHILD_SESSIONS, nextState.sidebarChildSessions)
   localStorage.setItem(
-    STORAGE_KEY_SIDEBAR_SESSION_SORT,
-    JSON.stringify({ field: nextState.sidebarSessionSortField, desc: nextState.sidebarSessionSortDesc }),
+    STORAGE_KEY_SIDEBAR_PROJECT_SORT,
+    JSON.stringify({ field: nextState.sidebarProjectSortField, desc: nextState.sidebarProjectSortDesc }),
   )
-  localStorage.setItem(STORAGE_KEY_SIDEBAR_PROJECT_SORT_MODE, nextState.sidebarProjectSortMode)
   localStorage.setItem(STORAGE_KEY_SEND_ON_ENTER, String(nextState.sendOnEnter))
   localStorage.setItem(STORAGE_KEY_WAKE_LOCK, String(nextState.wakeLock))
   localStorage.setItem(STORAGE_KEY_RIGHT_PANEL_WIDTH, String(rightPanelWidth))

@@ -12,8 +12,10 @@ import i18n from '../i18n'
 import type { Message, MessageError, Part, FilePart, AgentPart } from '../types/message'
 import type { ApiMessageWithParts, ApiMessage, ApiPart, ApiSession, Attachment } from '../api/types'
 import { logger } from '../utils/logger'
+import { diag } from '../utils/diag'
 import { isUserUIMessage, toUIMessage, toUIMessageInfo, toUIPart } from '../utils/messageConversion'
 import { compressMessageParts } from './turnCompression'
+import { sessionActivityStore } from './sessionActivityStore'
 import type { RevertState, RevertHistoryItem, SessionState, SendRollbackSnapshot } from './messageStoreTypes'
 
 // Re-export types for consumers
@@ -74,6 +76,18 @@ function serverIdOfSessionKey(sessionId: string): string {
 }
 
 /**
+ * 从复合 key 提取原始 sessionId（去掉 serverId 前缀）。
+ *
+ * 同一后端可能同时以多个 serverId 前缀被连接（如本机 `local` 与隧道
+ * `aiagent:inst_xxx` 指向同一 opencode 实例），同一条会话因此会以不同前缀
+ * 推事件。原始 sessionId 全局唯一，用它作为「同一会话」的判定依据。
+ */
+function rawSessionIdOfKey(sessionId: string): string {
+  const idx = sessionId.indexOf('::')
+  return idx === -1 ? sessionId : sessionId.slice(idx + 2)
+}
+
+/**
  * 同步合并文本：live 更长且与服务端兼容（服务端是前缀）时不回退；
  * 服务端更长则跟上；分叉时以服务端为准。
  */
@@ -121,6 +135,15 @@ function shouldPreserveLiveParts(
 
 class MessageStore {
   private sessions = new Map<string, SessionState>()
+  /**
+   * 原始 sessionId → 权威复合 key 的映射。
+   *
+   * 同一后端可能被以多个 serverId 前缀连接（本机 `local` 与隧道
+   * `aiagent:inst_xxx` 指向同一 opencode 实例），同一条会话会以不同前缀推事件。
+   * 这里把「首次出现的 key」定为权威 bucket，后续任何前缀的事件都归并进去，
+   * 从而避免「UI 订阅的 bucket 收不到事件、事件写进了另一个 bucket」。
+   */
+  private rawSessionToKey = new Map<string, string>()
   private subscribers = new Set<Subscriber>()
   private sessionSubscribers = new Map<string, Map<Subscriber, number>>()
   private sessionVersions = new Map<string, number>()
@@ -155,12 +178,21 @@ class MessageStore {
   }
 
   subscribeSession(sessionId: string, fn: Subscriber): () => void {
+    // UI 订阅的 key 优先成为权威 bucket：若该会话尚无 bucket，由第一个订阅者
+    // 认领，之后任意前缀推来的事件都归并到此，避免「订阅的 key 收不到事件」。
+    sessionId = this.resolveKey(sessionId, true)
     let subscribers = this.sessionSubscribers.get(sessionId)
     if (!subscribers) {
       subscribers = new Map()
       this.sessionSubscribers.set(sessionId, subscribers)
     }
     subscribers.set(fn, this.getSessionVersion(sessionId))
+    diag('STORE', 'subscribeSession', {
+      sessionId,
+      subscribers: subscribers.size,
+      bucketExists: this.sessions.has(sessionId),
+      bucketCount: this.sessions.get(sessionId)?.messages.length ?? -1,
+    })
     return () => {
       subscribers.delete(fn)
       if (subscribers.size === 0) this.sessionSubscribers.delete(sessionId)
@@ -168,6 +200,7 @@ class MessageStore {
   }
 
   private getSessionVersion(sessionId: string) {
+    sessionId = this.resolveKey(sessionId)
     return Math.max(this.sessionVersions.get(sessionId) ?? 0, this.allSessionsVersion)
   }
 
@@ -305,11 +338,12 @@ class MessageStore {
   // ============================================
 
   getSessionState(sessionId: string): SessionState | undefined {
-    return this.sessions.get(sessionId)
+    return this.sessions.get(this.resolveKey(sessionId))
   }
 
   getVisibleMessages(sessionId: string | null): Message[] {
     if (!sessionId) return []
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state) return []
 
@@ -322,12 +356,12 @@ class MessageStore {
 
   getIsStreaming(sessionId: string | null): boolean {
     if (!sessionId) return false
-    return this.sessions.get(sessionId)?.isStreaming ?? false
+    return this.sessions.get(this.resolveKey(sessionId))?.isStreaming ?? false
   }
 
   getRevertState(sessionId: string | null): RevertState | null {
     if (!sessionId) return null
-    return this.sessions.get(sessionId)?.revertState ?? null
+    return this.sessions.get(this.resolveKey(sessionId))?.revertState ?? null
   }
 
   getPrependedCount(): number {
@@ -336,12 +370,12 @@ class MessageStore {
 
   getHasMoreHistory(sessionId: string | null): boolean {
     if (!sessionId) return false
-    return this.sessions.get(sessionId)?.hasMoreHistory ?? false
+    return this.sessions.get(this.resolveKey(sessionId))?.hasMoreHistory ?? false
   }
 
   getHistoryCursor(sessionId: string | null): string | undefined {
     if (!sessionId) return undefined
-    return this.sessions.get(sessionId)?.historyCursor
+    return this.sessions.get(this.resolveKey(sessionId))?.historyCursor
   }
 
   /**
@@ -352,31 +386,31 @@ class MessageStore {
    */
   getTrimmedCount(sessionId: string | null): number {
     if (!sessionId) return 0
-    return this.sessions.get(sessionId)?.trimmedCount ?? 0
+    return this.sessions.get(this.resolveKey(sessionId))?.trimmedCount ?? 0
   }
 
   getSessionDirectory(sessionId: string | null): string {
     if (!sessionId) return ''
-    return this.sessions.get(sessionId)?.directory ?? ''
+    return this.sessions.get(this.resolveKey(sessionId))?.directory ?? ''
   }
 
   getSessionTitle(sessionId: string | null): string {
     if (!sessionId) return ''
-    return this.sessions.get(sessionId)?.title ?? ''
+    return this.sessions.get(this.resolveKey(sessionId))?.title ?? ''
   }
 
   getShareUrl(sessionId: string | null): string | undefined {
     if (!sessionId) return undefined
-    return this.sessions.get(sessionId)?.shareUrl
+    return this.sessions.get(this.resolveKey(sessionId))?.shareUrl
   }
 
   getLoadState(sessionId: string | null): SessionState['loadState'] {
     if (!sessionId) return 'idle'
-    return this.sessions.get(sessionId)?.loadState ?? 'idle'
+    return this.sessions.get(this.resolveKey(sessionId))?.loadState ?? 'idle'
   }
 
   isSessionStale(sessionId: string): boolean {
-    return this.sessions.get(sessionId)?.isStale ?? false
+    return this.sessions.get(this.resolveKey(sessionId))?.isStale ?? false
   }
 
   // ============================================
@@ -422,7 +456,25 @@ class MessageStore {
     return byId
   }
 
+  /**
+   * 把任意前缀的复合 key 归并到该会话的权威 bucket。
+   *
+   * 权威 bucket = 该 raw sessionId 首次出现的 key（通常是用户打开会话时 UI 用的那个）。
+   * 之后其它前缀（同一后端的另一条连接）推来的事件都写入同一份 state，
+   * UI 读任意前缀都能看到。返回 undefined 表示该 raw sessionId 尚无 bucket
+   * 且调用方要求不新建（get 语义）。
+   */
+  private resolveKey(sessionId: string, create = false): string {
+    const raw = rawSessionIdOfKey(sessionId)
+    const existing = this.rawSessionToKey.get(raw)
+    if (existing) return existing
+    if (!create) return sessionId
+    this.rawSessionToKey.set(raw, sessionId)
+    return sessionId
+  }
+
   private ensureSession(sessionId: string): SessionState {
+    sessionId = this.resolveKey(sessionId, true)
     this.sessionAccessTime.set(sessionId, Date.now())
 
     let state = this.sessions.get(sessionId)
@@ -445,6 +497,46 @@ class MessageStore {
       this.sessions.set(sessionId, state)
     }
     return state
+  }
+
+  /**
+   * 记一条用户消息的活动锚点（侧栏排序用）。非 user 消息或时间缺失时跳过。
+   * 目录取会话当前已知的 directory，serverId 从复合 key 解析。
+   */
+  private recordUserMessageAnchor(
+    sessionId: string,
+    info: { role?: string; time?: { created?: number } },
+    directory?: string,
+  ): void {
+    if (info.role !== 'user') return
+    const created = info.time?.created
+    if (!created) return
+    const state = this.sessions.get(sessionId)
+    sessionActivityStore.recordActivity(
+      rawSessionIdOfKey(sessionId),
+      created,
+      directory ?? state?.directory,
+      serverIdOfSessionKey(sessionId),
+    )
+  }
+
+  /** 整段消息里取最大的用户消息时间，作为该会话的锚点（冷启动播种/刷新）。 */
+  private recordUserAnchorFromMessages(sessionId: string, directory?: string): void {
+    const state = this.sessions.get(sessionId)
+    if (!state) return
+    let max = 0
+    for (const message of state.messages) {
+      if (message.info.role !== 'user') continue
+      const created = message.info.time?.created ?? 0
+      if (created > max) max = created
+    }
+    if (!max) return
+    sessionActivityStore.recordActivity(
+      rawSessionIdOfKey(sessionId),
+      max,
+      directory ?? state.directory,
+      serverIdOfSessionKey(sessionId),
+    )
   }
 
   private evictOldSessions(protectServerId?: string) {
@@ -480,6 +572,7 @@ class MessageStore {
       this.sessionAccessTime.delete(oldestId)
       this.messageIndexCache.delete(oldestId)
       this.partIndexCache.delete(oldestId)
+      this.rawSessionToKey.delete(rawSessionIdOfKey(oldestId))
       return true
     }
 
@@ -591,6 +684,7 @@ class MessageStore {
       loadError?: MessageError
     },
   ) {
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state) return
 
@@ -606,8 +700,9 @@ class MessageStore {
     this.notify([sessionId])
   }
 
-  upsertLocalMessage(message: Message) {
-    const state = this.ensureSession(message.info.sessionID)
+  upsertLocalMessage(message: Message, directory?: string) {
+    const sessionKey = this.resolveKey(message.info.sessionID, true)
+    const state = this.ensureSession(sessionKey)
     const existingIndex = state.messages.findIndex(item => item.info.id === message.info.id)
 
     if (existingIndex >= 0) {
@@ -621,10 +716,14 @@ class MessageStore {
       this.capSessionMessages(state)
     }
 
-    this.notify([message.info.sessionID])
+    // 乐观发送的本地占位也是用户消息：立即抬高锚点，新会话即时置顶。
+    // 新建会话的 state.directory 可能尚未回填，故显式传入目录。
+    this.recordUserMessageAnchor(sessionKey, message.info, directory)
+    this.notify([sessionKey])
   }
 
   removeMessage(sessionId: string, messageId: string) {
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state) return
     const nextMessages = state.messages.filter(message => message.info.id !== messageId)
@@ -660,6 +759,7 @@ class MessageStore {
   }
 
   setLoadState(sessionId: string, loadState: SessionState['loadState']) {
+    sessionId = this.resolveKey(sessionId, true)
     const state = this.ensureSession(sessionId)
     state.loadState = loadState
     if (loadState !== 'error') state.loadError = undefined
@@ -667,6 +767,7 @@ class MessageStore {
   }
 
   setLoadError(sessionId: string, error: MessageError) {
+    sessionId = this.resolveKey(sessionId, true)
     const state = this.ensureSession(sessionId)
     state.loadState = 'error'
     state.loadError = error
@@ -689,6 +790,7 @@ class MessageStore {
       shareUrl?: string
     },
   ) {
+    sessionId = this.resolveKey(sessionId, true)
     const state = this.ensureSession(sessionId)
     const previousMessages = state.messages
     const previousById = new Map(previousMessages.map(message => [message.info.id, message]))
@@ -716,6 +818,9 @@ class MessageStore {
     // 整段替换：先归零缺口，再由 capSessionMessages 按本次实际裁剪量重新记账。
     state.trimmedCount = 0
     this.capSessionMessages(state)
+
+    // 冷启动/刷新播种：整段加载后取最大用户消息时间作为锚点基线（单调，不会降级）。
+    this.recordUserAnchorFromMessages(sessionId, options?.directory)
 
     // Revert 状态
     if (options?.revertState?.messageID) {
@@ -767,6 +872,7 @@ class MessageStore {
    * 作为内存兜底，历史加载路径的规模由用户滚动行为决定。
    */
   prependMessages(sessionId: string, apiMessages: ApiMessageWithParts[], hasMore: boolean, historyCursor?: string) {
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state) return
 
@@ -802,6 +908,7 @@ class MessageStore {
    * 返回是否发生实际变化，供调用方决定是否通知。
    */
   compressHistoricalTurns(sessionId: string, keepRecentTurns: number): boolean {
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state) return false
 
@@ -850,6 +957,7 @@ class MessageStore {
    * 由调用方按需处理）。
    */
   hydrateMessages(sessionId: string, apiMessages: ApiMessageWithParts[]): boolean {
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state || apiMessages.length === 0) return false
 
@@ -881,6 +989,7 @@ class MessageStore {
     this.dirtyPartsBySession.clear()
     this.messageIndexCache.clear()
     this.partIndexCache.clear()
+    this.rawSessionToKey.clear()
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId)
       this.rafId = null
@@ -890,15 +999,20 @@ class MessageStore {
   }
 
   clearSession(sessionId: string) {
+    sessionId = this.resolveKey(sessionId)
     this.sessions.delete(sessionId)
     this.sessionAccessTime.delete(sessionId)
     this.dirtyPartsBySession.delete(sessionId)
     this.messageIndexCache.delete(sessionId)
     this.partIndexCache.delete(sessionId)
+    // 只清掉映射到本 key 的 raw 项；其它前缀若仍持有权威 key 则不动
+    const raw = rawSessionIdOfKey(sessionId)
+    if (this.rawSessionToKey.get(raw) === sessionId) this.rawSessionToKey.delete(raw)
     this.notify([sessionId])
   }
 
   setShareUrl(sessionId: string, url: string | undefined) {
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state) return
     state.shareUrl = url
@@ -910,7 +1024,35 @@ class MessageStore {
   // ============================================
 
   handleMessageUpdated(apiMsg: ApiMessage) {
-    const state = this.ensureSession(apiMsg.sessionID)
+    const sessionKey = this.resolveKey(apiMsg.sessionID, true)
+    const state = this.ensureSession(sessionKey)
+    // 用户消息到达/更新：抬高会话与目录锚点（侧栏排序依据）
+    this.recordUserMessageAnchor(sessionKey, apiMsg)
+    diag('STORE', 'message.updated', {
+      sessionID: apiMsg.sessionID,
+      resolvedKey: sessionKey,
+      messageID: apiMsg.id,
+      role: apiMsg.role,
+      cachedSessions: this.sessions.size,
+      hasSession: this.sessions.has(sessionKey),
+    })
+    // Replace an optimistic user row when the server's canonical message arrives.
+    // Matching on text keeps this safe when the async prompt response has no message id.
+    if (apiMsg.role === 'user') {
+      const incomingText = Array.isArray((apiMsg as unknown as { parts?: Array<{ type?: string; text?: string }> }).parts)
+        ? (apiMsg as unknown as { parts: Array<{ type?: string; text?: string }> }).parts
+            .filter(part => part.type === 'text')
+            .map(part => part.text ?? '')
+            .join('')
+        : undefined
+      if (incomingText !== undefined) {
+        const optimisticIndex = state.messages.findIndex(message => {
+          if (!message.info.id.startsWith('msg-local-') || message.info.role !== 'user') return false
+          return message.parts.some(part => part.type === 'text' && part.text === incomingText)
+        })
+        if (optimisticIndex >= 0) state.messages = state.messages.filter((_, index) => index !== optimisticIndex)
+      }
+    }
     const existingIndex = state.messages.findIndex(m => m.info.id === apiMsg.id)
 
     if (existingIndex >= 0) {
@@ -934,19 +1076,40 @@ class MessageStore {
       }
     }
 
-    this.notify([apiMsg.sessionID])
+    this.notify([sessionKey])
   }
 
   handlePartUpdated(apiPart: ApiPart & { sessionID: string; messageID: string }) {
-    const state = this.sessions.get(apiPart.sessionID)
+    const sessionKey = this.resolveKey(apiPart.sessionID)
+    const state = this.sessions.get(sessionKey)
+    diag('STORE', 'part.updated', {
+      sessionID: apiPart.sessionID,
+      resolvedKey: sessionKey,
+      messageID: apiPart.messageID,
+      partID: apiPart.id,
+      type: apiPart.type,
+      hasSession: !!state,
+    })
     if (!state) return
 
-    const msgIndex = this.getMessageIndex(apiPart.sessionID, state).get(apiPart.messageID)
+    let msgIndex = this.getMessageIndex(sessionKey, state).get(apiPart.messageID)
+    if (msgIndex === undefined && apiPart.type === 'text') {
+      const text = (apiPart as ApiPart & { text?: string }).text
+      const optimisticIndex = typeof text === 'string'
+        ? state.messages.findIndex(message => message.info.id.startsWith('msg-local-') && message.info.role === 'user' && message.parts.some(part => part.type === 'text' && part.text === text))
+        : -1
+      if (optimisticIndex >= 0) {
+        const optimistic = state.messages[optimisticIndex]
+        state.messages = [...state.messages.slice(0, optimisticIndex), { ...optimistic, info: { ...optimistic.info, id: apiPart.messageID } }, ...state.messages.slice(optimisticIndex + 1)]
+        this.messageIndexCache.delete(sessionKey)
+        msgIndex = optimisticIndex
+      }
+    }
     if (msgIndex === undefined) return
 
     const oldMessage = state.messages[msgIndex]
     const newParts = [...oldMessage.parts]
-    const existingPartIndex = this.getPartIndex(apiPart.sessionID, apiPart.messageID, oldMessage.parts).get(apiPart.id)
+    const existingPartIndex = this.getPartIndex(sessionKey, apiPart.messageID, oldMessage.parts).get(apiPart.id)
     const incoming = toUIPart(apiPart)
 
     if (existingPartIndex !== undefined) {
@@ -961,18 +1124,27 @@ class MessageStore {
 
     const newMessage = { ...oldMessage, parts: newParts }
     state.messages = [...state.messages.slice(0, msgIndex), newMessage, ...state.messages.slice(msgIndex + 1)]
-    this.notify([apiPart.sessionID])
+    this.notify([sessionKey])
   }
 
   handlePartDelta(data: { sessionID: string; messageID: string; partID: string; field: string; delta: string }) {
-    const state = this.sessions.get(data.sessionID)
+    const sessionKey = this.resolveKey(data.sessionID)
+    const state = this.sessions.get(sessionKey)
+    diag('STORE', 'part.delta', {
+      sessionID: data.sessionID,
+      resolvedKey: sessionKey,
+      messageID: data.messageID,
+      partID: data.partID,
+      field: data.field,
+      hasSession: !!state,
+    })
     if (!state) return
 
-    const msgIndex = this.getMessageIndex(data.sessionID, state).get(data.messageID)
+    const msgIndex = this.getMessageIndex(sessionKey, state).get(data.messageID)
     if (msgIndex === undefined) return
     const msg = state.messages[msgIndex]
 
-    const partIndex = this.getPartIndex(data.sessionID, data.messageID, msg.parts).get(data.partID)
+    const partIndex = this.getPartIndex(sessionKey, data.messageID, msg.parts).get(data.partID)
     if (partIndex === undefined) return
     const part = msg.parts[partIndex]
 
@@ -982,10 +1154,10 @@ class MessageStore {
       // flushDirtyMessages() 会在 notify 的 rAF 回调中统一生成新引用。
     ;(part as { text: string }).text += data.delta
 
-    let dirtyPartsByMessage = this.dirtyPartsBySession.get(data.sessionID)
+    let dirtyPartsByMessage = this.dirtyPartsBySession.get(sessionKey)
     if (!dirtyPartsByMessage) {
       dirtyPartsByMessage = new Map<string, Set<string>>()
-      this.dirtyPartsBySession.set(data.sessionID, dirtyPartsByMessage)
+      this.dirtyPartsBySession.set(sessionKey, dirtyPartsByMessage)
     }
     let dirtyPartIds = dirtyPartsByMessage.get(data.messageID)
     if (!dirtyPartIds) {
@@ -993,14 +1165,15 @@ class MessageStore {
       dirtyPartsByMessage.set(data.messageID, dirtyPartIds)
     }
     dirtyPartIds.add(data.partID)
-    this.notify([data.sessionID])
+    this.notify([sessionKey])
   }
 
   handlePartRemoved(data: { partID: string; messageID: string; sessionID: string }) {
-    const state = this.sessions.get(data.sessionID)
+    const sessionKey = this.resolveKey(data.sessionID)
+    const state = this.sessions.get(sessionKey)
     if (!state) return
 
-    const msgIndex = this.getMessageIndex(data.sessionID, state).get(data.messageID)
+    const msgIndex = this.getMessageIndex(sessionKey, state).get(data.messageID)
     if (msgIndex === undefined) return
 
     const oldMessage = state.messages[msgIndex]
@@ -1008,7 +1181,7 @@ class MessageStore {
 
     const newMessage = { ...oldMessage, parts: oldMessage.parts.filter(p => p.id !== data.partID) }
     state.messages = [...state.messages.slice(0, msgIndex), newMessage, ...state.messages.slice(msgIndex + 1)]
-    this.notify([data.sessionID])
+    this.notify([sessionKey])
   }
 
   /**
@@ -1051,6 +1224,7 @@ class MessageStore {
 
   /** 会话结束的公共收尾：清 streaming、补 completed、对账悬空工具。 */
   private finalizeSession(sessionId: string) {
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state) return
 
@@ -1098,6 +1272,7 @@ class MessageStore {
     callID: string,
     outcome: { status: 'completed' | 'error'; output?: string; error?: string },
   ): void {
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state) return
 
@@ -1144,6 +1319,7 @@ class MessageStore {
   // ============================================
 
   truncateAfterRevert(sessionId: string) {
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state || !state.revertState) return
 
@@ -1156,6 +1332,7 @@ class MessageStore {
   }
 
   createSendRollbackSnapshot(sessionId: string): SendRollbackSnapshot | null {
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state?.revertState) return null
 
@@ -1169,6 +1346,7 @@ class MessageStore {
   }
 
   restoreSendRollback(sessionId: string, snapshot: SendRollbackSnapshot) {
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state) return
 
@@ -1184,6 +1362,7 @@ class MessageStore {
   }
 
   setRevertState(sessionId: string, revertState: RevertState | null) {
+    sessionId = this.resolveKey(sessionId)
     const state = this.sessions.get(sessionId)
     if (!state) return
     state.revertState = revertState
@@ -1200,27 +1379,27 @@ class MessageStore {
 
   canUndo(sessionId: string | null): boolean {
     if (!sessionId) return false
-    const state = this.sessions.get(sessionId)
+    const state = this.sessions.get(this.resolveKey(sessionId))
     if (!state || state.isStreaming) return false
     return this.getVisibleMessages(sessionId).some(m => m.info.role === 'user')
   }
 
   canRedo(sessionId: string | null): boolean {
     if (!sessionId) return false
-    const state = this.sessions.get(sessionId)
+    const state = this.sessions.get(this.resolveKey(sessionId))
     if (!state || state.isStreaming) return false
     return (state.revertState?.history.length ?? 0) > 0
   }
 
   getRedoSteps(sessionId: string | null): number {
     if (!sessionId) return 0
-    const state = this.sessions.get(sessionId)
+    const state = this.sessions.get(this.resolveKey(sessionId))
     return state?.revertState?.history.length ?? 0
   }
 
   getCurrentRevertedContent(sessionId: string | null): RevertHistoryItem | null {
     if (!sessionId) return null
-    const state = this.sessions.get(sessionId)
+    const state = this.sessions.get(this.resolveKey(sessionId))
     const revertState = state?.revertState ?? null
     if (!revertState || revertState.history.length === 0) return null
     return revertState.history[0]
@@ -1231,6 +1410,7 @@ class MessageStore {
   // ============================================
 
   setStreaming(sessionId: string, isStreaming: boolean) {
+    sessionId = this.resolveKey(sessionId, true)
     const state = isStreaming ? this.ensureSession(sessionId) : this.sessions.get(sessionId)
     if (!state) return
     state.isStreaming = isStreaming

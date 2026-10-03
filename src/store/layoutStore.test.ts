@@ -264,8 +264,8 @@ describe('LayoutStore backup import', () => {
       sidebarFolderRecents: true,
       sidebarFolderRecentsShowDiff: false,
       sidebarChildSessions: 'all',
-      sidebarSessionSortField: 'created',
-      sidebarSessionSortDesc: false,
+      sidebarProjectSortField: 'created',
+      sidebarProjectSortDesc: false,
       sendOnEnter: false,
       wakeLock: true,
       rightPanelWidth: 640,
@@ -277,8 +277,8 @@ describe('LayoutStore backup import', () => {
     expect(layoutStore.getState().sidebarExpanded).toBe(false)
     expect(layoutStore.getState().sidebarFolderRecents).toBe(true)
     expect(layoutStore.getState().sidebarChildSessions).toBe('all')
-    expect(layoutStore.getState().sidebarSessionSortField).toBe('created')
-    expect(layoutStore.getState().sidebarSessionSortDesc).toBe(false)
+    expect(layoutStore.getState().sidebarProjectSortField).toBe('created')
+    expect(layoutStore.getState().sidebarProjectSortDesc).toBe(false)
     expect(layoutStore.getState().sendOnEnter).toBe(false)
     expect(layoutStore.getState().wakeLock).toBe(true)
     expect(layoutStore.getState().rightPanelWidth).toBe(640)
@@ -317,18 +317,18 @@ describe('LayoutStore reloadFromStorage', () => {
     localStorage.clear()
   })
 
-  it('picks up a sort preference written by an external writer', () => {
+  it('picks up a project sort preference written by an external writer', () => {
     // 回归：排序等偏好由偏好同步引擎从外部写入 localStorage，
     // store 只在构造时读一次，不重读就会停在旧值 —— 表现为「另一台改了排序，
     // 这边要切换主机才生效」。
     const store = new LayoutStore()
-    expect(store.getState().sidebarSessionSortField).toBe('created')
+    expect(store.getState().sidebarProjectSortField).toBe('updated')
 
-    localStorage.setItem('opencode-sidebar-session-sort', JSON.stringify({ field: 'updated', desc: false }))
+    localStorage.setItem('opencode-sidebar-project-sort', JSON.stringify({ field: 'created', desc: false }))
     store.reloadFromStorage()
 
-    expect(store.getState().sidebarSessionSortField).toBe('updated')
-    expect(store.getState().sidebarSessionSortDesc).toBe(false)
+    expect(store.getState().sidebarProjectSortField).toBe('created')
+    expect(store.getState().sidebarProjectSortDesc).toBe(false)
   })
   it('picks up sidebar toggles written externally', () => {
     const store = new LayoutStore()
@@ -340,25 +340,19 @@ describe('LayoutStore reloadFromStorage', () => {
     expect(store.getState().sidebarFolderRecents).toBe(true)
   })
 
-  it('persists and restores the project sort mode', () => {
+  it('persists and restores the project sort field and direction', () => {
     const store = new LayoutStore()
-    expect(store.getState().sidebarProjectSortMode).toBe('auto')
+    expect(store.getState().sidebarProjectSortField).toBe('updated')
+    expect(store.getState().sidebarProjectSortDesc).toBe(true)
 
-    store.setSidebarProjectSortMode('manual')
-    expect(localStorage.getItem('opencode-sidebar-project-sort-mode')).toBe('manual')
+    store.setSidebarProjectSort('created', false)
+    expect(localStorage.getItem('opencode-sidebar-project-sort')).toBe(
+      JSON.stringify({ field: 'created', desc: false }),
+    )
 
     const restored = new LayoutStore()
-    expect(restored.getState().sidebarProjectSortMode).toBe('manual')
-  })
-
-  it('picks up an externally written project sort mode', () => {
-    const store = new LayoutStore()
-    expect(store.getState().sidebarProjectSortMode).toBe('auto')
-
-    localStorage.setItem('opencode-sidebar-project-sort-mode', 'manual')
-    store.reloadFromStorage()
-
-    expect(store.getState().sidebarProjectSortMode).toBe('manual')
+    expect(restored.getState().sidebarProjectSortField).toBe('created')
+    expect(restored.getState().sidebarProjectSortDesc).toBe(false)
   })
 
   it('notifies subscribers only when something actually changed', () => {

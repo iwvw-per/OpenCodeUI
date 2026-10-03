@@ -30,6 +30,7 @@ import {
 import { ChatViewportProvider, canUseSplitPane, useChatViewportMaybe, type ChatViewportValue } from './chatViewport'
 import { ChatWidthControls } from './ChatWidthControls'
 import { useChatPageViewModel } from './useChatPageViewModel'
+import { WelcomeHero, WelcomeProjectPill } from './welcome/WelcomeHero'
 import { SessionNavigationContext } from '../../contexts/SessionNavigationContext'
 import { useDirectory } from '../../contexts/useDirectory'
 import { usesCustomDesktopTitlebar } from '../../utils/tauri'
@@ -57,6 +58,7 @@ interface ChatPaneProps {
   onOpenSidebar?: () => void
   onToggleRightPanel?: () => void
   onOpenSettings?: () => void
+  onOpenProject?: () => void
   showSidebarButton?: boolean
   onSplitPane?: () => void
   onTogglePaneFullscreen?: () => void
@@ -145,6 +147,7 @@ export const ChatPane = memo(function ChatPane({
   onOpenSidebar,
   onToggleRightPanel,
   onOpenSettings,
+  onOpenProject,
   showSidebarButton = false,
   onSplitPane,
   onTogglePaneFullscreen,
@@ -175,7 +178,7 @@ export const ChatPane = memo(function ChatPane({
   const modelSelectorRef = useRef<ModelSelectorHandle>(null)
   const [chatContentEl, setChatContentEl] = useState<HTMLDivElement | null>(null)
   const setChatContentRef = useCallback((node: HTMLDivElement | null) => setChatContentEl(node), [])
-  const { addDirectory } = useDirectory()
+  const { addDirectory, setCurrentDirectory } = useDirectory()
 
   // 当前 pane 绑定的服务器（sessionId 为复合 key，split 出 serverId；home 状态跟随 active server 实时变化）
   const activeServerId = useSyncExternalStore(
@@ -988,6 +991,26 @@ export const ChatPane = memo(function ChatPane({
       </div>
     ))
 
+  // ============================================
+  // 欢迎层（home 空态）
+  // 只在「无 session 且没有消息且未流式」时展示。发送第一条消息后 routeSessionId
+  // 立即从 null 变为有值，welcome 自然退场——不需要自己维护 docked 状态。
+  // ============================================
+  const showWelcome = !routeSessionId && renderedMessages.length === 0 && !isStreaming && chatAreaMountKey !== null
+  const handleWelcomeSelectProject = useCallback(
+    (path: string) => {
+      setCurrentDirectory(path)
+      addDirectory(path)
+    },
+    [addDirectory, setCurrentDirectory],
+  )
+  const handleWelcomeClearProject = useCallback(() => {
+    setCurrentDirectory(undefined)
+  }, [setCurrentDirectory])
+  const handleWelcomeAddProject = useCallback(() => {
+    onOpenProject?.()
+  }, [onOpenProject])
+
   const chatContent = (
     <div ref={setChatContentRef} className="flex-1 relative overflow-hidden flex flex-col min-h-0">
       <div className="absolute inset-0">
@@ -1043,7 +1066,17 @@ export const ChatPane = memo(function ChatPane({
         onScrollToMessageId={handleOutlineScrollToMessage}
       />
 
-      <div ref={inputBoxWrapperRef} className="absolute bottom-0 left-0 right-0 z-10 pointer-events-none">
+      <div
+        ref={inputBoxWrapperRef}
+        className="absolute left-0 right-0 z-10 pointer-events-none transition-[bottom,transform] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none"
+        style={{
+          // 欢迎态（无会话无消息）：输入框居中悬浮，hero 在正上方；
+          // 发送后 showWelcome 翻 false，容器滑回贴底 —— 与原始设计一致。
+          bottom: showWelcome ? '50%' : '0',
+          transform: showWelcome ? 'translateY(50%)' : 'translateY(0)',
+        }}
+      >
+        {!showCompactShell && <WelcomeHero active={showWelcome} />}
         {(showCancelHint || (fullAutoHint && !showCancelHint)) && (
           <div className="absolute bottom-full inset-x-0 flex justify-center pb-2 pointer-events-none z-20">
             <div className="px-3 py-1.5 glass border border-border-200/60 rounded-lg shadow-lg text-[length:var(--fs-sm)] text-text-300 animate-in fade-in slide-in-from-bottom-2 duration-150">
@@ -1094,6 +1127,18 @@ export const ChatPane = memo(function ChatPane({
             registerInputBox={registerInputBox}
             isAtBottom={isAtBottom}
             onScrollToBottom={handleScrollToBottom}
+            hideFooter={showWelcome}
+            topAccessory={
+              !showCompactShell ? (
+                <WelcomeProjectPill
+                  active={showWelcome}
+                  directory={effectiveDirectory || ''}
+                  onSelectProject={handleWelcomeSelectProject}
+                  onClearProject={handleWelcomeClearProject}
+                  onAddProject={handleWelcomeAddProject}
+                />
+              ) : undefined
+            }
             collapsedPermission={
               !inlineToolRequests && pendingPermissionRequests.length > 0 && permissionCollapsed
                 ? {

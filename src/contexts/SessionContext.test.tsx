@@ -84,20 +84,13 @@ vi.mock('../store/serverStore', () => ({
   },
 }))
 
-// 只替换需要打桩的部分；排序用真实实现，避免测试里重复一份排序逻辑
-vi.mock('../utils', async () => {
-  const { sortSessions, insertSessionSorted } = await vi.importActual<typeof import('../utils/sessionSort')>(
-    '../utils/sessionSort',
-  )
-  return {
-    sessionErrorHandler: (...args: unknown[]) => sessionErrorHandlerMock(...args),
-    normalizeToForwardSlash: (value?: string) => value,
-    isSameDirectory: (left?: string, right?: string) => left === right,
-    autoDetectPathStyle: (...args: unknown[]) => autoDetectPathStyleMock(...args),
-    sortSessions,
-    insertSessionSorted,
-  }
-})
+// 只替换需要打桩的部分
+vi.mock('../utils', () => ({
+  sessionErrorHandler: (...args: unknown[]) => sessionErrorHandlerMock(...args),
+  normalizeToForwardSlash: (value?: string) => value,
+  isSameDirectory: (left?: string, right?: string) => left === right,
+  autoDetectPathStyle: (...args: unknown[]) => autoDetectPathStyleMock(...args),
+}))
 
 vi.mock('../utils/sessionLifecycle', () => ({
   clearSessionRuntimeState: (...args: unknown[]) => clearSessionRuntimeStateMock(...args),

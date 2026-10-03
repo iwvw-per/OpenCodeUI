@@ -37,7 +37,22 @@
     "current": "（当前）",
     "enterCustomPath": "输入自定义路径...",
     "startConversation": "开始对话",
-    "orJustType": "或在下方直接输入消息，使用当前目录开始"
+    "orJustType": "或在下方直接输入消息，使用当前目录开始",
+    "noProject": "无项目",
+    "switchProject": "切换项目",
+    "searchProjects": "搜索项目",
+    "noMatchingProjects": "没有匹配的项目",
+    "newProject": "新建项目",
+    "workOutsideProject": "不在项目中工作",
+    "greetings": {
+      "lateNight": ["夜猫子，造点什么？", "夜深了，灵感正好。", "凌晨的代码最动人。"],
+      "earlyMorning": ["早安，从构建开始。", "清晨好时光，做点什么？", "早起的鸟有 bug 修。"],
+      "morning": ["上午好，构建什么？", "状态最佳，说说想法。", "开工，想做点什么？"],
+      "noon": ["午饭时间，顺便写码。", "中午好，下午做点什么？", "吃饱了，动手吧。"],
+      "afternoon": ["下午好，来杯咖啡。", "下午茶时间，构建什么？", "状态在线，说说想法。"],
+      "evening": ["晚上好，构建什么？", "下班后是创造的好时候。", "夜晚模式启动，动手吧。"],
+      "night": ["夜深了，灵感来了吗？", "又熬夜了？说说想法。", "安静的夜，适合写码。"]
+    }
   },
   "inputBox": {
     "dropFilesHere": "拖放文件到此处",
@@ -222,6 +237,8 @@
     "sortDirection": "方向",
     "sortByUpdated": "更新时间",
     "sortByCreated": "创建时间",
+    "sortProjectsByUpdated": "最后对话时间",
+    "sortProjectsByCreated": "项目添加时间",
     "sortDesc": "倒序（新 → 旧）",
     "sortAsc": "正序（旧 → 新）",
     "archivedChats": "已归档对话",

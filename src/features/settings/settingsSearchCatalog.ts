@@ -53,6 +53,7 @@ export const SETTINGS_SEARCH_DEFINITIONS: SettingsSearchDefinition[] = [
     'chat.outlineCurrentHighlight',
     'chat.actionsOnLatestAssistantOnly',
     'chat.desktopCollapsedInputDock',
+    'chat.showInputStatusBar',
     'chat.sendMode',
     'chat.thinkingDisplay',
     'chat.latestOnly',

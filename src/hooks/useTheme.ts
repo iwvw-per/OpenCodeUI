@@ -234,6 +234,10 @@ export function useTheme() {
     themeStore.setDesktopCollapsedInputDock(enabled)
   }, [])
 
+  const setShowInputStatusBar = useCallback((enabled: boolean) => {
+    themeStore.setShowInputStatusBar(enabled)
+  }, [])
+
   const setProcessCollapseEnabled = useCallback((enabled: boolean) => {
     themeStore.setProcessCollapseEnabled(enabled)
   }, [])
@@ -357,6 +361,10 @@ export function useTheme() {
     // 桌面端输入框上滚收起
     desktopCollapsedInputDock: state.desktopCollapsedInputDock,
     setDesktopCollapsedInputDock,
+
+    // 输入框下方信息栏
+    showInputStatusBar: state.showInputStatusBar,
+    setShowInputStatusBar,
 
     // 过程折叠
     processCollapseEnabled: state.processCollapseEnabled,

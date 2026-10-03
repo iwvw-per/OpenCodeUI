@@ -167,6 +167,44 @@ describe('InputBox 收起动画', () => {
     expect(fab.dataset.collapsed).toBe('true')
     expect(fab.dataset.mode).toBe('scroll')
   })
+
+  it('运行中发送请求未返回（isSubmitting 仍为 true）时，FAB 是停止态且不禁用', async () => {
+    viewportState.enableCollapsedInputDock = false
+    let resolveSend: ((value: boolean) => void) | null = null
+    const onSend = vi.fn(
+      () =>
+        new Promise<boolean>(resolve => {
+          resolveSend = resolve
+        }),
+    )
+    const onAbort = vi.fn()
+
+    const { rerender } = render(
+      <InputBox paneId="pane-test" onSend={onSend} onAbort={onAbort} isStreaming />,
+    )
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'running' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
+
+    // 输入框已被乐观清空，但 prompt 请求尚未返回 → isSubmitting 仍为 true。
+    // 此刻必须进入停止态且可点击，而不是回退到 disabled 的发送态。
+    await waitFor(() => {
+      expect(textarea.value).toBe('')
+    })
+    const fab = document.querySelector('.chat-fab') as HTMLButtonElement
+    expect(fab.dataset.mode).toBe('stop')
+    expect(fab.disabled).toBe(false)
+
+    fireEvent.click(fab)
+    expect(onAbort).toHaveBeenCalled()
+
+    // 保持 isStreaming，请求返回后仍是停止态
+    rerender(<InputBox paneId="pane-test" onSend={onSend} onAbort={onAbort} isStreaming />)
+    await act(async () => {
+      resolveSend?.(true)
+    })
+    expect((document.querySelector('.chat-fab') as HTMLButtonElement).dataset.mode).toBe('stop')
+  })
 })
 
 describe('InputBox slash command selection', () => {

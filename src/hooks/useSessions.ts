@@ -10,13 +10,13 @@ import {
 } from '../api'
 import { serverStore } from '../store/serverStore'
 import { pinnedSessionsStore } from '../store/pinnedSessionsStore'
-import { layoutStore } from '../store/layoutStore'
 import {
   sessionListIndexStore,
   isIndexableQuery,
   type SessionListBucketKey,
 } from '../store/sessionListIndexStore'
-import { autoDetectPathStyle, sortSessions } from '../utils'
+import { autoDetectPathStyle } from '../utils'
+import { sortSessionsByAnchor } from '../store/sessionActivityStore'
 import i18n from '../i18n'
 
 interface UseSessionsOptions {
@@ -102,16 +102,6 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
   }
   const bucketIdKey = `${resolvedServerId}\u0000${normalizedDirectory ?? ''}`
 
-  // 直接读当前偏好（不要在 effect 里同步到 ref：effect 在渲染后才跑，
-  // 偏好变化那一帧会用到旧值，表现为「改了排序但列表没动」）
-  const getSortPreference = useCallback(
-    () => ({
-      field: layoutStore.getState().sidebarSessionSortField,
-      desc: layoutStore.getState().sidebarSessionSortDesc,
-    }),
-    [],
-  )
-
   // 索引快照（同步、引用稳定）：这是「切回旧主机首帧即有内容」的关键。
   // 搜索态返回空，由 searchState 接管。
   const indexSessions = useSyncExternalStore(
@@ -192,7 +182,7 @@ try {
           }
 
           if (isSearch) {
-            setSearchState({ sessions: sortSessions(data.slice(0, requestedLimit), getSortPreference()), isLoading: false, error: null })
+            setSearchState({ sessions: sortSessionsByAnchor(data.slice(0, requestedLimit)), isLoading: false, error: null })
           } else {
             // 索引存全量页数据（含多取的那条），由读取侧按 loadedLimit 切片
             sessionListIndexStore.replace(bucket, data, {

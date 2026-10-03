@@ -120,6 +120,8 @@
     "actionsOnLatestAssistantOnlyDesc": "一轮对话里连续多条助手消息时，只在最后一条显示分叉和复制按钮",
     "desktopCollapsedInputDock": "桌面端输入框收起",
     "desktopCollapsedInputDockDesc": "上滚浏览历史时把输入框收成胶囊，点一下再展开；移动端始终启用，默认开启",
+    "showInputStatusBar": "显示输入框信息栏",
+    "showInputStatusBarDesc": "在输入框下方显示自动放行、会话统计与任务进度；默认隐藏",
     "sendMode": "发送消息",
     "sendModeDesc": "选择 Enter 或 Shift+Enter 发送消息；另一个键插入换行。",
     "sendModeEnter": "Enter 发送",

@@ -115,11 +115,26 @@ export function useMobileCollapse({
   // session、内容行增减都会覆盖到），因此 isCollapsed 翻 true 那一帧读到的
   // 一定是最近一次展开态的真实高度。收起后停止刷新，锁住这个值。
   const expandedHeightRef = useRef(0)
+  const prevCollapsedForSampleRef = useRef(isCollapsed)
   useLayoutEffect(() => {
+    const wasCollapsed = prevCollapsedForSampleRef.current
+    prevCollapsedForSampleRef.current = isCollapsed
+
     if (isCollapsed) return
+
+    // 展开切换那一帧必须跳过：此时 composer 还带着收起态的内联 height（药丸高度），
+    // 而把它撑开的 syncBoxHeight 在本 effect 之后才执行，contentWrap 会被量成药丸
+    // 高度并覆盖掉正确的展开高度。后果是展开动画全程被钉在这个错误高度上，
+    // inputBoxHeight / spacer 偏小，动画结束才跳回真实高度 —— 表现为主界面被顶一下。
+    // 跳过这一帧，保留上一次展开态的真实高度即可。
+    if (wasCollapsed) return
+
     const el = contentWrapRef.current
     if (!el) return
-    const measured = el.offsetHeight
+    // 用小数精度测量：offsetHeight 取整，与真实布局高度最多差 0.5px，
+    // 收起/展开翻转时会看到亚像素级跳变。此时转场已结束（transform 为 none），
+    // getBoundingClientRect 不会被位移污染。
+    const measured = el.getBoundingClientRect().height
     if (measured > 0) expandedHeightRef.current = measured
   })
 

@@ -1,9 +1,10 @@
 // ============================================
-// SessionSortMenu — 侧栏会话排序菜单
+// SessionSortMenu — 侧栏「项目排序」菜单
 // ============================================
 //
-// 只负责"排序字段 + 方向"两个偏好，与管理按钮（批量选择/删除）分开。
-// 偏好存 layoutStore（localStorage 持久化），排序在 useSessions 拉取时应用。
+// 会话列表固定「最新对话置顶」，不提供排序选项；本菜单只控制项目文件夹的
+// 排序字段（最后对话时间 / 保存时间）与方向。
+// 偏好存 layoutStore（localStorage 持久化），排序在 SidePanel 应用。
 
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -15,15 +16,13 @@ import type { SessionSortField } from '../../../utils'
 
 export function SessionSortMenu() {
   const { t } = useTranslation('chat')
-  const { sidebarSessionSortField, sidebarSessionSortDesc } = useLayoutStore()
+  const { sidebarProjectSortField, sidebarProjectSortDesc } = useLayoutStore()
   const [isOpen, setIsOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const apply = (field: SessionSortField, desc: boolean) => {
-    layoutStore.setSidebarSessionSort(field, desc)
-    // 用户在排序菜单显式选择字段/方向 = 想按时间重新排，退出拖拽手动顺序
-    layoutStore.setSidebarProjectSortMode('auto')
+    layoutStore.setSidebarProjectSort(field, desc)
     setIsOpen(false)
   }
 
@@ -51,10 +50,10 @@ export function SessionSortMenu() {
   }, [isOpen])
 
   const fields: Array<{ field: SessionSortField; label: string; icon: React.ReactNode }> = [
-    { field: 'updated', label: t('sidebar.sortByUpdated', { defaultValue: '更新时间' }), icon: <ClockIcon size={14} /> },
+    { field: 'updated', label: t('sidebar.sortProjectsByUpdated', { defaultValue: '最后对话时间' }), icon: <ClockIcon size={14} /> },
     {
       field: 'created',
-      label: t('sidebar.sortByCreated', { defaultValue: '创建时间' }),
+      label: t('sidebar.sortProjectsByCreated', { defaultValue: '项目添加时间' }),
       icon: <CalendarPlusIcon size={14} />,
     },
   ]
@@ -72,7 +71,7 @@ export function SessionSortMenu() {
         className={isOpen ? interactive.toggleActiveNeutral : 'border border-transparent'}
         title={t('sidebar.sortSessions', { defaultValue: '排序' })}
       >
-        {sidebarSessionSortDesc ? <SortDescIcon size={14} /> : <SortIcon size={14} />}
+        {sidebarProjectSortDesc ? <SortDescIcon size={14} /> : <SortIcon size={14} />}
       </IconButton>
 
       <DropdownMenu
@@ -95,15 +94,15 @@ export function SessionSortMenu() {
                 key={field}
                 type="button"
                 role="menuitemradio"
-                aria-checked={sidebarSessionSortField === field}
-                onClick={() => apply(field, sidebarSessionSortDesc)}
+                aria-checked={sidebarProjectSortField === field}
+                onClick={() => apply(field, sidebarProjectSortDesc)}
                 className={`w-full px-2 py-2 rounded-lg flex items-center gap-2 text-left bg-transparent border-none cursor-pointer transition-colors duration-150 hover:bg-bg-200 ${
-                  sidebarSessionSortField === field ? 'text-text-100' : 'text-text-300'
+                  sidebarProjectSortField === field ? 'text-text-100' : 'text-text-300'
                 }`}
               >
                 <span className="w-4 h-4 flex items-center justify-center shrink-0 text-text-400">{icon}</span>
                 <span className="flex-1 min-w-0 truncate text-[length:var(--fs-sm)]">{label}</span>
-                {sidebarSessionSortField === field && (
+                {sidebarProjectSortField === field && (
                   <span className="w-4 flex items-center justify-center shrink-0 text-accent-main-100">
                     <CheckIcon size={14} />
                   </span>
@@ -120,10 +119,10 @@ export function SessionSortMenu() {
           <button
             type="button"
             role="menuitemradio"
-            aria-checked={sidebarSessionSortDesc}
-            onClick={() => apply(sidebarSessionSortField, true)}
+            aria-checked={sidebarProjectSortDesc}
+            onClick={() => apply(sidebarProjectSortField, true)}
             className={`w-full px-2 py-2 rounded-lg flex items-center gap-2 text-left bg-transparent border-none cursor-pointer transition-colors duration-150 hover:bg-bg-200 ${
-              sidebarSessionSortDesc ? 'text-text-100' : 'text-text-300'
+              sidebarProjectSortDesc ? 'text-text-100' : 'text-text-300'
             }`}
           >
             <span className="w-4 h-4 flex items-center justify-center shrink-0 text-text-400">
@@ -132,7 +131,7 @@ export function SessionSortMenu() {
             <span className="flex-1 min-w-0 truncate text-[length:var(--fs-sm)]">
               {t('sidebar.sortDesc', { defaultValue: '倒序（新 → 旧）' })}
             </span>
-            {sidebarSessionSortDesc && (
+            {sidebarProjectSortDesc && (
               <span className="w-4 flex items-center justify-center shrink-0 text-accent-main-100">
                 <CheckIcon size={14} />
               </span>
@@ -141,10 +140,10 @@ export function SessionSortMenu() {
           <button
             type="button"
             role="menuitemradio"
-            aria-checked={!sidebarSessionSortDesc}
-            onClick={() => apply(sidebarSessionSortField, false)}
+            aria-checked={!sidebarProjectSortDesc}
+            onClick={() => apply(sidebarProjectSortField, false)}
             className={`w-full px-2 py-2 rounded-lg flex items-center gap-2 text-left bg-transparent border-none cursor-pointer transition-colors duration-150 hover:bg-bg-200 ${
-              !sidebarSessionSortDesc ? 'text-text-100' : 'text-text-300'
+              !sidebarProjectSortDesc ? 'text-text-100' : 'text-text-300'
             }`}
           >
             <span className="w-4 h-4 flex items-center justify-center shrink-0 text-text-400">
@@ -153,7 +152,7 @@ export function SessionSortMenu() {
             <span className="flex-1 min-w-0 truncate text-[length:var(--fs-sm)]">
               {t('sidebar.sortAsc', { defaultValue: '正序（旧 → 新）' })}
             </span>
-            {!sidebarSessionSortDesc && (
+            {!sidebarProjectSortDesc && (
               <span className="w-4 flex items-center justify-center shrink-0 text-accent-main-100">
                 <CheckIcon size={14} />
               </span>

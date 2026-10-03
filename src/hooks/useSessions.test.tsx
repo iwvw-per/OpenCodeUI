@@ -2,8 +2,8 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EventCallbacks } from '../types/api/event'
 import { useSessions } from './useSessions'
-import { layoutStore } from '../store/layoutStore'
 import { sessionListIndexStore } from '../store/sessionListIndexStore'
+import { sessionActivityStore } from '../store/sessionActivityStore'
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void
@@ -87,8 +87,8 @@ describe('useSessions', () => {
 
   afterEach(() => {
     vi.useRealTimers()
-    // 排序偏好是全局 store 状态，重置避免污染后续用例
-    layoutStore.setSidebarSessionSort('updated', true)
+    // 锚点是全局 store 状态，重置避免污染后续用例
+    sessionActivityStore.reset()
   })
 
   it('waits for enabled before fetching', async () => {
@@ -195,7 +195,7 @@ describe('useSessions', () => {
     expect(result.current.sessions.map(session => session.id)).toEqual(['session-new', 'session-a'])
   })
 
-  it('sorts fetched sessions by updated descending by default', async () => {
+  it('sorts fetched sessions by anchor time descending (newest first)', async () => {
     getSessionsMock.mockResolvedValue([
       { ...makeSession('session-old'), time: { created: 1, updated: 10 } },
       { ...makeSession('session-new'), time: { created: 2, updated: 30 } },
@@ -216,7 +216,7 @@ describe('useSessions', () => {
     ])
   })
 
-  it('re-sorts the existing list when the sort preference changes', async () => {
+  it('re-sorts the existing list when a session anchor is raised', async () => {
     getSessionsMock.mockResolvedValue([
       { ...makeSession('session-old'), time: { created: 1, updated: 10 } },
       { ...makeSession('session-new'), time: { created: 2, updated: 30 } },
@@ -231,22 +231,22 @@ describe('useSessions', () => {
 
     expect(result.current.sessions.map(session => session.id)).toEqual(['session-new', 'session-old'])
 
-    // 切到正序：立即就地重排，不必等下次拉取
+    // 旧会话收到更新的用户消息锚点：立即置顶，不必等下次拉取
     await act(async () => {
-      layoutStore.setSidebarSessionSort('updated', false)
+      sessionActivityStore.recordActivity('session-old', 99)
     })
 
     expect(result.current.sessions.map(session => session.id)).toEqual(['session-old', 'session-new'])
   })
 
-  it('sorts by created time when the preference says so', async () => {
+  it('ignores a stale anchor that is older than the recorded one', async () => {
     getSessionsMock.mockResolvedValue([
-      { ...makeSession('session-a'), time: { created: 30, updated: 1 } },
-      { ...makeSession('session-b'), time: { created: 10, updated: 2 } },
+      { ...makeSession('session-old'), time: { created: 1, updated: 10 } },
+      { ...makeSession('session-new'), time: { created: 2, updated: 30 } },
     ])
 
     await act(async () => {
-      layoutStore.setSidebarSessionSort('created', false)
+      sessionActivityStore.recordActivity('session-old', 99)
     })
 
     const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
@@ -256,8 +256,14 @@ describe('useSessions', () => {
       await Promise.resolve()
     })
 
-    // 按创建时间正序
-    expect(result.current.sessions.map(session => session.id)).toEqual(['session-b', 'session-a'])
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-old', 'session-new'])
+
+    // 迟到的旧锚点不应把顺序降回去
+    await act(async () => {
+      sessionActivityStore.recordActivity('session-old', 5)
+    })
+
+    expect(result.current.sessions.map(session => session.id)).toEqual(['session-old', 'session-new'])
   })
 
   it('does not report hasMore when the server returns exactly the page size', async () => {
