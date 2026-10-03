@@ -318,7 +318,7 @@ function EventSoundCard({
                   : 'text-text-400 hover:bg-bg-200'
               }`}
           >
-            {BUILTIN_SOUNDS[sid]}
+            {t(BUILTIN_SOUNDS[sid])}
           </button>
         ))}
 

@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDownIcon, SendIcon, StopIcon, PaperclipIcon, AgentIcon, ThinkingIcon } from '../../../components/Icons'
+import { ChevronDownIcon, PaperclipIcon, AgentIcon, ThinkingIcon } from '../../../components/Icons'
 import { DropdownMenu, MenuItem, IconButton, AnimatedPresence } from '../../../components/ui'
-import { Spinner } from '../../../components/ui/Spinner'
 import { ModelSelector, type ModelSelectorHandle } from '../ModelSelector'
 import { useChatViewport } from '../chatViewport'
 import { isTauri, isTauriMobile, extToMime } from '../../../utils/tauri'
@@ -21,12 +20,8 @@ interface InputToolbarProps {
   fileCapabilities?: FileCapabilities
   onFilesSelected: (files: File[]) => void
 
-  isStreaming?: boolean
+  /** 发送中：禁用选择器与附件，避免中途改模型/添附件 */
   isSending?: boolean
-  onAbort?: () => void
-
-  canSend: boolean
-  onSend: () => void
 
   // Model selection（移动端显示在工具栏）
   models?: ModelInfo[]
@@ -47,11 +42,7 @@ export function InputToolbar({
   onVariantChange,
   fileCapabilities,
   onFilesSelected,
-  isStreaming,
   isSending = false,
-  onAbort,
-  canSend,
-  onSend,
   models = [],
   selectedModelKey = null,
   onModelChange,
@@ -78,29 +69,29 @@ export function InputToolbar({
     if (caps.image) {
       accept.push('image/*')
       extensions.push('png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg')
-      filterNames.push('Images')
+      filterNames.push(t('inputToolbar.filterImages'))
     }
     if (caps.pdf) {
       accept.push('application/pdf')
       extensions.push('pdf')
-      filterNames.push('PDF')
+      filterNames.push(t('inputToolbar.filterPdf'))
     }
     if (caps.audio) {
       accept.push('audio/*')
       extensions.push('mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a')
-      filterNames.push('Audio')
+      filterNames.push(t('inputToolbar.filterAudio'))
     }
     if (caps.video) {
       accept.push('video/*')
       extensions.push('mp4', 'webm', 'mov', 'avi', 'mkv')
-      filterNames.push('Video')
+      filterNames.push(t('inputToolbar.filterVideo'))
     }
 
     return {
       acceptString: accept.join(','),
       tauriFilters: extensions.length > 0 ? [{ name: filterNames.join(' / '), extensions }] : [],
     }
-  }, [caps.image, caps.pdf, caps.audio, caps.video])
+  }, [caps.image, caps.pdf, caps.audio, caps.video, t])
   // State for menus
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
   const [variantMenuOpen, setVariantMenuOpen] = useState(false)
@@ -138,7 +129,7 @@ export function InputToolbar({
     if (items.length === 0) return
 
     const selectedItem = menu.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]')
-    const target = mode === 'first' ? items[0] : mode === 'last' ? items[items.length - 1] : selectedItem ?? items[0]
+    const target = mode === 'first' ? items[0] : mode === 'last' ? items[items.length - 1] : (selectedItem ?? items[0])
     target?.focus()
   }, [])
 
@@ -173,7 +164,12 @@ export function InputToolbar({
   }, [])
 
   const handleMenuKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>, menu: HTMLDivElement | null, onClose: () => void, trigger: HTMLButtonElement | null) => {
+    (
+      event: React.KeyboardEvent<HTMLDivElement>,
+      menu: HTMLDivElement | null,
+      onClose: () => void,
+      trigger: HTMLButtonElement | null,
+    ) => {
       const items = Array.from(menu?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"], button') ?? [])
       if (items.length === 0) {
         if (event.key === 'Escape') {
@@ -307,7 +303,8 @@ export function InputToolbar({
   const currentAgent = agents.find(a => a.name === selectedAgent)
 
   return (
-    <div className="flex items-center justify-between px-3 pb-3 relative">
+    // 右侧留出 ChatFab 的位置（FAB 绝对定位在输入框右下角，宽 32 + right 18）
+    <div className="flex items-center justify-between pl-3 pr-14 pb-3 relative">
       {/* Left side: Model + Agent + Variant selectors */}
       <div className={`flex items-center min-w-0 ${isCompact ? 'gap-1' : 'gap-2'}`}>
         {/* Agent Selector（模式选择） */}
@@ -345,7 +342,9 @@ export function InputToolbar({
               >
                 <AgentIcon />
               </span>
-              <span className="text-[length:var(--fs-sm)] text-text-300 capitalize truncate">{selectedAgent || 'build'}</span>
+              <span className="text-[length:var(--fs-sm)] text-text-300 capitalize truncate">
+                {selectedAgent || 'build'}
+              </span>
               {/* 箭头与 ModelSelector 保持一致：展开时旋转 180°，带过渡 */}
               <span
                 className={`text-text-400 shrink-0 transition-transform duration-200 ${isCompact ? 'hidden' : ''} ${
@@ -476,7 +475,12 @@ export function InputToolbar({
                 aria-label={t('header.variantMenu')}
                 className="flex flex-col gap-0.5"
                 onKeyDown={event =>
-                  handleMenuKeyDown(event, variantMenuRef.current, () => setVariantMenuOpen(false), variantTriggerRef.current)
+                  handleMenuKeyDown(
+                    event,
+                    variantMenuRef.current,
+                    () => setVariantMenuOpen(false),
+                    variantTriggerRef.current,
+                  )
                 }
               >
                 <MenuItem
@@ -508,7 +512,8 @@ export function InputToolbar({
         </AnimatedPresence>
       </div>
 
-      {/* Action Buttons */}
+      {/* Action Buttons — 发送 / 停止已移出，由右下角的 ChatFab 承担（同一图标形变）。
+          这里只保留附件、上传等左侧动作。 */}
       <div className="flex items-center gap-1 shrink-0">
         <AnimatedPresence show={supportsAnyFile}>
           <>
@@ -531,20 +536,6 @@ export function InputToolbar({
             </IconButton>
           </>
         </AnimatedPresence>
-        {!canSend && isStreaming && !isSending ? (
-          <IconButton aria-label={t('inputToolbar.stopGeneration')} variant="solid" onClick={onAbort}>
-            <StopIcon />
-          </IconButton>
-        ) : (
-          <IconButton
-            aria-label={isSending ? t('inputToolbar.sendingMessage') : t('inputToolbar.sendMessage')}
-            variant="solid"
-            disabled={!canSend || isSending}
-            onClick={onSend}
-          >
-            {isSending ? <Spinner size="xs" tone="current" variant="ring" /> : <SendIcon />}
-          </IconButton>
-        )}
       </div>
     </div>
   )

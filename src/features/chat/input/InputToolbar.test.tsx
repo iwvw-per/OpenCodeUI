@@ -112,8 +112,6 @@ describe('InputToolbar file selection', () => {
         agents={[]}
         fileCapabilities={{ image: true, pdf: false, audio: false, video: false }}
         onFilesSelected={onFilesSelected}
-        canSend={false}
-        onSend={vi.fn()}
       />,
     )
 
@@ -141,8 +139,6 @@ describe('InputToolbar file selection', () => {
         agents={[]}
         fileCapabilities={{ image: true, pdf: false, audio: false, video: false }}
         onFilesSelected={onFilesSelected}
-        canSend={false}
-        onSend={vi.fn()}
       />,
     )
 
@@ -168,8 +164,6 @@ describe('InputToolbar file selection', () => {
         onAgentChange={vi.fn()}
         fileCapabilities={{ image: false, pdf: false, audio: false, video: false }}
         onFilesSelected={vi.fn()}
-        canSend={false}
-        onSend={vi.fn()}
       />,
     )
 
@@ -190,10 +184,8 @@ describe('InputToolbar file selection', () => {
         agents={agents}
         selectedAgent="build"
         onAgentChange={vi.fn()}
-        fileCapabilities={{ image: false, pdf: false, audio: false, video: false }}
-        canSend={true}
+        fileCapabilities={{ image: true, pdf: false, audio: false, video: false }}
         onFilesSelected={vi.fn()}
-        onSend={vi.fn()}
       />,
     )
 
@@ -205,7 +197,8 @@ describe('InputToolbar file selection', () => {
 
     await waitFor(() => {
       expect(trigger).toHaveAttribute('aria-expanded', 'false')
-      expect(screen.getByRole('button', { name: 'Send message' })).toHaveFocus()
+      // 发送按钮已迁到 ChatFab；Tab 从菜单移出后落到工具栏内的附件按钮
+      expect(screen.getByRole('button', { name: 'Attach file' })).toHaveFocus()
     })
   })
 
@@ -222,8 +215,6 @@ describe('InputToolbar file selection', () => {
             onAgentChange={vi.fn()}
             fileCapabilities={{ image: false, pdf: false, audio: false, video: false }}
             onFilesSelected={vi.fn()}
-            canSend={false}
-            onSend={vi.fn()}
             inputContainerRef={containerRef}
           />
         </div>

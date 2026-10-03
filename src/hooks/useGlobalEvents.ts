@@ -694,7 +694,7 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
               if (!isChildSession(scopedId)) {
                 const meta = activeSessionStore.getSessionMeta(scopedId)
                 const sessionLabel = meta?.title || error.sessionID.slice(0, 8)
-                notificationStore.push('error', sessionLabel, 'Session error', scopedId, meta?.directory)
+                notificationStore.push('error', sessionLabel, i18n.t('chat:notification.sessionError'), scopedId, meta?.directory)
               }
             } else if (isSessionDirectlyOpen(scopedId) && soundStore.getSnapshot().currentSessionEnabled) {
               playNotificationSoundDeduped('error')
@@ -789,7 +789,7 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
 
           // Toast 通知 — 不属于当前 session family 的才弹
           if (!belongsToCurrentSession(scopedId)) {
-            notificationStore.push('permission', `${sessionLabel} — Permission`, desc, scopedId, meta?.directory)
+            notificationStore.push('permission', i18n.t('chat:notification.permissionTitle', { session: sessionLabel }), desc, scopedId, meta?.directory)
           } else if (
             shouldPlayPermissionSound(scopedId) &&
             isSessionDirectlyOpen(scopedId) &&
@@ -818,7 +818,7 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
           const scopedId = scope(request.sessionID)
           const meta = activeSessionStore.getSessionMeta(scopedId)
           const sessionLabel = meta?.title || request.sessionID.slice(0, 8)
-          const desc = request.questions?.[0]?.header || 'AI is waiting for your input'
+          const desc = request.questions?.[0]?.header || i18n.t('chat:notification.aiWaitingForInput')
 
           // Active 列表：注册 pending request
           activeSessionStore.addPendingRequest(request.id, scopedId, 'question', desc)
@@ -837,7 +837,7 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
 
           // Toast 通知
           if (!belongsToCurrentSession(scopedId)) {
-            notificationStore.push('question', `${sessionLabel} — Question`, desc, scopedId, meta?.directory)
+            notificationStore.push('question', i18n.t('chat:notification.questionTitle', { session: sessionLabel }), desc, scopedId, meta?.directory)
           } else if (isSessionDirectlyOpen(scopedId) && soundStore.getSnapshot().currentSessionEnabled) {
             playNotificationSoundDeduped('question')
           }
@@ -906,7 +906,7 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
               // 推通知只会产生点不到也清不掉的孤儿未读点。跳过。
               const meta = activeSessionStore.getSessionMeta(scopedId)
               const sessionLabel = meta?.title || data.sessionID.slice(0, 8)
-              notificationStore.push('completed', sessionLabel, 'Session completed', scopedId, meta?.directory)
+              notificationStore.push('completed', sessionLabel, i18n.t('chat:notification.sessionCompleted'), scopedId, meta?.directory)
             }
           }
         },
@@ -964,7 +964,8 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
     // 让主机列表的状态点及时反映真实可达性，而不是跟着 SSE 连接态停留绿色。
     const healthPollTimer = window.setInterval(() => {
       for (const serverId of activeServerIdsRef.current) {
-        void serverStore.checkHealth(serverId).catch(() => {})
+        // silent：已有结果时不要先翻成 checking，否则状态点会周期性闪烁
+        void serverStore.checkHealth(serverId, { silent: true }).catch(() => {})
       }
     }, 15000)
 

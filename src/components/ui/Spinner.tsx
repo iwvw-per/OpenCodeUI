@@ -4,13 +4,22 @@ import { cn } from '../../utils/cn'
 
 export type SpinnerSize = 'xs' | 'sm' | 'md' | 'lg'
 export type SpinnerTone = 'muted' | 'accent' | 'current'
-export type SpinnerVariant = 'ring' | 'pixel' | 'dots' | 'orbit' | 'grid-orbit'
+export type SpinnerVariant = 'ring' | 'pixel' | 'dots' | 'orbit' | 'grid-orbit' | 'drive'
 
 const sizeMap: Record<SpinnerSize, number> = {
   xs: 10,
   sm: 12,
   md: 14,
   lg: 20,
+}
+
+/** 网格类变体的单格边长：随 size 档位放大，与消息流放大的工具图标视觉对齐。
+ *  xs 保持 3px，避免侧栏搜索框内 14px 的小 spinner 溢出。 */
+const gridCellBySize: Record<SpinnerSize, number> = {
+  xs: 3,
+  sm: 4,
+  md: 4,
+  lg: 5,
 }
 
 const toneStyles: Record<SpinnerTone, string> = {
@@ -22,7 +31,7 @@ const toneStyles: Record<SpinnerTone, string> = {
 interface SpinnerProps extends Omit<React.SVGProps<SVGSVGElement>, 'children'> {
   size?: SpinnerSize
   tone?: SpinnerTone
-  /** ring（默认圆环）/ pixel（网格）/ dots（三点）/ orbit（轨道）/ grid-orbit（网格绕行） */
+  /** ring（默认圆环）/ pixel（网格对角波）/ dots（三点）/ orbit（轨道）/ grid-orbit（网格绕行）/ drive（网格右行波浪） */
   variant?: SpinnerVariant
   className?: string
 }
@@ -47,10 +56,11 @@ export const Spinner = forwardRef<SVGSVGElement, SpinnerProps>(
         data-loader-variant={variant}
         className={cn('inline-flex shrink-0 items-center justify-center', toneStyles[tone], className)}
       >
-        {variant === 'pixel' && <PixelGrid cell={size === 'lg' ? 4 : 3} />}
+        {variant === 'pixel' && <PixelGrid cell={gridCellBySize[size]} />}
+        {variant === 'drive' && <PixelGrid cell={gridCellBySize[size]} variant="drive" />}
         {variant === 'dots' && <Dots cell={size === 'lg' ? 4 : 3} />}
         {variant === 'orbit' && <Orbit box={size === 'lg' ? 16 : 12} />}
-        {variant === 'grid-orbit' && <GridOrbit cell={size === 'lg' ? 4 : 3} />}
+        {variant === 'grid-orbit' && <GridOrbit cell={gridCellBySize[size]} />}
       </span>
     )
   },
@@ -65,21 +75,39 @@ export interface PixelGridProps {
    * 与闪烁变体共用同一套几何，视觉上能看出是同一个图标的不同阶段。
    */
   animated?: boolean
+  /**
+   * 动画形态：diagonal（默认，对角波）/ drive（Drive 右行波浪，每格延迟按
+   * 「列 + 到中行的距离」递增，形成向左凸的箭头向右推进）。
+   */
+  variant?: 'diagonal' | 'drive'
   className?: string
 }
 
-export function PixelGrid({ cell, animated = true, className }: PixelGridProps) {
+/* Drive 波浪：列 + 到中行的距离 决定延迟，形成向左凸出的箭头，一道接一道向右推进。 */
+const PIXEL_DRIVE_DELAY_MS = Array.from({ length: 9 }, (_, i) => {
+  const row = Math.floor(i / 3)
+  const col = i % 3
+  return (col + Math.abs(row - 1)) * 90
+})
+
+export function PixelGrid({ cell, animated = true, variant = 'diagonal', className }: PixelGridProps) {
+  const isDrive = variant === 'drive'
+  const cellClass = isDrive ? 'loader-drive-cell' : 'loader-pixel-cell'
   return (
     <span className={cn('grid grid-cols-3', className)} style={{ gap: 1 }}>
       {Array.from({ length: 9 }, (_, i) => (
         <span
           key={i}
-          className={cn('rounded-[0.5px] bg-current', animated && 'loader-pixel-cell')}
+          className={cn('rounded-[0.5px] bg-current', animated && cellClass)}
           style={{
             width: cell,
             height: cell,
             ...(animated
-              ? { animationDelay: `${(i % 3) * 0.12 + Math.floor(i / 3) * 0.12}s` }
+              ? {
+                  animationDelay: isDrive
+                    ? `${PIXEL_DRIVE_DELAY_MS[i]}ms`
+                    : `${(i % 3) * 0.12 + Math.floor(i / 3) * 0.12}s`,
+                }
               : null),
           }}
         />

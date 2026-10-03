@@ -7,7 +7,7 @@
 
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import { messageStore } from '../store/messageStore'
-import { computeSessionStats, isSameSessionStats } from './sessionStatsCompute'
+import { computeSessionStatsCached, isSameSessionStats } from './sessionStatsCompute'
 import type { SessionStats } from './sessionStatsTypes'
 
 /** 流式时最多每 200ms 推一次；结束/非流式立即更新 */
@@ -18,7 +18,7 @@ export function useSessionStatsFor(sessionId: string | null, contextLimit: numbe
 
   const getSnapshot = useCallback((): SessionStats => {
     const messages = messageStore.getVisibleMessages(sessionId)
-    const next = computeSessionStats(messages, contextLimit)
+    const next = computeSessionStatsCached(messages, contextLimit)
     const prev = cacheRef.current
     if (prev && isSameSessionStats(prev, next)) return prev
     cacheRef.current = next

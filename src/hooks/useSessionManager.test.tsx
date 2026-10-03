@@ -1,18 +1,18 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSessionManager } from './useSessionManager'
-import { HISTORY_LOAD_BATCH_SIZE, INITIAL_MESSAGE_LIMIT } from '../constants'
+import { HISTORY_TURN_BATCH_SIZE } from '../constants'
 
 const {
   getSessionMock,
-  getSessionMessagePageMock,
+  getSessionTurnPageMock,
   messageStoreMock,
   sessionErrorHandlerMock,
   revertMessageMock,
   extractUserMessageContentMock,
 } = vi.hoisted(() => ({
   getSessionMock: vi.fn(),
-  getSessionMessagePageMock: vi.fn(),
+  getSessionTurnPageMock: vi.fn(),
   messageStoreMock: {
     getSessionState: vi.fn(),
     setLoadState: vi.fn(),
@@ -21,6 +21,9 @@ const {
     updateSessionMetadata: vi.fn(),
     prependMessages: vi.fn(),
     setRevertState: vi.fn(),
+    compressHistoricalTurns: vi.fn(() => false),
+    hydrateMessages: vi.fn(() => false),
+    getTrimmedCount: vi.fn(() => 0),
   },
   sessionErrorHandlerMock: vi.fn(),
   revertMessageMock: vi.fn(),
@@ -29,7 +32,10 @@ const {
 
 vi.mock('../api', () => ({
   getSession: (...args: unknown[]) => getSessionMock(...args),
-  getSessionMessagePage: (...args: unknown[]) => getSessionMessagePageMock(...args),
+  getSessionTurnPage: (...args: unknown[]) => getSessionTurnPageMock(...args),
+  getSessionMessagePage: (...args: unknown[]) => getSessionTurnPageMock(...args),
+  getSessionLightweightMessages: vi.fn(),
+  probeLightweightSupport: vi.fn(async () => false),
   revertMessage: (...args: unknown[]) => revertMessageMock(...args),
   unrevertSession: vi.fn(),
   extractUserMessageContent: (message: unknown) => extractUserMessageContentMock(message),
@@ -46,7 +52,7 @@ vi.mock('../utils', () => ({
 describe('useSessionManager', () => {
   beforeEach(() => {
     getSessionMock.mockReset()
-    getSessionMessagePageMock.mockReset()
+    getSessionTurnPageMock.mockReset()
     messageStoreMock.getSessionState.mockReset()
     messageStoreMock.setLoadState.mockReset()
     messageStoreMock.setLoadError.mockReset()
@@ -54,13 +60,19 @@ describe('useSessionManager', () => {
     messageStoreMock.updateSessionMetadata.mockReset()
     messageStoreMock.prependMessages.mockReset()
     messageStoreMock.setRevertState.mockReset()
+    messageStoreMock.compressHistoricalTurns.mockReset()
+    messageStoreMock.compressHistoricalTurns.mockReturnValue(false)
+    messageStoreMock.hydrateMessages.mockReset()
+    messageStoreMock.hydrateMessages.mockReturnValue(false)
+    messageStoreMock.getTrimmedCount.mockReset()
+    messageStoreMock.getTrimmedCount.mockReturnValue(0)
     sessionErrorHandlerMock.mockReset()
     revertMessageMock.mockReset()
     extractUserMessageContentMock.mockReset()
 
     messageStoreMock.getSessionState.mockReturnValue(null)
     getSessionMock.mockResolvedValue({ id: 'session-1', directory: '/workspace/demo' })
-    getSessionMessagePageMock.mockResolvedValue({ messages: [] })
+    getSessionTurnPageMock.mockResolvedValue({ messages: [], nextCursor: undefined, hasMore: false })
     revertMessageMock.mockResolvedValue({})
     extractUserMessageContentMock.mockReturnValue({ text: 'hello', attachments: [] })
   })
@@ -69,7 +81,7 @@ describe('useSessionManager', () => {
     const onSessionMissing = vi.fn()
     const notFoundError = Object.assign(new Error('session not found'), { status: 404 })
     getSessionMock.mockRejectedValue(notFoundError)
-    getSessionMessagePageMock.mockRejectedValue(notFoundError)
+    getSessionTurnPageMock.mockRejectedValue(notFoundError)
 
     renderHook(() =>
       useSessionManager({
@@ -90,7 +102,7 @@ describe('useSessionManager', () => {
     )
   })
 
-  it('loads history with the store cursor instead of re-fetching all messages', async () => {
+  it('loads history by turn batch with the store cursor', async () => {
     const apiMessage = {
       info: { id: 'message-0', role: 'user', time: { created: 1 } },
       parts: [],
@@ -101,7 +113,7 @@ describe('useSessionManager', () => {
       hasMoreHistory: true,
       historyCursor: 'cursor-1',
     })
-    getSessionMessagePageMock.mockResolvedValue({ messages: [apiMessage], nextCursor: 'cursor-2' })
+    getSessionTurnPageMock.mockResolvedValue({ messages: [apiMessage], nextCursor: 'cursor-2', hasMore: true })
 
     const { result } = renderHook(() =>
       useSessionManager({ sessionId: 'session-1', directory: '/workspace/demo' }),
@@ -111,9 +123,9 @@ describe('useSessionManager', () => {
       await result.current.loadMoreHistory()
     })
 
-    expect(getSessionMessagePageMock).toHaveBeenCalledWith(
+    expect(getSessionTurnPageMock).toHaveBeenCalledWith(
       'session-1',
-      HISTORY_LOAD_BATCH_SIZE,
+      HISTORY_TURN_BATCH_SIZE,
       'cursor-1',
       '/workspace/demo',
       expect.anything(),
@@ -121,21 +133,24 @@ describe('useSessionManager', () => {
     expect(messageStoreMock.prependMessages).toHaveBeenCalledWith('session-1', [apiMessage], true, 'cursor-2')
   })
 
-  it('falls back to limit-based paging when the server returns no cursor', async () => {
+  it('loads older history by turn batch when the server returns no cursor', async () => {
     const apiMessage = {
       info: { id: 'message-0', role: 'user', time: { created: 1 } },
       parts: [],
     }
     messageStoreMock.getSessionState.mockReturnValue({
-      messages: [{ info: { id: 'message-1', role: 'user', time: { created: 2 } }, parts: [] }],
+      messages: [
+        { info: { id: 'message-1', role: 'user', time: { created: 2 } }, parts: [] },
+        { info: { id: 'message-2', role: 'assistant', time: { created: 3 } }, parts: [] },
+      ],
       directory: '/workspace/demo',
       hasMoreHistory: true,
       historyCursor: undefined,
     })
-    // 旧版 serve 忽略 before：请求多少就返回多少（这里是满载），但没有游标
-    const legacyLimit = Math.max(INITIAL_MESSAGE_LIMIT, 1) + HISTORY_LOAD_BATCH_SIZE
-    getSessionMessagePageMock.mockResolvedValue({
-      messages: Array.from({ length: legacyLimit }, () => apiMessage),
+    getSessionTurnPageMock.mockResolvedValue({
+      messages: [apiMessage],
+      nextCursor: undefined,
+      hasMore: false,
     })
 
     const { result } = renderHook(() =>
@@ -146,14 +161,41 @@ describe('useSessionManager', () => {
       await result.current.loadMoreHistory()
     })
 
-    expect(getSessionMessagePageMock).toHaveBeenCalledWith(
-      'session-1',
-      legacyLimit,
-      undefined,
-      '/workspace/demo',
-      expect.anything(),
+    // 无游标（旧版 serve）：以不少于 HISTORY_TURN_BATCH_SIZE 的轮数从最新端补齐
+    const historyCalls = getSessionTurnPageMock.mock.calls.filter(call => call[2] === undefined && (call[1] as number) >= HISTORY_TURN_BATCH_SIZE)
+    expect(historyCalls).toHaveLength(1)
+    expect(messageStoreMock.prependMessages).toHaveBeenCalledWith('session-1', [apiMessage], false, undefined)
+  })
+
+  it('loads forward until the target message is in memory', async () => {
+    const target = { info: { id: 'target', role: 'user', time: { created: 1 } }, parts: [] }
+    let state: {
+      messages: Array<{ info: Record<string, unknown>; parts: unknown[] }>
+      directory: string
+      hasMoreHistory: boolean
+      historyCursor: string | undefined
+    } = {
+      messages: [{ info: { id: 'message-1', role: 'user', time: { created: 2 } }, parts: [] }],
+      directory: '/workspace/demo',
+      hasMoreHistory: true,
+      historyCursor: 'cursor-1',
+    }
+    messageStoreMock.getSessionState.mockImplementation(() => state)
+    getSessionTurnPageMock.mockImplementation(async () => {
+      state = { ...state, messages: [target, ...state.messages], historyCursor: undefined, hasMoreHistory: false }
+      return { messages: [target], nextCursor: undefined, hasMore: false }
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager({ sessionId: 'session-1', directory: '/workspace/demo' }),
     )
-    expect(messageStoreMock.prependMessages).toHaveBeenCalledWith('session-1', expect.any(Array), true, undefined)
+
+    let found = false
+    await act(async () => {
+      found = await result.current.loadUntilMessage('target')
+    })
+
+    expect(found).toBe(true)
   })
 
   it('does not request history when the session is already at the earliest message', async () => {
@@ -174,7 +216,132 @@ describe('useSessionManager', () => {
       await result.current.loadMoreHistory()
     })
 
-    expect(getSessionMessagePageMock).not.toHaveBeenCalled()
+    expect(getSessionTurnPageMock).not.toHaveBeenCalled()
+  })
+
+  it('does not re-arm hasMoreHistory when a no-cursor refetch yields no older messages', async () => {
+    // 大会话「一次拉全」后被裁剪：服务端说没有更早历史，本地存在缺口。
+    const kept = { info: { id: 'message-kept', role: 'assistant', time: { created: 9 } }, parts: [] }
+    messageStoreMock.getSessionState.mockReturnValue({
+      messages: [kept],
+      loadState: 'loaded',
+      isStale: false,
+      directory: '/workspace/demo',
+      hasMoreHistory: false,
+      historyCursor: undefined,
+    })
+    messageStoreMock.getTrimmedCount.mockReturnValue(700)
+    // 重拉的「最新一页」与内存完全重叠 → 去重后没有任何新内容
+    getSessionTurnPageMock.mockResolvedValue({
+      messages: [kept],
+      nextCursor: 'cursor-next',
+      hasMore: true,
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager({ sessionId: 'session-1', directory: '/workspace/demo' }),
+    )
+
+    await act(async () => {
+      await result.current.loadMoreHistory()
+    })
+
+    // 有缺口时确实发起了一次补拉
+    expect(getSessionTurnPageMock).toHaveBeenCalled()
+    // 关键：一条新内容都没补到，就不能把页面再次置为「还有历史」——
+    // 否则 ChatArea 会立刻再触发 loadMore，形成「加载历史记录」循环。
+    expect(messageStoreMock.prependMessages).toHaveBeenCalledWith('session-1', [], false, 'cursor-next')
+  })
+
+  it('keeps hasMoreHistory when a no-cursor refetch does bring older messages', async () => {
+    const kept = { info: { id: 'message-kept', role: 'assistant', time: { created: 9 } }, parts: [] }
+    const older = { info: { id: 'message-older', role: 'user', time: { created: 1 } }, parts: [] }
+    messageStoreMock.getSessionState.mockReturnValue({
+      messages: [kept],
+      loadState: 'loaded',
+      isStale: false,
+      directory: '/workspace/demo',
+      hasMoreHistory: false,
+      historyCursor: undefined,
+    })
+    messageStoreMock.getTrimmedCount.mockReturnValue(700)
+    getSessionTurnPageMock.mockResolvedValue({
+      messages: [older, kept],
+      nextCursor: 'cursor-next',
+      hasMore: true,
+    })
+
+    const { result } = renderHook(() =>
+      useSessionManager({ sessionId: 'session-1', directory: '/workspace/demo' }),
+    )
+
+    await act(async () => {
+      await result.current.loadMoreHistory()
+    })
+
+    // 补到了更早内容且服务端仍报 hasMore → 保留「还有历史」，上滑可继续
+    expect(messageStoreMock.prependMessages).toHaveBeenCalledWith('session-1', [older], true, 'cursor-next')
+  })
+
+  it('auto-recovers the trimmed gap right after a load without waiting for scroll', async () => {
+    // 场景：首屏一次拉全后被内存预算裁掉最旧一段。若不主动补，
+    // 缺口只能靠用户手动上滑 —— 而那条路径还有 userScrolled 判定问题，
+    // 实际表现就是「会话最前面几轮永远看不到」。
+    const kept = { info: { id: 'msg-kept', role: 'assistant', time: { created: 9 } }, parts: [] }
+    const older = { info: { id: 'msg-older', role: 'user', time: { created: 1 } }, parts: [] }
+
+    messageStoreMock.getSessionState.mockReturnValue({
+      messages: [kept],
+      loadState: 'idle',
+      isStale: false,
+      directory: '/workspace/demo',
+      hasMoreHistory: false,
+      historyCursor: undefined,
+    })
+    getSessionMock.mockResolvedValue({ id: 'session-1', directory: '/workspace/demo' })
+    getSessionTurnPageMock.mockResolvedValue({
+      messages: [older, kept],
+      nextCursor: 'cursor-next',
+      hasMore: false,
+    })
+    // 拉全后 setMessages 触发裁剪 → 缺口 700
+    messageStoreMock.getTrimmedCount.mockReturnValue(700)
+
+    const { result } = renderHook(() =>
+      useSessionManager({ sessionId: 'session-1', directory: '/workspace/demo' }),
+    )
+
+    await act(async () => {
+      await result.current.loadSession('session-1')
+    })
+
+    // 加载即自动补缺口：无需任何用户滚动
+    await waitFor(() => {
+      expect(messageStoreMock.prependMessages).toHaveBeenCalled()
+    })
+    const [sid, candidates] = messageStoreMock.prependMessages.mock.calls.at(-1) as [string, unknown[]]
+    expect(sid).toBe('session-1')
+    expect(candidates).toEqual([older])
+  })
+
+  it('does not attempt gap recovery when nothing was trimmed', async () => {
+    messageStoreMock.getSessionState.mockReturnValue(null)
+    getSessionMock.mockResolvedValue({ id: 'session-1', directory: '/workspace/demo' })
+    getSessionTurnPageMock.mockResolvedValue({ messages: [], nextCursor: undefined, hasMore: false })
+    // 未发生裁剪
+    messageStoreMock.getTrimmedCount.mockReturnValue(0)
+    messageStoreMock.compressHistoricalTurns.mockReturnValue(false)
+
+    const { result } = renderHook(() =>
+      useSessionManager({ sessionId: 'session-1', directory: '/workspace/demo' }),
+    )
+
+    await act(async () => {
+      await result.current.loadSession('session-1')
+    })
+
+    // 没有缺口就不该多发一次补拉请求（省一次隧道往返）
+    expect(messageStoreMock.prependMessages).not.toHaveBeenCalled()
   })
 
   it('keeps showing existing messages while force-refreshing a loaded session', async () => {
@@ -190,7 +357,7 @@ describe('useSessionManager', () => {
       hasMoreHistory: false,
       historyCursor: undefined,
     })
-    getSessionMessagePageMock.mockResolvedValue({
+    getSessionTurnPageMock.mockResolvedValue({
       messages: [{ info: { id: 'message-1', role: 'user', time: { created: 2 } }, parts: [] }],
     })
 
@@ -210,7 +377,7 @@ describe('useSessionManager', () => {
 
   it('still shows the loading state when the session has no displayed messages yet', async () => {
     messageStoreMock.getSessionState.mockReturnValue(null)
-    getSessionMessagePageMock.mockResolvedValue({ messages: [] })
+    getSessionTurnPageMock.mockResolvedValue({ messages: [], nextCursor: undefined, hasMore: false })
 
     const { result } = renderHook(() =>
       useSessionManager({ sessionId: 'session-1', directory: '/workspace/demo' }),
@@ -227,9 +394,9 @@ describe('useSessionManager', () => {
     vi.useFakeTimers()
     try {
       messageStoreMock.getSessionState.mockReturnValue(null)
-      getSessionMessagePageMock
+      getSessionTurnPageMock
         .mockRejectedValueOnce(new TypeError('Failed to fetch'))
-        .mockResolvedValueOnce({ messages: [] })
+        .mockResolvedValueOnce({ messages: [], nextCursor: undefined, hasMore: false })
 
       const { result } = renderHook(() =>
         useSessionManager({ sessionId: null, directory: '/workspace/demo' }),
@@ -241,7 +408,7 @@ describe('useSessionManager', () => {
         await loadPromise
       })
 
-      expect(getSessionMessagePageMock).toHaveBeenCalledTimes(2)
+      expect(getSessionTurnPageMock).toHaveBeenCalledTimes(2)
       expect(messageStoreMock.setMessages).toHaveBeenCalled()
       expect(messageStoreMock.setLoadError).not.toHaveBeenCalled()
     } finally {
@@ -253,7 +420,7 @@ describe('useSessionManager', () => {
     vi.useFakeTimers()
     try {
       messageStoreMock.getSessionState.mockReturnValue(null)
-      getSessionMessagePageMock.mockRejectedValue(new TypeError('Failed to fetch'))
+      getSessionTurnPageMock.mockRejectedValue(new TypeError('Failed to fetch'))
 
       const { result } = renderHook(() =>
         useSessionManager({ sessionId: null, directory: '/workspace/demo' }),
@@ -266,7 +433,7 @@ describe('useSessionManager', () => {
       })
 
       // 1 次初始 + 3 次重试
-      expect(getSessionMessagePageMock).toHaveBeenCalledTimes(4)
+      expect(getSessionTurnPageMock).toHaveBeenCalledTimes(4)
       expect(messageStoreMock.setLoadError).toHaveBeenCalledWith('session-1', expect.objectContaining({ name: 'APIError' }))
     } finally {
       vi.useRealTimers()
@@ -278,7 +445,7 @@ describe('useSessionManager', () => {
     try {
       messageStoreMock.getSessionState.mockReturnValue(null)
       const notFound = Object.assign(new Error('session not found'), { status: 404 })
-      getSessionMessagePageMock.mockRejectedValue(notFound)
+      getSessionTurnPageMock.mockRejectedValue(notFound)
 
       const { result } = renderHook(() =>
         useSessionManager({ sessionId: null, directory: '/workspace/demo' }),
@@ -290,7 +457,7 @@ describe('useSessionManager', () => {
         await loadPromise
       })
 
-      expect(getSessionMessagePageMock).toHaveBeenCalledTimes(1)
+      expect(getSessionTurnPageMock).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()
     }

@@ -84,6 +84,8 @@ interface ProjectItem {
   sectionKind?: 'project' | 'workspace'
   /** 推导项目（无已保存工作区时从服务器会话自动生成）：不参与重排/移除 */
   isDerived?: boolean
+  /** 保存到侧栏的时间（稳定，仅用于 auto+created 排序） */
+  addedAt?: number
 }
 
 function getSelectionRange(visibleIds: string[], anchorId: string, targetId: string) {
@@ -169,7 +171,8 @@ export function SidePanel({
   // 这样多端看到的是同一份，用户不必在每台设备上重复隐藏噪音目录。
   const activeServerId = activeServer?.id ?? 'local'
   const { catalog: gitWorkspaceCatalog } = useGitWorkspaceCatalog(catalogDirectories, catalogServerId)
-  const { sidebarChildSessions, sidebarSessionSortDesc, sidebarProjectSortMode } = useLayoutStore()
+  const { sidebarChildSessions, sidebarSessionSortField, sidebarSessionSortDesc, sidebarProjectSortMode } =
+    useLayoutStore()
   // all = 始终列出全部子会话；active = 只列活跃/正在查看；off = 不额外列出
   const showAllChildSessions = sidebarChildSessions === 'all'
   const showActiveChildSessions = sidebarChildSessions !== 'off'
@@ -524,6 +527,9 @@ export function SidePanel({
       const savedNameByPath = new Map(
         directories.map(directory => [normalizeToForwardSlash(directory.path), directory.name]),
       )
+      const savedAddedAtByPath = new Map(
+        directories.map(directory => [normalizeToForwardSlash(directory.path), directory.addedAt]),
+      )
       const groups = new Map<string, ProjectItem>()
 
       for (const directory of directories) {
@@ -549,6 +555,7 @@ export function SidePanel({
           memberDirectories: [directory.path],
           reorderPath: directory.path,
           workspaceDirectories,
+          addedAt: savedAddedAtByPath.get(projectId),
         })
       }
 
@@ -624,7 +631,7 @@ export function SidePanel({
   }, [pathInfo])
 
   const folderProjects = useMemo<ProjectItem[]>(() => {
-    let list: ProjectItem[] = []
+    const list: ProjectItem[] = []
     // 已保存项目（当前主机的 per-server 列表）；根路径（global 项目，归一化后为空）不展示「全局」文件夹
     const nonRootGroups = folderProjectGroups.filter(project => normalizeToForwardSlash(project.worktree || '') !== '')
     // 当前激活项目（真实目录）置顶，与已保存项目重复时不重复添加
@@ -735,20 +742,36 @@ export function SidePanel({
   /**
    * 项目（文件夹）的最终显示顺序。
    *
-   * auto 模式：按「最后使用时间」实时排序，方向跟随侧栏排序偏好；
-   * manual 模式：保持用户拖拽保存的顺序（folderProjects 本身即 saved-directories 顺序）。
+   * 只对「已保存项目」（canReorder）排序，派生项目（当前打开目录 / 会话推导）
+   * 保持 folderProjects 里的固定位置：它们随会话/目录切换而变，参与重排就会让
+   * 项目行乱跳。
    *
-   * 排序菜单此前只管项目内会话，项目本身是"当前项目置顶 + 保存顺序 + 发现顺序"
-   * 的混排，看起来就像"排序没生效"。这里让同一套方向偏好也作用于项目。
-   *
-   * 数据限制：ProjectItem 没有创建时间字段，因此「创建时间」与「更新时间」
-   * 都只能用 projectLastUsedAt（会话最后活跃时间）—— 差异只在方向。
-   * 缺省视作 0；同名时按名称兜底，保证顺序稳定不抖动。
+   * auto + created：按项目保存时间（稳定值）排序，会话活动不改变顺序；
+   * auto + updated：按最后使用时间排序（顺序会随活动变化）；
+   * manual：保持用户拖拽保存的顺序。
    */
-  const sortedFolderProjects = useMemo(
-    () => sortProjectsByMode(folderProjects, sidebarProjectSortMode, projectLastUsedAt, sidebarSessionSortDesc),
-    [folderProjects, projectLastUsedAt, sidebarSessionSortDesc, sidebarProjectSortMode],
-  )
+  const sortedFolderProjects = useMemo(() => {
+    if (sidebarProjectSortMode === 'manual') return folderProjects
+
+    const saved = folderProjects.filter(project => project.canReorder)
+    if (saved.length === 0) return folderProjects
+
+    const sortedSaved = sortProjectsByMode(
+      saved,
+      sidebarProjectSortMode,
+      sidebarSessionSortField,
+      projectLastUsedAt,
+      sidebarSessionSortDesc,
+    )
+    const sortedById = new Map(sortedSaved.map(project => [project.id, project]))
+    return folderProjects.map(project => sortedById.get(project.id) ?? project)
+  }, [
+    folderProjects,
+    projectLastUsedAt,
+    sidebarSessionSortField,
+    sidebarSessionSortDesc,
+    sidebarProjectSortMode,
+  ])
 
   // 需求 3：点击项目目录/名称不跳转（只展开/收起），只有点击会话才导航。
   // 保持签名兼容 FolderRecentList 的 onSelectProject 调用，但不再 setCurrentDirectory。
@@ -1171,6 +1194,13 @@ export function SidePanel({
               </>
             ) : (
               <>
+                {/* 最左：当前主机名（只读标识）；右侧按钮组仍靠右 */}
+                <span
+                  className="min-w-0 flex-1 truncate pl-[6px] text-[length:var(--fs-sm)] font-medium text-text-400"
+                  title={activeServer?.name}
+                >
+                  {activeServer?.name}
+                </span>
                 {/* 全部收起/展开切换 + 排序 + 管理 */}
                 <div className="ml-auto shrink-0 flex items-center gap-0.5">
                   <IconButton
@@ -1201,6 +1231,9 @@ export function SidePanel({
               </>
             )}
           </div>
+
+          {/* 主机标题与工具栏下方：与项目列表之间的全宽分割线 */}
+          <div className="h-px bg-border-200/50" />
 
           {/* 项目列表：已保存项目文件夹树（统一按目录查询）。
               列表为空时由 FolderRecentList 渲染空状态；工作区解析的等待用文件夹内

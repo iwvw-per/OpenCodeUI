@@ -75,11 +75,33 @@
   "escCancel": "Esc 取消",
   "relativeTime": {
     "justNow": "刚刚",
-    "minutesAgo": "{{count}}分钟前",
-    "hoursAgo": "{{count}}小时前",
+    "minutesAgo": "{{count}}分",
+    "hoursAgo": "{{count}}时",
     "daysAgo": "{{count}}天前",
     "today": "今天",
     "yesterday": "昨天",
     "dayBeforeYesterday": "前天"
+  },
+  "mime": {
+    "image": "图片",
+    "audio": "音频",
+    "video": "视频",
+    "file": "文件",
+    "text": "文本",
+    "font": "字体"
+  },
+  "markdownAlert": {
+    "note": "注意",
+    "tip": "提示",
+    "important": "重要",
+    "warning": "警告",
+    "caution": "小心"
+  },
+  "errorBoundary": {
+    "title": "OpenCode UI 遇到问题",
+    "renderFailed": "聊天视图无法渲染此回复。",
+    "openSettings": "打开服务器设置",
+    "tryAgain": "重试",
+    "reload": "重新加载"
   }
 }

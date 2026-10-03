@@ -18,21 +18,21 @@ import type { NotificationType } from '../store/notificationStore'
 
 export const BUILTIN_SOUNDS = {
   // completed
-  'builtin:chime': 'Chime',
-  'builtin:success': 'Success',
-  'builtin:bell': 'Bell',
+  'builtin:chime': 'notifications.sounds.chime',
+  'builtin:success': 'notifications.sounds.success',
+  'builtin:bell': 'notifications.sounds.bell',
   // permission
-  'builtin:knock': 'Knock',
-  'builtin:alert': 'Alert',
-  'builtin:tap': 'Tap',
+  'builtin:knock': 'notifications.sounds.knock',
+  'builtin:alert': 'notifications.sounds.alert',
+  'builtin:tap': 'notifications.sounds.tap',
   // question
-  'builtin:ping': 'Ping',
-  'builtin:bubble': 'Bubble',
-  'builtin:pop': 'Pop',
+  'builtin:ping': 'notifications.sounds.ping',
+  'builtin:bubble': 'notifications.sounds.bubble',
+  'builtin:pop': 'notifications.sounds.pop',
   // error
-  'builtin:error': 'Error',
-  'builtin:buzz': 'Buzz',
-  'builtin:warning': 'Warning',
+  'builtin:error': 'notifications.sounds.error',
+  'builtin:buzz': 'notifications.sounds.buzz',
+  'builtin:warning': 'notifications.sounds.warning',
 } as const
 
 export type BuiltinSoundId = keyof typeof BUILTIN_SOUNDS

@@ -1132,7 +1132,7 @@ h6 {
  * 避免同一屏出现三种转速。prefers-reduced-motion 下统一降级为静态。
  * ============================================ */
 
-/* pixel-grid：3x3 网格按对角线依次点亮 */
+/* pixel-grid：3x3 网格按对角线依次点亮（延迟由组件按 i%3 + i/3 给出，120ms 步进） */
 @keyframes loader-pixel {
   0%,
   70%,
@@ -1146,6 +1146,24 @@ h6 {
 
 .loader-pixel-cell {
   animation: loader-pixel 1.4s ease-in-out infinite;
+}
+
+/* drive：3x3 网格按 Drive 波浪右行推进。
+   每格的延迟由组件按「列 + 到中行的距离」算出，形成向左凸的箭头；
+   650ms 的周期短于整轮扫过（0/90/180/270ms），因此常有两道波前同时在飞。 */
+@keyframes loader-drive {
+  0%,
+  70%,
+  100% {
+    opacity: 0.15;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+
+.loader-drive-cell {
+  animation: loader-drive 0.65s ease-in-out infinite;
 }
 
 /* dots：三点依次弹起 */
@@ -1197,12 +1215,16 @@ h6 {
 
 @media (prefers-reduced-motion: reduce) {
   .loader-pixel-cell,
+  .loader-drive-cell,
   .loader-dot-cell,
   .loader-orbit-ring,
   .loader-grid-orbit-cell {
     animation: none !important;
   }
   .loader-pixel-cell {
+    opacity: 0.5;
+  }
+  .loader-drive-cell {
     opacity: 0.5;
   }
   .loader-dot-cell {
@@ -1360,50 +1382,199 @@ h6 {
 }
 
 /* ============================================
+ * 对话内容列宽过渡
+ * ============================================
+ * 消息行、输入框与对话框共享 --chat-content-width 轴。平时宽度变化（窗口缩放、
+ * 恢复默认宽）走 300ms 过渡；拖拽手柄时给文档挂 data-chat-width-dragging，
+ * 关闭过渡让内容列实时跟手——否则每一帧的新宽度都会被 300ms 动画拖住，
+ * 虚拟列表跟着重排，表现为拖拽卡顿。 */
+.chat-content-width-transition {
+  transition: max-width 300ms ease-in-out;
+}
+
+html[data-chat-width-dragging] .chat-content-width-transition {
+  transition: none;
+}
+
+/* 拖拽期间关掉毛玻璃：输入框/对话框宽度逐帧变化会触发 backdrop-filter 每帧
+ * 重新模糊整块背景，是拖拽卡顿的主要来源之一。固定底色在此刻视觉差异很小。 */
+html[data-chat-width-dragging] .glass {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-color: hsl(var(--bg-000));
+}
+
+html[data-chat-width-dragging] .glass-alt {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-color: hsl(var(--bg-100));
+}
+
+/* ============================================
  * Todo Swap Transition
  * ============================================ */
 
+/* 输入框变形与 FAB 共用同一条时间线：时长 / 缓动只在这里定义一次，
+ * 几何与 FAB 位移因此逐帧同步，不会各走各的。 */
+:root {
+  --chat-morph-dur: 520ms;
+  /* 起步快、中段稳、收尾干脆；比 easeOutExpo 的尾巴更短，跟手感更好。 */
+  --chat-morph-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* 收起态 FAB 与药丸等高（36px），视觉上是一组；展开态缩到 30px 贴右下角。 */
+  --chat-fab-collapsed-size: 36px;
+  --chat-fab-expanded-size: 30px;
+  --chat-fab-gap: 8px;
+}
+
+/* 收起/展开是同一个元素的几何变形：输入框本体从圆角矩形「长」成药丸，
+ * 边框与背景全程依附在这个元素上，不存在淡出再出现的切换。
+ *
+ * width / height / border-radius 用同一条时长与缓动，几何动画完全交给 CSS。
+ * 高度两端都由 JS 钉成像素值（展开 = 内容自然高度），所以 height 也能被插值。
+ * border-color / background 稍快即可，全程边框可见。
+ *
+ * 几何过渡只在「收起/展开翻转」期间打开（data-morphing，由 JS 在翻转那一帧挂上、
+ * 一个时长后摘除）：平时输入增高、容器 resize 需要即时响应，不能被过渡拖住。 */
 [data-input-box] {
+  width: 100%;
+  /* 始终水平居中：展开态 100% 无余量，收起态 132px 自动居中。
+   * 两态都保持 auto，宽度补间过程中元素始终绕中心对称收放，不会横向跳。 */
+  margin-inline: auto;
   transform-origin: center bottom;
   transition:
+    border-color 360ms ease,
+    background-color 360ms ease,
     opacity 180ms cubic-bezier(0.4, 0, 0.2, 1),
     transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-input-box][data-morphing] {
+  transition:
+    width var(--chat-morph-dur) var(--chat-morph-ease),
+    height var(--chat-morph-dur) var(--chat-morph-ease),
+    border-radius var(--chat-morph-dur) var(--chat-morph-ease),
+    border-color 360ms ease,
+    background-color 360ms ease,
+    opacity 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 收起态几何：只收窄宽度、收紧圆角；高度由 JS 写成药丸像素值，参与同一条过渡。
+ * 边框与背景保持同一元素、始终可见，只变色不消失。 */
+[data-input-box][data-collapsed] {
+  width: 132px;
+  border-radius: 24px;
+  cursor: pointer;
+}
+
+/* ============================================
+ * Morphing FAB — 收起态「回到底部」、展开态「发送 / 停止」三合一
+ *
+ * 与输入框共用 --chat-morph-dur / --chat-morph-ease：收起态是药丸右侧的圆按钮，
+ * 展开时滑到输入框右下角并缩成圆角方块，图标在 ↓ / 发送 / 停止 之间交叉淡入。
+ * 定位锚点（chat-fab-anchor）宽度跟随输入框，所以 FAB 始终贴着输入框右缘。
+ * ============================================ */
+.chat-fab-anchor {
+  position: absolute;
+  /* 必须高于输入框：FAB 展开时落在输入框右下角上方，两者是兄弟节点且输入框
+   * DOM 在后。锚点有 transform（创建层叠上下文），但自身 z-index:auto 时会与
+   * 输入框按 DOM 顺序比，被后画的输入框盖住 → 按钮看不见。提高层级让整条锚点
+   * （连同 FAB）浮在输入框之上。 */
+  z-index: 20;
+  bottom: 0;
+  left: 50%;
+  width: 100%;
+  height: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  transition: width var(--chat-morph-dur) var(--chat-morph-ease);
+}
+
+.chat-fab-anchor[data-collapsed='true'] {
+  width: 132px;
+}
+
+.chat-fab {
+  position: absolute;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: none;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+  background-color: hsl(var(--accent-main-000));
+  color: hsl(var(--oncolor-100));
+  will-change: right, bottom, width, height, border-radius;
+  /* 收起态：药丸右侧圆按钮。锚点底边与药丸底边对齐，FAB 与药丸等高 → bottom: 0。 */
+  right: calc(-1 * (var(--chat-fab-collapsed-size) + var(--chat-fab-gap)));
+  bottom: 0;
+  width: var(--chat-fab-collapsed-size);
+  height: var(--chat-fab-collapsed-size);
+  border-radius: calc(var(--chat-fab-collapsed-size) / 2);
+  transition:
+    right var(--chat-morph-dur) var(--chat-morph-ease),
+    bottom var(--chat-morph-dur) var(--chat-morph-ease),
+    width var(--chat-morph-dur) var(--chat-morph-ease),
+    height var(--chat-morph-dur) var(--chat-morph-ease),
+    border-radius 0.46s var(--chat-morph-ease),
+    background-color 0.25s ease;
+}
+
+.chat-fab:hover:not(:disabled) {
+  background-color: hsl(var(--accent-main-200));
+}
+
+.chat-fab:disabled {
+  background-color: hsl(var(--bg-300));
+  color: hsl(var(--text-500));
+  cursor: default;
+}
+
+/* 展开态：滑到输入框右下角，圆角方块。 */
+.chat-fab[data-collapsed='false'] {
+  right: 18px;
+  bottom: 14px;
+  width: var(--chat-fab-expanded-size);
+  height: var(--chat-fab-expanded-size);
+  border-radius: 6px;
+}
+
+/* 停止态换个同色系深一档的底，与发送区分。 */
+.chat-fab[data-mode='stop']:not(:disabled) {
+  background-color: hsl(var(--accent-main-200));
+}
+
+.chat-fab-icon {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transform: scale(0.4) rotate(-90deg);
+  transition:
+    opacity 0.22s ease,
+    transform 0.42s var(--chat-morph-ease);
+}
+
+.chat-fab[data-mode='scroll'] .chat-fab-icon.icon-scroll,
+.chat-fab[data-mode='send'] .chat-fab-icon.icon-send,
+.chat-fab[data-mode='stop'] .chat-fab-icon.icon-stop {
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-fab,
+  .chat-fab-anchor,
+  .chat-fab-icon {
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Floating actions contain backdrop-blur chips; avoid transform layers here so blur survives in WebView/Tauri. */
 [data-floating-actions] {
   transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* 收起时胶囊的浮现动画：与输入区的缩小共用同一时长与缓动，读成一个动作。
- *
- * 为什么用 CSS keyframes 而不是给元素加 transition：
- * 胶囊是条件挂载（{isCollapsed && ...}），元素在挂载的同一帧就需要有「起始态」，
- * 否则浏览器会先按终态渲染一帧再跳回起点，出现一次闪烁。keyframes 的 from 帧
- * 由动画本身提供，挂载即生效，不存在这个问题。
- *
- * 起点略小（0.96）且略下移：呼应输入框「缩进下方」的方向，让两个形态在
- * 视觉上像是同一个东西连续变化，而不是各自动各自。
- * 只用 transform + opacity，不触发布局。 */
-@keyframes composer-capsule-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.animate-composer-capsule-in {
-  animation: composer-capsule-in 220ms cubic-bezier(0.32, 0.72, 0, 1) both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .animate-composer-capsule-in {
-    animation: none;
-  }
 }
 
 [data-input-box][data-todo-swap='hidden'] {
@@ -1630,6 +1801,22 @@ h6 {
   .marquee-title:focus-within .marquee-title-inner {
     animation: none;
   }
+}
+
+/* ============================================================
+   图标 + 单行文本的光学垂直居中
+   ============================================================
+   字体（Manrope / HarmonyOS Sans SC）的 ascent 明显大于 descent，行盒中心
+   因此比字形墨迹中心略低。flex 的 items-center 按行盒居中，排出的
+   「图标 + 单行文本」看起来文字偏上约 0.5~0.8px。
+   text-box: trim-both 把行盒裁到字形上下缘，墨迹真正落到行盒中心，与图标同心。
+
+   只用于「单行、且与图标同排」的文本块。正文多行文本不要用：裁掉首行上方与
+   末行下方的半行距会改变段落高度。
+   不支持的浏览器（旧 WebView2 / WebKitGTK）直接忽略该属性，退回原状。
+   见 docs/standards/AI对话组件视觉原语.md。 */
+.optical-center {
+  text-box: trim-both;
 }
 
 /* ============================================================

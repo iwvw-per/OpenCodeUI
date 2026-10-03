@@ -87,7 +87,7 @@ export const DisclosureRow = forwardRef<HTMLButtonElement, DisclosureRowProps>(
       )}
       {...props}
     >
-      {icon != null && <span className="inline-flex w-[14px] shrink-0 items-center justify-center">{icon}</span>}
+      {icon != null && <span className="inline-flex w-4 shrink-0 items-center justify-center">{icon}</span>}
 
       <span
         className={cn(

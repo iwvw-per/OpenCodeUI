@@ -6,8 +6,8 @@ import { Toggle, SegmentedControl, SettingRow, SettingsSection } from './Setting
 export function WorkspaceSettings() {
   const { t } = useTranslation(['settings'])
   const {
-    isWideMode,
-    toggleWideMode,
+    chatContentWidth,
+    resetChatContentWidth,
     diffStyle,
     setDiffStyle,
     codeWordWrap,
@@ -33,8 +33,15 @@ export function WorkspaceSettings() {
   return (
     <div>
       <SettingsSection title={t('workspace.layout')} description={t('workspace.layoutDesc')}>
-        <SettingRow label={t('appearance.wideMode')} description={t('appearance.wideModeDesc')} onClick={toggleWideMode}>
-          <Toggle enabled={isWideMode} onChange={toggleWideMode} />
+        <SettingRow
+          label={t('appearance.resetChatWidth')}
+          description={t('appearance.resetChatWidthDesc')}
+          onClick={chatContentWidth === null ? undefined : resetChatContentWidth}
+          disabled={chatContentWidth === null}
+        >
+          <span className="text-[length:var(--fs-sm)] tabular-nums text-text-300">
+            {chatContentWidth === null ? t('appearance.chatWidthAuto') : `${Math.round(chatContentWidth)}px`}
+          </span>
         </SettingRow>
 
         <SettingRow

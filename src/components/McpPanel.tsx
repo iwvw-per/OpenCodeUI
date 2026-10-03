@@ -30,7 +30,7 @@ import {
   addMcpServer,
 } from '../api/mcp'
 import type { MCPResource, MCPStatus, McpServerConfig } from '../types/api/mcp'
-import { Button, IconButton, Input, Tabs, TabsList, TabsTrigger } from './ui'
+import { Button, Chip, IconButton, Input, Tabs, TabsList, TabsTrigger, type ChipTone } from './ui'
 import { cn } from '../utils/cn'
 import { interactive } from '../utils/interaction'
 import { useDirectory } from '../hooks'
@@ -252,9 +252,16 @@ export const McpPanel = memo(function McpPanel({ isResizing: _isResizing, onClos
         )}
 
         {loading && servers.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-text-400 text-[length:var(--fs-base)] gap-2">
-            <SpinnerIcon size={20} className="animate-spin opacity-50" />
-            <span>{t('mcpPanel.loadingServers')}</span>
+          <div className="flex flex-col gap-1 p-1" role="status" aria-label={t('mcpPanel.loadingServers')}>
+            {[0, 1, 2].map(index => (
+              <div key={index} className="flex items-center gap-2.5 rounded-md px-2 py-2.5">
+                <span className="size-2 shrink-0 rounded-full bg-bg-300/60" />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="h-3 w-1/3 rounded bg-bg-300/50 animate-pulse" />
+                  <div className="h-2.5 w-1/4 rounded bg-bg-300/40 animate-pulse" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center h-full text-text-400 text-[length:var(--fs-base)] gap-2">
@@ -395,18 +402,20 @@ const AddServerForm = memo(function AddServerForm({ onSubmit, onCancel, isLoadin
       </Tabs>
 
       {/* Name Input */}
-      <div className="mb-2">
+      <div className="mb-2 flex flex-col gap-1">
+        <label className="text-[length:var(--fs-xs)] text-text-400">{t('mcpPanel.serverName')}</label>
         <Input
           type="text"
           value={name}
           onChange={e => setName(e.target.value)}
-          placeholder={t('mcpPanel.serverName')}
+          placeholder={t('mcpPanel.serverNamePlaceholder')}
         />
       </div>
 
       {/* Local: Command Input */}
       {serverType === 'local' && (
-        <div className="mb-2">
+        <div className="mb-2 flex flex-col gap-1">
+          <label className="text-[length:var(--fs-xs)] text-text-400">{t('mcpPanel.command')}</label>
           <Input
             type="text"
             value={command}
@@ -418,7 +427,8 @@ const AddServerForm = memo(function AddServerForm({ onSubmit, onCancel, isLoadin
 
       {/* Remote: URL Input */}
       {serverType === 'remote' && (
-        <div className="mb-2">
+        <div className="mb-2 flex flex-col gap-1">
+          <label className="text-[length:var(--fs-xs)] text-text-400">{t('mcpPanel.url')}</label>
           <Input
             type="text"
             value={url}
@@ -429,7 +439,12 @@ const AddServerForm = memo(function AddServerForm({ onSubmit, onCancel, isLoadin
       )}
 
       {/* Error */}
-      {error && <div className="mb-2 text-[length:var(--fs-sm)] text-danger-100">{error}</div>}
+      {error && (
+        <div className="mb-2 flex items-start gap-1.5 rounded-md bg-danger-bg px-2 py-1.5 text-[length:var(--fs-sm)] text-danger-100">
+          <AlertCircleIcon size={13} className="mt-0.5 shrink-0" />
+          <span className="min-w-0 break-words">{error}</span>
+        </div>
+      )}
 
       {/* Submit */}
       <Button type="submit" className="w-full" isLoading={isLoading}>
@@ -477,28 +492,28 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
   const errorMessage = getErrorMessage()
   const canExpand = Boolean(errorMessage) || server.resources.length > 0
 
-  // 状态颜色和标签
-  const getStatusInfo = () => {
+  // 状态标签与色调（dot 用实色，chip 用语义底色）
+  const getStatusInfo = (): { tone: ChipTone; dot: string; label: string; icon: typeof CheckIcon | null } => {
     switch (status.status) {
       case 'connected':
-        return { color: 'text-success-100', label: t('mcpPanel.connected'), icon: CheckIcon }
+        return { tone: 'success', dot: 'bg-success-100', label: t('mcpPanel.connected'), icon: CheckIcon }
       case 'disabled':
-        return { color: 'text-text-400', label: t('mcpPanel.disabled'), icon: null }
+        return { tone: 'neutral', dot: 'bg-text-500', label: t('mcpPanel.disabled'), icon: null }
       case 'failed':
-        return { color: 'text-danger-100', label: t('common:failed'), icon: AlertCircleIcon }
+        return { tone: 'danger', dot: 'bg-danger-100', label: t('common:failed'), icon: AlertCircleIcon }
       case 'needs_auth':
-        return { color: 'text-warning-100', label: t('mcpPanel.needsAuth'), icon: KeyIcon }
+        return { tone: 'warning', dot: 'bg-warning-100', label: t('mcpPanel.needsAuth'), icon: KeyIcon }
       case 'needs_client_registration':
-        return { color: 'text-warning-100', label: t('mcpPanel.needsRegistration'), icon: KeyIcon }
+        return { tone: 'warning', dot: 'bg-warning-100', label: t('mcpPanel.needsRegistration'), icon: KeyIcon }
       default:
-        return { color: 'text-text-400', label: t('common:unknown'), icon: null }
+        return { tone: 'neutral', dot: 'bg-text-500', label: t('common:unknown'), icon: null }
     }
   }
 
   const statusInfo = getStatusInfo()
   const StatusIcon = statusInfo.icon
 
-  // 渲染操作按钮
+  // 渲染操作按钮：统一用 Button 组件，避免各状态各自手写底色
   const renderActions = () => {
     if (isLoading) {
       return <SpinnerIcon size={14} className="animate-spin text-text-400" />
@@ -507,62 +522,48 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
     switch (status.status) {
       case 'connected':
         return (
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={e => {
               e.stopPropagation()
               onDisconnect(name)
             }}
-            className="px-2 py-0.5 text-[length:var(--fs-sm)] bg-bg-300/50 hover:bg-danger-bg text-text-300 rounded-md transition-colors"
           >
             {t('mcpPanel.disconnect')}
-          </button>
+          </Button>
         )
       case 'disabled':
       case 'failed':
         return (
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={e => {
               e.stopPropagation()
               onConnect(name)
             }}
-            className="px-2 py-0.5 text-[length:var(--fs-sm)] bg-bg-300/50 hover:bg-success-bg text-text-300 rounded-md transition-colors"
           >
             {t('mcpPanel.connect')}
-          </button>
+          </Button>
         )
       case 'needs_auth':
       case 'needs_client_registration':
         return (
-          <button
+          <Button
+            variant="primary"
+            size="sm"
             onClick={e => {
               e.stopPropagation()
               onAuth(name)
             }}
-            className="px-2 py-0.5 text-[length:var(--fs-sm)] bg-warning-bg hover:bg-warning-bg/80 text-warning-100 rounded-md transition-colors flex items-center gap-1"
           >
             <ExternalLinkIcon size={10} />
             {t('mcpPanel.authenticate')}
-          </button>
+          </Button>
         )
       default:
         return null
-    }
-  }
-
-  // 状态指示器颜色
-  const getStatusDotColor = () => {
-    switch (status.status) {
-      case 'connected':
-        return 'bg-success-100'
-      case 'disabled':
-        return 'bg-text-500'
-      case 'failed':
-        return 'bg-danger-100'
-      case 'needs_auth':
-      case 'needs_client_registration':
-        return 'bg-warning-100'
-      default:
-        return 'bg-text-500'
     }
   }
 
@@ -570,12 +571,12 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
     <div className="group">
       {/* Main row */}
       <div
-        className={cn('flex items-center gap-2 rounded-md px-2 py-2', interactive.subtle)}
+        className={cn('flex items-center gap-2 rounded-md px-2 py-2', canExpand && interactive.subtle)}
         onClick={() => canExpand && setExpanded(!expanded)}
       >
         {/* Expand icon only if there are details to show */}
         {canExpand ? (
-          <span className="text-text-400 shrink-0 cursor-pointer">
+          <span className="text-text-400 shrink-0">
             {expanded ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
           </span>
         ) : (
@@ -583,40 +584,42 @@ const ServerItem = memo(function ServerItem({ server, isLoading, onConnect, onDi
         )}
 
         {/* Status indicator */}
-        <div className={`w-2 h-2 rounded-full shrink-0 ${getStatusDotColor()}`} />
+        <span className={cn('size-2 rounded-full shrink-0', statusInfo.dot)} />
 
-        {/* Server name */}
+        {/* Server name + status chip */}
         <div className="flex-1 min-w-0">
-          <div className="text-[length:var(--fs-base)] text-text-100 truncate">{name}</div>
-          <div className={`text-[length:var(--fs-sm)] ${statusInfo.color} flex items-center gap-1`}>
-            {StatusIcon && <StatusIcon size={10} />}
-            <span>{statusInfo.label}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="min-w-0 truncate text-[length:var(--fs-base)] text-text-100">{name}</span>
+            <Chip tone={statusInfo.tone} size="xs" className="gap-0.5">
+              {StatusIcon && <StatusIcon size={9} />}
+              {statusInfo.label}
+            </Chip>
             {server.resources.length > 0 && (
-              <span className="text-text-500 ml-1">
-                - {t('mcpPanel.resourceCount', { count: server.resources.length })}
-              </span>
-            )}
-            {errorMessage && !expanded && (
-              <span className="text-text-500 ml-1 truncate max-w-[200px]" title={errorMessage}>
-                - {errorMessage}
+              <span className="shrink-0 text-[length:var(--fs-xxs)] tabular-nums text-text-500">
+                {t('mcpPanel.resourceCount', { count: server.resources.length })}
               </span>
             )}
           </div>
+          {errorMessage && !expanded && (
+            <div className="mt-0.5 truncate text-[length:var(--fs-sm)] text-danger-100" title={errorMessage}>
+              {errorMessage}
+            </div>
+          )}
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 shrink-0">{renderActions()}</div>
+        <div className="flex items-center gap-1.5 shrink-0">{renderActions()}</div>
       </div>
 
       {/* Expanded Error Details */}
       {expanded && errorMessage && (
-        <div className="mx-2 mb-1 ml-7 rounded-md bg-danger-bg px-2 py-2 text-[length:var(--fs-sm)] text-text-200 break-words font-mono">
+        <div className="mb-1 rounded-md bg-danger-bg px-2 py-2 text-[length:var(--fs-sm)] text-text-200 break-words font-mono">
           {errorMessage}
         </div>
       )}
 
       {expanded && server.resources.length > 0 && (
-        <div className="mx-2 mb-1 ml-7 overflow-hidden rounded-md border border-border-100/40 bg-bg-200/25">
+        <div className="mb-1 overflow-hidden rounded-md border border-border-100/40 bg-bg-200/25">
           <div className="flex items-center gap-1.5 border-b border-border-100/30 px-2 py-1 text-[length:var(--fs-xs)] font-medium text-text-300">
             <FileIcon size={12} />
             <span>{t('mcpPanel.resources')}</span>

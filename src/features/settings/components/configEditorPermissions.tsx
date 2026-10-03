@@ -253,7 +253,7 @@ export function ToolToggleMap({ value, onChange }: { value: unknown; onChange: (
         </div>
       )}
       <div className="flex min-w-0 gap-2">
-        <input value={newKey} onChange={event => setNewKey(event.target.value)} placeholder="tool name" className={`${fieldClass} min-w-0 flex-1 font-mono`} />
+        <input value={newKey} onChange={event => setNewKey(event.target.value)} placeholder={tx('tool name', '工具名称', lang)} className={`${fieldClass} min-w-0 flex-1 font-mono`} />
         <button
           type="button"
           aria-label={tx('Add tool', '添加工具', lang)}

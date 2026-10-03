@@ -2,6 +2,8 @@
 // MIME 类型工具 - 统一处理文件类型分类与预览能力判断
 // ============================================
 
+import i18n from '../i18n'
+
 /**
  * 可直接作为预览渲染的媒体主类型（mimeType 的 "/" 前部分）
  * image/* / audio/* / video/* 天然覆盖所有子类型
@@ -86,7 +88,7 @@ export function decodeBase64Text(base64: string): string {
 
 /**
  * 格式化 mimeType 用于显示
- * e.g. "image/png" -> "PNG Image"
+ * e.g. "image/png" -> "PNG 图片"
  */
 export function formatMimeType(mimeType: string): string {
   const slash = mimeType.indexOf('/')
@@ -96,14 +98,14 @@ export function formatMimeType(mimeType: string): string {
   const minor = mimeType.slice(slash + 1).replace(/[+;].*$/, '') // 去掉参数如 svg+xml
 
   const majorLabels: Record<string, string> = {
-    image: 'Image',
-    audio: 'Audio',
-    video: 'Video',
-    application: 'File',
-    text: 'Text',
-    font: 'Font',
+    image: i18n.t('common:mime.image'),
+    audio: i18n.t('common:mime.audio'),
+    video: i18n.t('common:mime.video'),
+    application: i18n.t('common:mime.file'),
+    text: i18n.t('common:mime.text'),
+    font: i18n.t('common:mime.font'),
   }
 
-  const label = majorLabels[major] || 'File'
+  const label = majorLabels[major] || i18n.t('common:mime.file')
   return `${minor.toUpperCase()} ${label}`
 }

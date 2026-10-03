@@ -277,10 +277,10 @@ const ModelListPanel = memo(function ModelListPanel({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 text-[length:var(--fs-sm)] font-mono flex-shrink-0">
+                    <div className="flex items-center gap-2 text-[length:var(--fs-sm)] tabular-nums flex-shrink-0">
                       <span className="text-text-500 max-w-[100px] truncate text-right">{model.providerName}</span>
                       {model.contextLimit > 0 && (
-                        <span className="text-text-500 w-[4ch] text-right hidden sm:inline">{formatContext(model.contextLimit)}</span>
+                        <span className="text-text-500 min-w-[4ch] text-right hidden sm:inline">{formatContext(model.contextLimit)}</span>
                       )}
                     </div>
                   </button>

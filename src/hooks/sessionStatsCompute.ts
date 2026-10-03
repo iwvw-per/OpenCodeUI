@@ -169,3 +169,19 @@ export function isSameSessionStats(a: SessionStats, b: SessionStats): boolean {
     a.contextEstimated === b.contextEstimated
   )
 }
+
+/**
+ * 按 messages 数组引用缓存统计结果，合并同一帧内多个消费者的重复遍历
+ * （SidebarFooter / ContextDetailsDialog / WorkStatus 各自都算一遍）。
+ * WeakMap 按引用持有，数组被替换后旧条目由 GC 回收；contextLimit 不同则重算。
+ * 详见 sessionTurnStats.ts 中同名缓存的说明。
+ */
+const sessionStatsMemo = new WeakMap<Message[], { contextLimit: number; stats: SessionStats }>()
+
+export function computeSessionStatsCached(messages: Message[], contextLimit: number = 200000): SessionStats {
+  const cached = sessionStatsMemo.get(messages)
+  if (cached && cached.contextLimit === contextLimit) return cached.stats
+  const stats = computeSessionStats(messages, contextLimit)
+  sessionStatsMemo.set(messages, { contextLimit, stats })
+  return stats
+}

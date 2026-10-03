@@ -75,11 +75,33 @@
   "escCancel": "esc cancel",
   "relativeTime": {
     "justNow": "Just now",
-    "minutesAgo": "{{count}}m ago",
-    "hoursAgo": "{{count}}h ago",
+    "minutesAgo": "{{count}}min",
+    "hoursAgo": "{{count}}h",
     "daysAgo": "{{count}}d ago",
     "today": "Today",
     "yesterday": "Yesterday",
     "dayBeforeYesterday": "Day before yesterday"
+  },
+  "mime": {
+    "image": "Image",
+    "audio": "Audio",
+    "video": "Video",
+    "file": "File",
+    "text": "Text",
+    "font": "Font"
+  },
+  "markdownAlert": {
+    "note": "Note",
+    "tip": "Tip",
+    "important": "Important",
+    "warning": "Warning",
+    "caution": "Caution"
+  },
+  "errorBoundary": {
+    "title": "OpenCode UI ran into a problem",
+    "renderFailed": "The chat view could not render this response.",
+    "openSettings": "Open server settings",
+    "tryAgain": "Try again",
+    "reload": "Reload"
   }
 }

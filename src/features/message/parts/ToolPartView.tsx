@@ -223,7 +223,7 @@ export const ToolPartView = memo(function ToolPartView({
       ${iconSpins ? 'animate-spin' : ''}
     `}
     >
-      {isTaskDone ? <TaskDoneIcon size={14} /> : getToolIcon(toolName)}
+      {isTaskDone ? <TaskDoneIcon size={16} /> : getToolIcon(toolName)}
     </div>
   )
 
@@ -423,10 +423,10 @@ export const ToolPartView = memo(function ToolPartView({
     return (
       <div
         ref={rootRef}
-        className={`group relative grid grid-cols-[14px_minmax(0,1fr)] gap-x-1.5 items-start ${MSG_SPACING.item}`}
+        className={`group relative grid grid-cols-[16px_minmax(0,1fr)] gap-x-1.5 items-start ${MSG_SPACING.item}`}
       >
         {/* Icon column — fixed, outside of interactive area */}
-        <span className="inline-flex h-9 w-[14px] items-center justify-center shrink-0">{toolIcon}</span>
+        <span className="inline-flex h-9 w-4 items-center justify-center shrink-0">{toolIcon}</span>
 
         {/* Content column */}
         <div className="min-w-0">

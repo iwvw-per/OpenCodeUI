@@ -17,6 +17,7 @@ import {
   type SessionListBucketKey,
 } from '../store/sessionListIndexStore'
 import { autoDetectPathStyle, sortSessions } from '../utils'
+import i18n from '../i18n'
 
 interface UseSessionsOptions {
   /** 每页数量 */
@@ -203,7 +204,7 @@ try {
           }
         } catch (e) {
           if (requestId !== requestIdRef.current) return
-          const error = e instanceof Error ? e : new Error('Failed to fetch sessions')
+          const error = e instanceof Error ? e : new Error(i18n.t('chat:errors.fetchSessions'))
           if (!append) {
             if (retryAttempt < 3) {
               if (retryTimerRef.current) clearTimeout(retryTimerRef.current)

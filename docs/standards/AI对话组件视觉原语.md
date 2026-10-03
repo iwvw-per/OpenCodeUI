@@ -15,7 +15,7 @@ Chips / Task Rows / Approval Card / Loading State）。
 
 | 组件 | 语义 | 替代掉的旧实现 |
 |---|---|---|
-| `Spinner` | 加载指示（ring / pixel / dots / orbit） | 6 处手写 `border-2 border-* animate-spin` 圆圈 |
+| `Spinner` | 加载指示（ring / pixel / dots / orbit / grid-orbit） | 6 处手写 `border-2 border-* animate-spin` 圆圈 |
 | `LoadingState` | 大块加载（带已耗时） | 会话/历史加载的裸 spinner |
 | `StatusDot` | running / completed / failed / pending | 各处手写 `w-2 h-2 rounded-full bg-*` |
 | `Chip` | 小面积状态标记 | `bg-*-100/20 text-*-100 px-1.5 py-0.5 rounded-xs` |
@@ -27,17 +27,26 @@ Chips / Task Rows / Approval Card / Loading State）。
 
 ```tsx
 <Spinner size="sm" tone="accent" />                 // 12px 圆环
-<Spinner variant="pixel" size="lg" tone="accent" /> // 3x3 网格
+<Spinner variant="pixel" size="lg" tone="accent" /> // 3x3 网格（对角波，过程壳「已处理」）
+<Spinner variant="drive" size="sm" tone="muted" />  // 3x3 网格（Drive 右行波，思考「思考中」）
 <Spinner variant="dots" tone="muted" />             // 三点
 <Spinner variant="orbit" tone="muted" />            // 轨道
 ```
 
 `size` 取 `xs|sm|md|lg`（10/12/14/20px），`tone` 取 `muted|accent|current`，
-`variant` 取 `ring|pixel|dots|orbit`。
+`variant` 取 `ring|pixel|dots|orbit|grid-orbit|drive`。
 
-三个非 ring 变体走 `src/index.css` 的 `loader-pixel-cell` / `loader-dot-cell` /
-`loader-orbit-ring` 三个类，共用同一套节奏常量，避免同一屏出现三种转速。
-`prefers-reduced-motion` 下统一降级为静态。
+两种网格变体刻意区分，避免「思考中」与「已处理」的图标撞车：
+
+- `pixel`：对角波，延迟按 `i%3 + i/3` 以 120ms 步进，1.4s 周期。用于过程壳
+  「已处理」等。
+- `drive`：Drive 右行波浪，延迟按「列 + 到中行的距离」递增，形成向左凸的箭头
+  一道接一道向右推进；650ms 的周期短于整轮扫过，常有两道波前同时在飞。用于
+  思考「思考中」。
+
+各网格变体走 `src/index.css` 的 `loader-pixel-cell` / `loader-drive-cell` /
+`loader-dot-cell` / `loader-orbit-ring` / `loader-grid-orbit-cell` 类，共用同一套
+节奏常量，避免同一屏出现多种转速。`prefers-reduced-motion` 下统一降级为静态。
 
 不要再用 `border-2 border-text-400/30 border-t-text-400 rounded-full animate-spin`
 这类手写圆圈 —— 尺寸、颜色、圆角各写一遍是此前不一致的根源。
@@ -130,6 +139,21 @@ Chips / Task Rows / Approval Card / Loading State）。
 图标的颜色就是状态：运行中/待命用 accent 色（task 图标同步 `animate-spin` 旋转、
 静止时停转），失败用 danger 红，完成保持静默灰。图标条用 `align-middle` 与文字
 垂直居中，不依赖基线偏移。
+
+### 图标 + 单行文本的光学居中
+
+字体（Manrope / HarmonyOS Sans SC）的 ascent 明显大于 descent，行盒中心比字形
+墨迹中心略低。flex 的 `items-center` 按行盒居中，因此「图标 + 单行文本」看起来
+文字偏上约 0.5~0.8px。给该单行文本块加 `optical-center`（`index.css`，内部是
+`text-box: trim-both`）把行盒裁到字形上下缘，墨迹落到行盒中心，与图标同心。
+
+只用于单行、且与图标同排的文本块（侧栏会话/项目名、工具名、步骤数等）。正文
+多行文本不要用：裁掉首行上方与末行下方的半行距会改变段落高度。不支持该属性的
+浏览器（旧 WebView2 / WebKitGTK）直接忽略，退回原状，不会报错。
+
+注意：消息流的工具名、步骤数等行此前专门用 `items-baseline` / `items-center`
+调过对齐（见提交 `50a30ced`、`ed9c605c`），不要在这些地方叠加 `optical-center`，
+以免覆盖既有约定。
 展开后图标条消失，由完整的时间线工具行接管。
 
 `ProcessCollapseBlock` 折叠时在 header 右侧显示「N 步」与思考段数，

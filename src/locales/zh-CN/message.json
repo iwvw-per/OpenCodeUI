@@ -6,7 +6,7 @@
   "undoFromHere": "从此处撤销",
   "forkFromHere": "从此处分叉",
   "forkingFromHere": "正在分叉...",
-  "stepsCount": "{{done}}/{{total}} steps",
+  "stepsCount": "{{done}}/{{total}} 步",
   "thinkingStepCount": "{{count}} 步",
   "diffChips": {
     "more": "+{{count}} 个文件",
@@ -21,20 +21,20 @@
   "tokens": "token",
   "tokensK": "{{count}}k token",
   "defaultRenderer": {
-    "input": "Input",
-    "error": "Error",
-    "output": "Output",
-    "diagnostics": "Diagnostics",
-    "errorsCount": "{{count}} error",
-    "errorsCount_other": "{{count}} errors",
-    "warningsCount": "{{count}} warning",
-    "warningsCount_other": "{{count}} warnings",
-    "result": "Result",
-    "nameResult": "{{name}} Result"
+    "input": "输入",
+    "error": "错误",
+    "output": "输出",
+    "diagnostics": "诊断信息",
+    "errorsCount": "{{count}} 个错误",
+    "errorsCount_other": "{{count}} 个错误",
+    "warningsCount": "{{count}} 个警告",
+    "warningsCount_other": "{{count}} 个警告",
+    "result": "结果",
+    "nameResult": "{{name}} 结果"
   },
   "reasoning": {
-    "thinking": "Thinking...",
-    "thinkingLabel": "Thinking",
+    "thinking": "思考中...",
+    "thinkingLabel": "思考",
     "thoughtFor": "思考了 {{duration}}",
     "thoughtProcess": "思考过程"
   },
@@ -43,7 +43,8 @@
     "failed": "失败",
     "interrupted": "已中断",
     "maybeStuck": "可能已卡住",
-    "abortStuck": "中止会话"
+    "abortStuck": "中止会话",
+    "toolFailed": "工具执行失败"
   },
   "toolSteps": {
     "separator": "，",
@@ -95,10 +96,10 @@
     "completedCount": "{{completed}}/{{total}}"
   },
   "task": {
-    "subtask": "Subtask",
-    "result": "Result",
-    "error": "Error",
-    "stop": "Stop",
+    "subtask": "子任务",
+    "result": "结果",
+    "error": "错误",
+    "stop": "停止",
     "openSession": "打开会话",
     "waitingForResponse": "等待响应..."
   },
@@ -113,20 +114,20 @@
   },
   "subtask": {
     "running": "运行中",
-    "done": "Done",
-    "error": "Error",
-    "enter": "Enter",
-    "task": "Task",
+    "done": "已完成",
+    "error": "错误",
+    "enter": "进入",
+    "task": "任务",
     "viewFullSession": "查看完整会话"
   },
   "stepFinish": {
-    "inputTokens": "Input: {{input}}",
-    "outputTokens": "Output: {{output}}",
-    "reasoningTokens": "Reasoning: {{reasoning}}",
-    "cacheRead": "Cache read: {{read}}",
-    "cacheWrite": "Cache write: {{write}}",
-    "cached": "{{count}} cached",
-    "totalDuration": "{{duration}} total"
+    "inputTokens": "输入: {{input}}",
+    "outputTokens": "输出: {{output}}",
+    "reasoningTokens": "推理: {{reasoning}}",
+    "cacheRead": "缓存读取: {{read}}",
+    "cacheWrite": "缓存写入: {{write}}",
+    "cached": "{{count}} 已缓存",
+    "totalDuration": "{{duration}} 总计"
   },
   "errors": {
     "authError": "认证错误",

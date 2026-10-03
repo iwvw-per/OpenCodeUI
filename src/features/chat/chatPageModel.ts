@@ -909,20 +909,23 @@ export function buildProcessTimeline(
   // 只关心带 user 的回合（过程壳的锚点）
   const userTurns = turns.filter((t): t is TurnBag & { user: Message } => t.user != null)
 
-  const laterHasAssistant = (fromIndex: number) => {
-    for (let j = fromIndex + 1; j < userTurns.length; j++) {
-      if (userTurns[j].assistants.length > 0) return true
-    }
-    return false
+  // 后缀预计算：laterHasAssistant / laterHasLive 原本每个回合都向后扫一遍，
+  // 最坏 O(turns²)。这里从右往左一次扫出「该下标之后是否存在」的布尔后缀数组，
+  // 查询降为 O(1)，整体回到 O(turns)。
+  const suffixHasAssistant = new Array<boolean>(userTurns.length + 1)
+  const suffixHasLive = new Array<boolean>(userTurns.length + 1)
+  suffixHasAssistant[userTurns.length] = false
+  suffixHasLive[userTurns.length] = false
+  for (let i = userTurns.length - 1; i >= 0; i--) {
+    const assistants = userTurns[i].assistants
+    suffixHasAssistant[i] = suffixHasAssistant[i + 1] || assistants.length > 0
+    suffixHasLive[i] = suffixHasLive[i + 1] || assistants.some(assistantHasLiveWork)
   }
 
+  const laterHasAssistant = (fromIndex: number) => suffixHasAssistant[fromIndex + 1] === true
+
   /** 更晚回合是否已有 live 助手——SSE 挂 Working 的绝对条件 */
-  const laterHasLive = (fromIndex: number) => {
-    for (let j = fromIndex + 1; j < userTurns.length; j++) {
-      if (userTurns[j].assistants.some(assistantHasLiveWork)) return true
-    }
-    return false
-  }
+  const laterHasLive = (fromIndex: number) => suffixHasLive[fromIndex + 1] === true
 
   const isTurnSettled = (turn: TurnBag & { user: Message }, index: number): boolean => {
     const assistants = turn.assistants

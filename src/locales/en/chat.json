@@ -18,7 +18,8 @@
     "splitVertical": "Split vertical",
     "closePane": "Close pane",
     "agentMenu": "Agent menu",
-    "variantMenu": "Variant menu"
+    "variantMenu": "Variant menu",
+    "sessionFallback": "Session {{id}}"
   },
   "chatArea": {
     "loadingSession": "Loading session...",
@@ -107,6 +108,10 @@
   },
   "inputToolbar": {
     "default": "Default",
+    "filterImages": "Images",
+    "filterPdf": "PDF",
+    "filterAudio": "Audio",
+    "filterVideo": "Video",
     "attachFile": "Attach file",
     "stopGeneration": "Stop generation",
     "sendingMessage": "Sending message",
@@ -136,7 +141,7 @@
   },
   "inputActions": {
     "scrollToBottom": "Scroll to bottom",
-    "reply": "Reply..."
+    "reply": "Reply"
   },
   "undoStatus": {
     "editing": "Editing",
@@ -163,8 +168,7 @@
     "themeAuto": "Auto",
     "themeLight": "Light",
     "themeDark": "Dark",
-    "standardWidth": "Standard Width",
-    "wideMode": "Wide Mode",
+    "resetWidth": "Reset Width",
     "shareChat": "Share Chat",
     "settings": "Settings",
     "noProjectFoldersYet": "No project folders yet",
@@ -228,13 +232,20 @@
     "awaitingAnswer": "Awaiting Answer",
     "retrying": "Retrying",
     "working": "Working",
-    "attempt": "attempt {{count}}"
+    "attempt": "attempt {{count}}",
+    "waitingForInput": "Waiting for input"
   },
   "notification": {
     "completed": "Completed",
     "error": "Error",
     "permission": "Permission",
-    "question": "Question"
+    "question": "Question",
+    "permissionRequired": "Permission Required",
+    "aiWaitingForInput": "AI is waiting for your input",
+    "sessionCompleted": "Session completed",
+    "sessionError": "Session error",
+    "permissionTitle": "{{session}} — Permission",
+    "questionTitle": "{{session}} — Question"
   },
   "contextDetails": {
     "context": "Context",
@@ -274,7 +285,21 @@
     "deleteFailed": "Some chats failed to delete. Please retry."
   },
   "errors": {
-    "reloadConversation": "Reload conversation"
+    "reloadConversation": "Reload conversation",
+    "loadSession": "Failed to load session",
+    "fetchVcs": "Failed to fetch VCS info",
+    "fetchModels": "Failed to fetch models",
+    "fetchSessions": "Failed to fetch sessions",
+    "fetchArchivedSessions": "Failed to fetch archived sessions"
+  },
+  "connectionError": {
+    "noActiveServer": "No active OpenCode server is selected",
+    "serverLine": "Server: {{name}}",
+    "statusLine": "Status: {{status}}",
+    "errorLine": "Error: {{error}}",
+    "expectedHealth": "Expected /global/health to return OpenCode health JSON.",
+    "unableToConnect": "Unable to connect to {{name}}",
+    "openServerSettings": "Open server settings"
   },
   "workStatus": {
     "ariaLabel": "Work status",

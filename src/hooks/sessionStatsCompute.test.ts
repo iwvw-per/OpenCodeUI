@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeSessionStats, isSameSessionStats } from './sessionStatsCompute'
+import { computeSessionStats, computeSessionStatsCached, isSameSessionStats } from './sessionStatsCompute'
 
 describe('computeSessionStats', () => {
   it('switches to estimated context after a compaction turn', () => {
@@ -76,5 +76,20 @@ describe('computeSessionStats', () => {
     const b = computeSessionStats([], 200000)
     expect(isSameSessionStats(a, b)).toBe(true)
     expect(isSameSessionStats(a, { ...b, contextUsed: b.contextUsed + 1 })).toBe(false)
+  })
+})
+
+describe('computeSessionStatsCached', () => {
+  it('reuses the result for the same array reference and limit', () => {
+    const messages: Parameters<typeof computeSessionStats>[0] = []
+    expect(computeSessionStatsCached(messages, 200000)).toBe(computeSessionStatsCached(messages, 200000))
+  })
+
+  it('recomputes when the context limit differs', () => {
+    const messages: Parameters<typeof computeSessionStats>[0] = []
+    const first = computeSessionStatsCached(messages, 200000)
+    const second = computeSessionStatsCached(messages, 100000)
+    expect(second).not.toBe(first)
+    expect(second.contextLimit).toBe(100000)
   })
 })

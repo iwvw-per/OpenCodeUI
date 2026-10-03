@@ -657,7 +657,9 @@ export function AppearanceSettings() {
                 key={p.id}
                 id={p.id}
                 name={p.name}
-                description={p.description}
+                description={t(`appearance.preset${p.id.charAt(0).toUpperCase()}${p.id.slice(1)}`, {
+                  defaultValue: p.description,
+                })}
                 isActive={presetId === p.id}
                 onClick={e => setPresetWithAnimation(p.id, e)}
                 resolvedTheme={resolvedTheme}

@@ -218,30 +218,100 @@ describe('serverStore health check', () => {
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer token-abc')
   })
 
-  it('does not let stale health checks overwrite newer results', async () => {
-    const staleResponse = createDeferred<Response>()
+  it('merges concurrent health checks into a single network request', async () => {
+    const firstResponse = createDeferred<Response>()
+    vi.mocked(fetch).mockImplementationOnce(() => firstResponse.promise)
+    const { serverStore } = await import('./serverStore')
+
+    // 两个并发调用应共享同一在途请求：健康状态本身就是「最近一次的结论」，
+    // 并发场景下各发一次既慢（经隧道约 1.1s/次）又无意义。
+    const a = serverStore.checkHealth('local')
+    const b = serverStore.checkHealth('local')
+
+    firstResponse.resolve(jsonResponse({ healthy: true, version: '1.16.0' }))
+    const [ra, rb] = await Promise.all([a, b])
+
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1)
+    expect(ra.status).toBe('online')
+    expect(rb.status).toBe('online')
+    expect(serverStore.getHealth('local')?.status).toBe('online')
+  })
+
+  it('a slow in-flight check cannot overwrite the result of a later check', async () => {
+    // 序号守卫的意义：一次「慢检查」在途期间，若又发起了一次检查且先返回，
+    // 慢检查随后落地时不能把新结果覆盖成旧的。
+    // 在途合并只覆盖「同一时刻」的并发调用，无法覆盖「第一次已结束登记、
+    // 第二次才开始」之外的场景 —— 这里用两轮分离的检查来验证守卫仍在工作。
+    const slow = createDeferred<Response>()
     vi.mocked(fetch)
-      .mockImplementationOnce(() => staleResponse.promise)
-      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: '1.16.0' }))
+      .mockImplementationOnce(() => slow.promise)
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: '1.17.0' }))
 
     const { serverStore } = await import('./serverStore')
 
+    // 第一轮：慢检查（不 await，让它挂在在途）
     const staleCheck = serverStore.checkHealth('local')
-    const freshHealth = await serverStore.checkHealth('local')
 
+    // 手动清掉在途登记，模拟「这一轮已结束」后新的一轮开始
+    // （真实场景：上一轮返回后组件再次触发探测）
+    const inflight = (serverStore as unknown as { healthInflight: Map<string, Promise<unknown>> }).healthInflight
+    inflight.delete('local')
+
+    const freshHealth = await serverStore.checkHealth('local')
     expect(freshHealth.status).toBe('online')
     expect(serverStore.getHealth('local')?.status).toBe('online')
 
-    staleResponse.resolve(
+    // 旧检查随后返回 HTML → 序号已过期，不能覆盖已确认的 online
+    slow.resolve(
       new Response('<!doctype html><title>OpenCode</title>', {
         status: 200,
         headers: { 'content-type': 'text/html' },
       }),
     )
     const staleHealth = await staleCheck
-
     expect(staleHealth.status).toBe('error')
     expect(serverStore.getHealth('local')?.status).toBe('online')
+  })
+
+  it('shows a checking state only on the first probe', async () => {
+    const firstResponse = createDeferred<Response>()
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => firstResponse.promise)
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: '1.16.0' }))
+
+    const { serverStore } = await import('./serverStore')
+
+    const pending = serverStore.checkHealth('local')
+    expect(serverStore.getHealth('local')?.status).toBe('checking')
+
+    firstResponse.resolve(jsonResponse({ healthy: true, version: '1.16.0' }))
+    await pending
+    expect(serverStore.getHealth('local')?.status).toBe('online')
+
+    const second = serverStore.checkHealth('local')
+    // 已有结果时不得回落成 checking，否则状态点会周期性闪烁
+    expect(serverStore.getHealth('local')?.status).toBe('online')
+    await second
+    expect(serverStore.getHealth('local')?.status).toBe('online')
+  })
+
+  it('keeps the last status during a silent probe', async () => {
+    const silentResponse = createDeferred<Response>()
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse({ healthy: true, version: '1.16.0' }))
+      .mockImplementationOnce(() => silentResponse.promise)
+
+    const { serverStore } = await import('./serverStore')
+
+    await serverStore.checkHealth('local')
+    expect(serverStore.getHealth('local')?.status).toBe('online')
+
+    const silent = serverStore.checkHealth('local', { silent: true })
+    expect(serverStore.getHealth('local')?.status).toBe('online')
+
+    silentResponse.resolve(jsonResponse({ healthy: true, version: '1.17.0' }))
+    await silent
+    expect(serverStore.getHealth('local')?.version).toBe('1.17.0')
   })
 })
 

@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { messageStore } from '../store/messageStore'
 import {
-  computeSessionTurnStats,
+  computeSessionTurnStatsCached,
   isSameSessionTurnStats,
   EMPTY_SESSION_TURN_STATS,
   type SessionTurnStats,
@@ -31,7 +31,7 @@ export function useSessionTurnStats(sessionId: string | null): SessionTurnStats 
       return
     }
 
-    const next = computeSessionTurnStats(messageStore.getVisibleMessages(sessionId))
+    const next = computeSessionTurnStatsCached(messageStore.getVisibleMessages(sessionId))
     const prev = cacheRef.current
     if (prev && isSameSessionTurnStats(prev, next)) return
     cacheRef.current = next

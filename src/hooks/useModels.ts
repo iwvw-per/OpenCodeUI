@@ -2,6 +2,7 @@ import { useSyncExternalStore, useCallback, useEffect } from 'react'
 import { getActiveModels, type ModelInfo } from '../api'
 import { getSDKClientAsync } from '../api/sdk'
 import { serverStore } from '../store/serverStore'
+import i18n from '../i18n'
 
 // ============================================
 // Per-server models cache — 每个服务器独立维护模型列表。
@@ -55,7 +56,7 @@ async function _fetchModels(serverId: string, force = false) {
       }
     } catch (e) {
       if (generation === _fetchGenerations.get(serverId)) {
-        _setState(serverId, { error: e instanceof Error ? e : new Error('Failed to fetch models'), isLoading: false })
+        _setState(serverId, { error: e instanceof Error ? e : new Error(i18n.t('chat:errors.fetchModels')), isLoading: false })
       }
     } finally {
       if (generation === _fetchGenerations.get(serverId)) {

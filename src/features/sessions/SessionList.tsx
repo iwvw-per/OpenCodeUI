@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState, useMemo, useSyncExternalStore, type PointerEvent } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo, memo, useSyncExternalStore, type PointerEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SearchIcon, PencilIcon, TrashIcon, ComposeIcon, PinIcon, ArchiveIcon, SpinnerIcon } from '../../components/Icons'
 import { getSelectionRoundClass } from './selectionRound'
@@ -13,6 +13,7 @@ import type { ApiSession } from '../../api'
 import { startInternalDrag } from '../../lib/internalDragCore'
 import { makeSessionKey, splitSessionKey } from '../../utils/sessionKey'
 import { pinnedSessionsStore, type PinnedSessionEntry } from '../../store/pinnedSessionsStore'
+import { prefetchSessionMessages } from '../../utils/sessionPrefetch'
 import { serverStore } from '../../store/serverStore'
 import { interactive } from '../../utils/interaction'
 import { cn } from '../../utils/cn'
@@ -400,7 +401,7 @@ export interface SessionListItemProps {
   onToggleCheck?: (options?: { shiftKey?: boolean }) => void
 }
 
-export function SessionListItem({
+function SessionListItemComponent({
   session,
   isSelected,
   onSelect,
@@ -426,6 +427,11 @@ export function SessionListItem({
   const inputRef = useRef<HTMLInputElement>(null)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const touchMoved = useRef(false)
+
+  // 回调经 ref 转发：memo 比较忽略回调身份（父级每次重渲都会重建行内闭包），
+  // 这里始终读取最新一版，避免 memo 命中时拿到过期闭包。
+  const callbacksRef = useRef({ onSelect, onDelete, onRename, onArchive, onToggleCheck })
+  callbacksRef.current = { onSelect, onDelete, onRename, onArchive, onToggleCheck }
 
   // 活跃状态标记（activeSessionStore / notificationStore 的 key 是复合 serverId::sessionId；
   // 单服务器模式 session.id 是原始 id，需用活动服务器合成复合 key 查询）
@@ -463,7 +469,7 @@ export function SessionListItem({
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation()
     setShowActions(false)
-    onDelete()
+    callbacksRef.current.onDelete()
   }
 
   const handleStartEdit = (e: React.MouseEvent) => {
@@ -499,7 +505,7 @@ export function SessionListItem({
     }
     setIsSaving(true)
     try {
-      await onRename(trimmed)
+      await callbacksRef.current.onRename(trimmed)
       setIsEditing(false)
     } catch {
       // 保存失败：留在编辑态，用户可重试（错误提示由调用方 toast）
@@ -515,7 +521,7 @@ export function SessionListItem({
     setShowActions(false)
     setIsArchiving(true)
     try {
-      await onArchive?.()
+      await callbacksRef.current.onArchive?.()
     } finally {
       setIsArchiving(false)
     }
@@ -539,13 +545,17 @@ export function SessionListItem({
   // 长按触摸手势：显示操作按钮
   const handleTouchStart = useCallback(() => {
     if (!preferTouchUi) return
+    if (!isEditMode && !isEditing) {
+      const serverId = activeSessionKey ? splitSessionKey(activeSessionKey).serverId : serverStore.getActiveServerId()
+      prefetchSessionMessages(session.id, session.directory, serverId)
+    }
     touchMoved.current = false
     longPressTimer.current = setTimeout(() => {
       if (!touchMoved.current) {
         setShowActions(true)
       }
     }, 500)
-  }, [preferTouchUi])
+  }, [preferTouchUi, isEditMode, isEditing, activeSessionKey, session.id, session.directory])
 
   const handleTouchMove = useCallback(() => {
     if (!preferTouchUi) return
@@ -595,7 +605,7 @@ export function SessionListItem({
 
   const handleClick = (e?: React.MouseEvent) => {
     if (isEditMode) {
-      onToggleCheck?.({ shiftKey: e?.shiftKey })
+      callbacksRef.current.onToggleCheck?.({ shiftKey: e?.shiftKey })
       return
     }
     // 如果操作按钮已显示，点击空白区域收起它，不触发 select。
@@ -607,7 +617,7 @@ export function SessionListItem({
       return
     }
     notificationStore.markSessionNotificationsRead(activeQueryKey, 'completed')
-    onSelect()
+    callbacksRef.current.onSelect()
   }
 
   // 管理模式：阻止浏览器原生文字选区（尤其是 Shift 点选时）
@@ -641,6 +651,35 @@ export function SessionListItem({
         'aria-selected': isChecked,
       }
     : {}
+
+  // hover 预取：鼠标移到会话行时提前拉首页消息进 store，点击即可首帧出内容。
+  // 加一小段 intent 延迟，快速划过不会触发请求；触摸端没有 hover，由 onTouchStart 兜底。
+  // serverId 解析与 App.handleSelectSession 保持一致（activeSessionKey 缺省时用活动服务器），
+  // 否则预取写入的复合 key 与选中时的不一致，缓存命中不了。
+  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const resolvePrefetchServerId = () =>
+    activeSessionKey ? splitSessionKey(activeSessionKey).serverId : serverStore.getActiveServerId()
+  // 通过 ref 读取最新解析函数，避免把 schedulePrefetch 变成依赖频繁变化对象
+  const resolvePrefetchServerIdRef = useRef(resolvePrefetchServerId)
+  resolvePrefetchServerIdRef.current = resolvePrefetchServerId
+  const schedulePrefetch = () => {
+    if (isEditMode || isEditing || prefetchTimerRef.current) return
+    prefetchTimerRef.current = setTimeout(() => {
+      prefetchTimerRef.current = null
+      prefetchSessionMessages(session.id, session.directory, resolvePrefetchServerIdRef.current())
+    }, 180)
+  }
+  const cancelPrefetch = () => {
+    if (prefetchTimerRef.current) {
+      clearTimeout(prefetchTimerRef.current)
+      prefetchTimerRef.current = null
+    }
+  }
+  useEffect(() => {
+    return () => {
+      if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current)
+    }
+  }, [])
 
   if (isEditing) {
     return (
@@ -708,7 +747,7 @@ export function SessionListItem({
             }`}
           >
             {isWorking ? (
-              <Spinner size="sm" tone="accent" variant="grid-orbit" />
+              <Spinner size="xs" tone="accent" variant="grid-orbit" />
             ) : activeStatus ? (
               <>
                 <span className={`absolute w-1.5 h-1.5 rounded-full ${activeStatus.dot}`} />
@@ -779,7 +818,9 @@ export function SessionListItem({
                 </span>
               )}
 
-              {session.time?.updated && <span className="shrink-0">{formatRelativeTime(session.time.updated)}</span>}
+              {session.time?.updated && (
+                <span className="shrink-0 -mr-1.5 text-accent-main-100">{formatRelativeTime(session.time.updated)}</span>
+              )}
             </span>
           )}
         </button>
@@ -818,6 +859,9 @@ export function SessionListItem({
       {...selectionAttrs}
       onClick={handleClick}
       onMouseDown={handleSelectionMouseDown}
+      onMouseEnter={!isEditMode ? schedulePrefetch : undefined}
+      onMouseOver={!isEditMode ? schedulePrefetch : undefined}
+      onMouseLeave={!isEditMode ? cancelPrefetch : undefined}
       onTouchStart={!isEditMode ? handleTouchStart : undefined}
       onTouchMove={!isEditMode ? handleTouchMove : undefined}
       onTouchEnd={!isEditMode ? handleTouchEnd : undefined}
@@ -959,9 +1003,30 @@ export function SessionListItem({
   )
 }
 
-// ============================================
-// Unavailable pinned (gray title, unpin only)
-// ============================================
+/**
+ * memo 比较：列表在侧栏每次重渲（busy 状态、选中态等）都会重建行内回调，
+ * 若用默认浅比较，回调身份变化会让所有行失效重渲。这里忽略回调身份，
+ * 只比较真正影响渲染的数据 prop；回调由组件内部读取最新的 props 即可
+ * （组件本身订阅了 activeSessionStore / notificationStore，状态变化仍会自行更新）。
+ * 可选回调（onArchive / onToggleCheck）用「是否有值」比较，避免出现/消失时漏渲染。
+ */
+export const SessionListItem = memo(SessionListItemComponent, (prev, next) => {
+  return (
+    prev.session === next.session &&
+    prev.isSelected === next.isSelected &&
+    prev.preferTouchUi === next.preferTouchUi &&
+    prev.density === next.density &&
+    prev.showStats === next.showStats &&
+    prev.showDirectory === next.showDirectory &&
+    prev.activeSessionKey === next.activeSessionKey &&
+    prev.isEditMode === next.isEditMode &&
+    prev.isChecked === next.isChecked &&
+    prev.checkedPrev === next.checkedPrev &&
+    prev.checkedNext === next.checkedNext &&
+    (prev.onArchive == null) === (next.onArchive == null) &&
+    (prev.onToggleCheck == null) === (next.onToggleCheck == null)
+  )
+})
 
 function UnavailablePinnedSessionItem({
   entry,
@@ -1045,7 +1110,7 @@ function AutoScrollTitle({ text, className }: { text: string; className?: string
   return (
     <span
       ref={outerRef}
-      className={`min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[length:var(--fs-sm)] ${
+      className={`min-w-0 flex-1 overflow-hidden whitespace-nowrap text-[length:var(--fs-sm)] optical-center ${
         overflow ? 'marquee-title name-fade-right' : 'truncate'
       } ${className ?? ''}`}
       title={text}

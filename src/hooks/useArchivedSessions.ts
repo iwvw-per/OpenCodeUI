@@ -27,6 +27,7 @@ import {
 import { pinnedSessionsStore } from '../store/pinnedSessionsStore'
 import { serverStore } from '../store/serverStore'
 import { resolveSessionTarget, splitSessionKey } from '../utils/sessionKey'
+import i18n from '../i18n'
 
 interface UseArchivedSessionsOptions {
   /** 延迟启用，用于懒加载 */
@@ -91,7 +92,7 @@ export function useArchivedSessions(options: UseArchivedSessionsOptions = {}): U
         sessionListIndexStore.replace(bucket, data, { limit: data.length, hasMore: data.length >= limit })
       } catch (e) {
         if (requestId !== requestIdRef.current) return
-        setError(e instanceof Error ? e : new Error('Failed to fetch archived sessions'))
+        setError(e instanceof Error ? e : new Error(i18n.t('chat:errors.fetchArchivedSessions')))
         if (!options.silent) sessionListIndexStore.replace(bucket, [], { limit: 0, hasMore: false })
       } finally {
         if (requestId === requestIdRef.current) {

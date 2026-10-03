@@ -1,4 +1,5 @@
 import { FileIcon, FolderIcon, AgentIcon, ImageIcon, TerminalIcon } from '../../components/Icons'
+import i18n from '../../i18n'
 import type { Attachment } from './types'
 
 /**
@@ -77,7 +78,7 @@ export function fromTextPart(part: { id?: string; text: string }): Attachment {
 
   // 简化命名逻辑，直接使用内容摘要
   const displayName =
-    text.length > 30 ? text.slice(0, 30).replace(/\n/g, ' ') + '...' : text.replace(/\n/g, ' ') || 'Context'
+    text.length > 30 ? text.slice(0, 30).replace(/\n/g, ' ') + '...' : text.replace(/\n/g, ' ') || i18n.t('commands:attachment.context')
 
   return {
     id: part.id || crypto.randomUUID(),

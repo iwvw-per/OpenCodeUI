@@ -18,7 +18,8 @@
     "splitVertical": "垂直分栏",
     "closePane": "关闭分栏",
     "agentMenu": "Agent 菜单",
-    "variantMenu": "模型变体菜单"
+    "variantMenu": "模型变体菜单",
+    "sessionFallback": "会话 {{id}}"
   },
   "chatArea": {
     "loadingSession": "加载会话中...",
@@ -52,8 +53,8 @@
     "tryDifferentKeyword": "试试其他关键词",
     "pinned": "已置顶",
     "recent": "最近使用",
-    "thinking": "Thinking",
-    "vision": "Vision",
+    "thinking": "思考",
+    "vision": "视觉",
     "unpin": "取消置顶",
     "pinToTop": "置顶",
     "model": "模型"
@@ -92,7 +93,7 @@
     "rule": "规则",
     "allowOnce": "允许一次",
     "alwaysAllow": "始终允许",
-    "subtaskFallback": "Subtask",
+    "subtaskFallback": "子任务",
     "browserSession": "前端临时",
     "thisSession": "后端始终",
     "autoApproveEnabled": "前端会临时记住始终允许规则，刷新后清空。",
@@ -106,7 +107,11 @@
     "pickInFileManager": "系统文件夹"
   },
   "inputToolbar": {
-    "default": "Default",
+    "default": "默认",
+    "filterImages": "图片",
+    "filterPdf": "PDF",
+    "filterAudio": "音频",
+    "filterVideo": "视频",
     "attachFile": "附加文件",
     "stopGeneration": "停止生成",
     "sendingMessage": "发送消息中",
@@ -136,12 +141,12 @@
   },
   "inputActions": {
     "scrollToBottom": "滚动到底部",
-    "reply": "回复..."
+    "reply": "回复"
   },
   "undoStatus": {
-    "editing": "Editing",
-    "redo": "Redo",
-    "redoAll": "Redo All"
+    "editing": "编辑中",
+    "redo": "重做",
+    "redoAll": "全部重做"
   },
   "sidebar": {
     "allProjects": "全部项目",
@@ -163,8 +168,7 @@
     "themeAuto": "自动",
     "themeLight": "浅色",
     "themeDark": "深色",
-    "standardWidth": "标准宽度",
-    "wideMode": "宽屏模式",
+    "resetWidth": "恢复默认宽度",
     "shareChat": "分享对话",
     "settings": "设置",
     "noProjectFoldersYet": "还没有项目文件夹",
@@ -195,8 +199,8 @@
     "batchDeleteIncludesCurrent": "包含当前打开的会话，删除后将切换到新会话。",
     "batchRemoveProjects": "移除 {{count}} 个项目",
     "batchRemoveProjectsConfirm": "确定从列表中移除 {{count}} 个项目？这只会从侧边栏中移除，不会删除任何会话，也不会删除磁盘上的文件。",
-    "noSubscribedServers": "No servers subscribed yet",
-    "openServerSettings": "Open Server Settings",
+    "noSubscribedServers": "尚未订阅任何服务器",
+    "openServerSettings": "打开服务器设置",
     "searchResults": "搜索结果",
     "searchHint": "按服务器、项目或会话名称搜索",
     "searchProjects": "项目",
@@ -228,19 +232,26 @@
     "awaitingAnswer": "等待回答",
     "retrying": "重试中",
     "working": "工作中",
-    "attempt": "第 {{count}} 次"
+    "attempt": "第 {{count}} 次",
+    "waitingForInput": "等待输入"
   },
   "notification": {
     "completed": "已完成",
     "error": "错误",
     "permission": "权限",
-    "question": "问题"
+    "question": "问题",
+    "permissionRequired": "需要权限",
+    "aiWaitingForInput": "AI 正在等待你的输入",
+    "sessionCompleted": "会话已完成",
+    "sessionError": "会话出错",
+    "permissionTitle": "{{session}} — 权限",
+    "questionTitle": "{{session}} — 提问"
   },
   "contextDetails": {
     "context": "上下文",
     "session": "会话",
     "messages": "消息",
-    "provider": "Provider",
+    "provider": "提供方",
     "model": "模型",
     "contextLimit": "上下文限制",
     "totalTokens": "Token 总量",
@@ -248,7 +259,7 @@
     "totalCost": "总费用",
     "inputTokens": "输入",
     "outputTokens": "输出",
-    "reasoning": "Reasoning",
+    "reasoning": "推理",
     "cacheRW": "缓存 (读/写)",
     "rawMessages": "原始消息"
   },
@@ -274,7 +285,21 @@
     "deleteFailed": "部分对话删除失败，请重试。"
   },
   "errors": {
-    "reloadConversation": "重新加载会话"
+    "reloadConversation": "重新加载会话",
+    "loadSession": "加载会话失败",
+    "fetchVcs": "获取版本控制信息失败",
+    "fetchModels": "获取模型列表失败",
+    "fetchSessions": "获取会话列表失败",
+    "fetchArchivedSessions": "获取已归档会话失败"
+  },
+  "connectionError": {
+    "noActiveServer": "未选择可用的 OpenCode 服务器",
+    "serverLine": "服务器：{{name}}",
+    "statusLine": "状态：{{status}}",
+    "errorLine": "错误：{{error}}",
+    "expectedHealth": "预期 /global/health 返回 OpenCode 健康检查 JSON。",
+    "unableToConnect": "无法连接到 {{name}}",
+    "openServerSettings": "打开服务器设置"
   },
   "workStatus": {
     "ariaLabel": "工作状态",

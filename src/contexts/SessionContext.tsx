@@ -16,6 +16,7 @@ import {
 } from '../store/sessionListIndexStore'
 import { useDirectory } from './useDirectory'
 import { sessionErrorHandler, normalizeToForwardSlash, autoDetectPathStyle, sortSessions, isSameDirectory } from '../utils'
+import { makeSessionKey } from '../utils/sessionKey'
 import { layoutStore } from '../store/layoutStore'
 import { clearSessionRuntimeState } from '../utils/sessionLifecycle'
 import { SessionContext, type SessionContextValue } from './SessionContext.shared'
@@ -249,8 +250,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
       },
       onTodoUpdated: data => {
-        // 更新 todoStore
-        todoStore.setTodos(data.sessionID, data.todos)
+        // todoStore 一律以「服务器作用域复合 key」为键（与底部面板/侧栏读取一致）。
+        // SSE 事件里的 sessionID 是服务端原始 id，这里补上服务器前缀。
+        const sessionKey = data.sessionID.includes('::')
+          ? data.sessionID
+          : makeSessionKey(serverStore.getActiveServerId(), data.sessionID)
+        todoStore.setTodos(sessionKey, data.todos)
       },
       onSessionDeleted: sessionId => {
         clearSessionRuntimeState(sessionId)

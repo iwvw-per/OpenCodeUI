@@ -11,6 +11,7 @@ import {
   PlusIcon,
   TrashIcon,
   CheckIcon,
+  ExternalLinkIcon,
 } from '../../../components/Icons'
 import { ExpandableSection, Spinner } from '../../../components/ui'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
@@ -20,7 +21,10 @@ import { useInView } from '../../../hooks/useInView'
 import { useDirectory } from '../../../contexts/useDirectory'
 import { getDirectoryName, isSameDirectory, normalizeToForwardSlash } from '../../../utils'
 import { formatRelativeDay } from '../../../utils/dateUtils'
-import { useLayoutStore } from '../../../store'
+import { layoutStore, useLayoutStore } from '../../../store'
+import { canOpenDirectoryNatively } from '../../../utils/nativeFileIntegration'
+import { isTauri, isTauriMobile } from '../../../utils/tauri'
+import { uiErrorHandler } from '../../../utils'
 import { useBusySessions } from '../../../store/activeSessionStore'
 import { splitSessionKey } from '../../../utils/sessionKey'
 import { notificationStore, useNotifications } from '../../../store/notificationStore'
@@ -53,7 +57,7 @@ function ProjectNameTitle({ text, className = '' }: { text: string; className?: 
   return (
     <span
       ref={spanRef}
-      className={`min-w-0 flex-1 whitespace-nowrap text-[length:var(--fs-sm)] font-semibold ${
+      className={`min-w-0 flex-1 whitespace-nowrap text-[length:var(--fs-sm)] font-semibold optical-center ${
         overflows ? 'name-fade-right overflow-hidden' : 'truncate'
       } ${className}`}
     >
@@ -802,7 +806,7 @@ function UnavailablePinnedSessionItem({ entry }: { entry: PinnedSessionEntry }) 
     <div className="group relative flex items-center gap-2 px-2 py-1.5 select-none text-text-500">
       <span className="relative shrink-0 flex items-center justify-center size-5" />
       <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-0 group-hover:pr-8 transition-[padding] duration-200">
-        <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)] text-text-500" title={title}>
+        <span className="min-w-0 flex-1 truncate text-[length:var(--fs-sm)] text-text-500 optical-center" title={title}>
           {title}
         </span>
         <span className="shrink-0 text-[length:var(--fs-xxs)] text-text-500 group-hover:hidden">
@@ -957,9 +961,24 @@ function FolderRecentSection({
     setRemoveArmed(false)
   }, [])
 
+  const canOpenDirectory = isTauri() && !isTauriMobile() && !!project.worktree
+  const handleOpenDirectory = useCallback(async () => {
+    const directory = project.worktree
+    if (!directory) return
+    if (!(await canOpenDirectoryNatively(serverId, directory))) {
+      layoutStore.openRightPanel('files')
+      return
+    }
+    try {
+      const { openPath } = await import('@tauri-apps/plugin-opener')
+      await openPath(directory)
+    } catch (e) {
+      uiErrorHandler('open project directory', e)
+    }
+  }, [project.worktree, serverId])
+
   useEffect(() => {
     if (isExpanded && inView) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- 延迟加载闸门，只从 false→true
       setHasActivated(true)
     }
   }, [isExpanded, inView])
@@ -1014,7 +1033,7 @@ function FolderRecentSection({
     [sessions, onRequestDeleteSession, removeLocalSession],
   )
 
-  // 归档：updateSession({ time: { archived: now } })，成功后本地移除
+  // 归档：updateSession({ time: { archived: now } })，成功后本地移除并重新拉取
   const handleArchive = useCallback(
     async (sessionId: string) => {
       const session = sessions.find(item => item.id === sessionId)
@@ -1024,11 +1043,14 @@ function FolderRecentSection({
         // 归档后会话不再出现在列表，通知也要清掉，否则项目行残留未读点
         notificationStore.removeSessionNotifications(sessionId)
         removeLocalSession(sessionId)
+        // 本地移除不会收敛分页上限：归档掉最后一条「多取的探针行」后，
+        // hasMore 会停在 true，导致只剩 5 条也显示加载更多。重新拉取校准。
+        await refresh()
       } catch {
         // 归档失败静默（由列表刷新兜底）
       }
     },
-    [sessions, serverId, removeLocalSession],
+    [sessions, serverId, removeLocalSession, refresh],
   )
 
   const projectName =
@@ -1089,7 +1111,7 @@ function FolderRecentSection({
       <div
         ref={registerRef}
         onTouchStart={canDrag ? onTouchDragStart : undefined}
-        className={`relative transition-all duration-150 group/folder ${
+        className={`relative transition-all duration-150 ${
           isDragged
             ? 'z-10 shadow-lg shadow-black/20 ring-1 ring-inset ring-accent-main-100/30 rounded-md bg-bg-100'
             : ''
@@ -1099,7 +1121,7 @@ function FolderRecentSection({
         <div
           onPointerDown={canDrag ? onDragStart : undefined}
           className={cn(
-            'relative flex w-full items-center transition-colors duration-150 select-none',
+            'group/folder relative flex w-full items-center transition-colors duration-150 select-none',
             getSelectionRoundClass(isEditMode && isProjectChecked, projectCheckedPrev, folderCheckedNext, 'md'),
             interactive.row,
             isEditMode && isProjectChecked && interactive.rowSelected,
@@ -1187,6 +1209,26 @@ function FolderRecentSection({
               <PlusIcon size={13} />
             </button>
           )}
+          {/* 打开项目目录：仅桌面端显示；hover 才显示，与 + / 移除按钮同一套几何 */}
+          {!isEditMode && canOpenDirectory && (
+            <button
+              type="button"
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => {
+                e.stopPropagation()
+                void handleOpenDirectory()
+              }}
+              className={cn(
+                'absolute right-[62px] z-10 flex items-center justify-center size-6 rounded-full overflow-hidden text-text-400 hover:text-text-100',
+                'opacity-0 transition-opacity duration-150 group-hover/folder:opacity-100 pointer-events-none group-hover/folder:pointer-events-auto',
+                interactive.subtle,
+              )}
+              title={t('header.openProjectDirectory')}
+              aria-label={t('header.openProjectDirectory')}
+            >
+              <ExternalLinkIcon size={13} />
+            </button>
+          )}
           {/* 移除项目：hover 显示；二次点击防误触（已保存=移除，服务器发现=隐藏；全局项不显示）。
               与 + 按钮同一套几何：固定占位 + opacity 淡入，不改变布局。 */}
           {!isEditMode && onRemoveProject && project.worktree && (
@@ -1241,11 +1283,11 @@ function FolderRecentSection({
               旋转图标比点更大，容器用 w-3.5 并在右侧留 0.5 间距，避免贴住时间。 */}
           {folderStatus && (
             <span
-              className="relative shrink-0 flex items-center justify-center w-3.5 h-3.5 group-hover/folder:hidden"
+              className="relative shrink-0 flex items-center justify-center w-4 h-4 group-hover/folder:hidden"
               title={folderStatus.count ? `${folderStatus.label} (${folderStatus.count})` : folderStatus.label}
             >
               {folderStatus.kind === 'working' ? (
-                <Spinner size="sm" tone="accent" variant="grid-orbit" />
+                <Spinner size="xs" tone="accent" variant="grid-orbit" />
               ) : (
                 <span className={`absolute w-1.5 h-1.5 rounded-full ${folderStatus.dot}`} />
               )}
@@ -1273,7 +1315,7 @@ function FolderRecentSection({
                 // 与 minimal SessionListItem 对齐：状态点占位 + 像素格子 spinner + 扫光文案
                 <div className="flex items-center gap-2 px-2 py-1" aria-busy="true">
                   <span className="size-5 shrink-0" aria-hidden="true" />
-                  <Spinner size="sm" tone="accent" variant="pixel" />
+                  <Spinner size="xs" tone="accent" variant="pixel" />
                   <span className="reasoning-shimmer-text text-[length:var(--fs-xs)]">
                     {t('sidebar.loadingChats')}
                   </span>
@@ -1398,7 +1440,7 @@ function FolderRecentSection({
                           />
                           <span>{t('sidebar.showMoreChats')}</span>
                           {isLoadingMore ? (
-                            <Spinner size="sm" tone="accent" variant="pixel" />
+                            <Spinner size="xs" tone="accent" variant="pixel" />
                           ) : (
                             <ChevronDownIcon
                               size={12}

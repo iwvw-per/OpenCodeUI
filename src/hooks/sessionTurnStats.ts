@@ -201,3 +201,22 @@ export function isSameSessionTurnStats(a: SessionTurnStats, b: SessionTurnStats)
     a.hasData === b.hasData
   )
 }
+
+/**
+ * 按 messages 数组引用缓存统计结果。
+ *
+ * 同一会话可能有多个消费者（InputFooter 的速度/统计、WorkStatus 面板）在同一
+ * 帧内各算一遍。messageStore 每帧 flush 才换数组引用，同一个引用上的结果必然
+ * 相同，用 WeakMap 按引用复用即可把重复遍历合并为一次；数组被替换后旧条目由
+ * GC 回收，不会无界增长。流式期间 text 原地拼接带来的一帧内细微滞后 <16ms，
+ * 在 200ms 节流显示下不可见。
+ */
+const turnStatsMemo = new WeakMap<Message[], SessionTurnStats>()
+
+export function computeSessionTurnStatsCached(messages: Message[]): SessionTurnStats {
+  const cached = turnStatsMemo.get(messages)
+  if (cached) return cached
+  const next = computeSessionTurnStats(messages)
+  turnStatsMemo.set(messages, next)
+  return next
+}

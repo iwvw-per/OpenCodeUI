@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { getVcsInfo } from '../api/vcs'
 import { serverStore } from '../store/serverStore'
+import i18n from '../i18n'
 import type { VcsInfo } from '../types/api/vcs'
 
 const POLL_INTERVAL = 15000 // 15s 轮询
@@ -50,7 +51,7 @@ export function useVcsInfo(directory?: string, serverId?: string): UseVcsInfoRes
         }
       } catch (e) {
         if (requestId === requestIdRef.current) {
-          setError(e instanceof Error ? e.message : 'Failed to fetch VCS info')
+          setError(e instanceof Error ? e.message : i18n.t('chat:errors.fetchVcs'))
           setVcsInfo(null)
         }
       } finally {

@@ -16,7 +16,12 @@ export function formatRelativeTime(timestamp: number): string {
   if (hours < 24) return i18n.t('common:relativeTime.hoursAgo', { count: hours })
   if (days < 7) return i18n.t('common:relativeTime.daysAgo', { count: days })
 
-  return new Date(timestamp).toLocaleDateString(i18n.language)
+  return formatMonthDay(timestamp)
+}
+
+/** 月/日（不含年份），如 10/3 */
+export function formatMonthDay(timestamp: number): string {
+  return new Date(timestamp).toLocaleDateString(i18n.language, { month: 'numeric', day: 'numeric' })
 }
 
 /**
@@ -37,5 +42,5 @@ export function formatRelativeDay(timestamp: number): string {
   if (dayDiff === 2) return i18n.t('common:relativeTime.dayBeforeYesterday')
   if (dayDiff < 7) return i18n.t('common:relativeTime.daysAgo', { count: dayDiff })
 
-  return new Date(timestamp).toLocaleDateString(i18n.language)
+  return formatMonthDay(timestamp)
 }
