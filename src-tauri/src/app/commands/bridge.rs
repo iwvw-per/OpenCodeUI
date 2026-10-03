@@ -142,7 +142,12 @@ async fn connect_stream(
         .build()
         .map_err(|e| format!("failed to create HTTP client: {}", e))?;
 
-    let mut req = client.get(args.url());
+    let mut req = client
+        .get(args.url())
+        // SSE 端点必须声明 Accept: text/event-stream。经 API Monitor 网关时，
+        // 该头是「流式 vs 普通请求」的判定依据；缺失会被当作普通请求整体缓冲，
+        // 导致事件流约 60s 后超时（表现为消息不实时、刷新才出现）。
+        .header("Accept", "text/event-stream");
     if let Some(auth) = args.auth_header() {
         req = req.header("Authorization", auth);
     }
