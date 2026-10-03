@@ -19,7 +19,7 @@ import { useFolderProjectDrop } from './useFolderProjectDrop'
 import { FolderProjectDropOverlay } from './FolderProjectDropOverlay'
 import { useChatSession, useModels, useModelSelection, useTurnOutlineEntries, useMergeTurnOutline } from '../../hooks'
 import { useServerStore } from '../../hooks/useServerStore'
-import { useHostSlideClass } from './sidebar/hostSwitchDirection'
+import { useHostSlideState } from './sidebar/hostSwitchDirection'
 import { useCancelHint } from '../../hooks/useCancelHint'
 import { makeSessionKey, sessionKeyToServerId, sessionKeyToSessionId } from '../../utils/sessionKey'
 import { serverStore } from '../../store/serverStore'
@@ -199,10 +199,12 @@ export const ChatPane = memo(function ChatPane({
   const { servers, activeServer, getHealth } = useServerStore()
   const activeServerHealth = activeServer ? getHealth(activeServer.id) : null
   // 切换主机时主聊天区同样按方位平移，与侧栏项目列表方向一致。
-  const hostSlide = useHostSlideClass(
+  // switching 为真时抑制输入框停靠与欢迎层的入场过渡，避免与平移打架。
+  const hostSlideState = useHostSlideState(
     useMemo(() => servers.map(server => server.id), [servers]),
     activeServerId,
   )
+  const hostSlide = hostSlideState.className
   const hiddenModelKeys = useHiddenModelKeys()
   const visibleModels = useMemo(
     () => models.filter(model => !hiddenModelKeys.includes(getModelKey(model))),
@@ -1018,12 +1020,8 @@ export const ChatPane = memo(function ChatPane({
   }, [onOpenProject])
 
   const chatContent = (
-    <div
-      ref={setChatContentRef}
-      key={activeServerId}
-      className={`flex-1 relative overflow-hidden flex flex-col min-h-0 ${hostSlide}`}
-    >
-      <div className="absolute inset-0">
+    <div ref={setChatContentRef} className="flex-1 relative overflow-hidden flex flex-col min-h-0">
+      <div key={activeServerId} className={`absolute inset-0 ${hostSlide}`}>
         <InlineToolRequestContext.Provider value={inlineToolRequestCtx}>
           <ErrorBoundary onOpenSettings={onOpenSettings}>
             {chatAreaMountKey == null ? (
@@ -1078,7 +1076,11 @@ export const ChatPane = memo(function ChatPane({
 
       <div
         ref={inputBoxWrapperRef}
-        className="absolute left-0 right-0 z-10 pointer-events-none transition-[bottom,transform] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none"
+        className={`absolute left-0 right-0 z-10 pointer-events-none ${
+          hostSlideState.switching
+            ? 'transition-none'
+            : 'transition-[bottom,transform] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none'
+        }`}
         style={{
           // 欢迎态（无会话无消息）：输入框居中悬浮，hero 在正上方；
           // 发送后 showWelcome 翻 false，容器滑回贴底 —— 与原始设计一致。
@@ -1086,7 +1088,7 @@ export const ChatPane = memo(function ChatPane({
           transform: showWelcome ? 'translateY(50%)' : 'translateY(0)',
         }}
       >
-        {!showCompactShell && <WelcomeHero active={showWelcome} />}
+        {!showCompactShell && <WelcomeHero active={showWelcome} disableTransition={hostSlideState.switching} />}
         {(showCancelHint || (fullAutoHint && !showCancelHint)) && (
           <div className="absolute bottom-full inset-x-0 flex justify-center pb-2 pointer-events-none z-20">
             <div className="px-3 py-1.5 glass border border-border-200/60 rounded-lg shadow-lg text-[length:var(--fs-sm)] text-text-300 animate-in fade-in slide-in-from-bottom-2 duration-150">
