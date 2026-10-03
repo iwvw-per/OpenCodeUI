@@ -36,6 +36,7 @@ import { themeStore } from '../../store/themeStore'
 import { notificationStore } from '../../store/notificationStore'
 import { useLayoutStore } from '../../store/layoutStore'
 import { useChatViewport } from './chatViewport'
+import { setChatMorphing } from './chatMorph'
 import { chatContentMaxWidthStyle, getContentPaddingClass } from './contentWidth'
 import type { ApiAgent } from '../../api/client'
 import type { ModelInfo, FileCapabilities } from '../../api'
@@ -1404,10 +1405,16 @@ function InputBoxComponent({
   const [isMorphing, setIsMorphing] = useState(false)
   // 收起变形期间把展开内容冻在展开宽度上，避免逐帧收窄导致工具栏 reflow。
   const [morphContentWidth, setMorphContentWidth] = useState(0)
+  // 本组件当前是否持有 chatMorph 的降载占用（引用计数），卸载时据此释放。
+  const morphClaimRef = useRef(false)
 
   useEffect(
     () => () => {
       if (morphTimerRef.current !== null) window.clearTimeout(morphTimerRef.current)
+      if (morphClaimRef.current) {
+        morphClaimRef.current = false
+        setChatMorphing(false)
+      }
     },
     [],
   )
@@ -1445,11 +1452,21 @@ function InputBoxComponent({
       if (isCollapsed) setMorphContentWidth(expandedWidthRef.current)
       el.setAttribute('data-morphing', '')
       setIsMorphing(true)
+      // 变形期间降载：通知虚拟列表降低 overscan，把主线程让给几何动画，
+      // 减少快速滚动时的掉帧（毛玻璃由 [data-input-box][data-morphing] 就地关闭）。
+      if (!morphClaimRef.current) {
+        morphClaimRef.current = true
+        setChatMorphing(true)
+      }
       if (morphTimerRef.current !== null) window.clearTimeout(morphTimerRef.current)
       morphTimerRef.current = window.setTimeout(() => {
         morphTimerRef.current = null
         el.removeAttribute('data-morphing')
         setIsMorphing(false)
+        if (morphClaimRef.current) {
+          morphClaimRef.current = false
+          setChatMorphing(false)
+        }
       }, 520)
     }
 

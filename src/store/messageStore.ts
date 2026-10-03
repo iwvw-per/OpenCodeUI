@@ -23,6 +23,7 @@ import {
   shouldPreserveLiveParts,
   isServerPartId,
 } from './messagePartMerge'
+import { reconcileInFlightTools, settleToolByCallID, finalizeStreamingMessages, computeTrimCount } from './messageToolSettle'
 import type { RevertState, RevertHistoryItem, SessionState, SendRollbackSnapshot } from './messageStoreTypes'
 
 // Re-export types for consumers
@@ -57,24 +58,6 @@ const MAX_CACHED_SESSIONS_TOTAL = 48
  */
 const MAX_SESSION_MESSAGE_BYTES = 12 * 1024 * 1024
 const MAX_SESSION_MESSAGE_COUNT = 20_000
-/** 单条消息计费上限：一条超大消息不应独占整个预算而把其余全部裁掉 */
-const MAX_SINGLE_MESSAGE_BYTES = 2 * 1024 * 1024
-
-/**
- * 估算单条消息的内存占用（按序列化长度近似，不精确但足够做预算）。
- *
- * 用 JSON.stringify 的长度而非真实堆占用：堆占用无法廉价测量，且这里只需要
- * 一个与体积强相关的可比量。超长消息按 MAX_SINGLE_MESSAGE_BYTES 截断计费。
- */
-function estimateMessageBytes(message: Message): number {
-  try {
-    const size = JSON.stringify(message).length
-    return Math.min(size, MAX_SINGLE_MESSAGE_BYTES)
-  } catch {
-    // 存在循环引用等无法序列化的情况：给一个保守的固定估算，避免整段被误裁。
-    return 4096
-  }
-}
 
 class MessageStore {
   private sessions = new Map<string, SessionState>()
@@ -553,33 +536,8 @@ class MessageStore {
    * revertState 指向的消息若被裁掉，会一并清空，避免撤销点悬空。
    */
   private capSessionMessages(state: SessionState) {
-    const total = state.messages.length
-    if (total <= MAX_SESSION_MESSAGE_COUNT) {
-      // 条数没超，快速路径：累积体积判断是否需要按体积裁剪。
-      let bytes = 0
-      let cut = 0
-      for (let i = total - 1; i >= 0; i--) {
-        bytes += estimateMessageBytes(state.messages[i])
-        if (bytes > MAX_SESSION_MESSAGE_BYTES) {
-          cut = i + 1
-          break
-        }
-      }
-      if (cut === 0) return
-      this.trimFromOldest(state, cut)
-      return
-    }
-    // 条数超限：至少裁到 MAX_SESSION_MESSAGE_COUNT，再看体积。
-    let bytes = 0
-    let cut = total - MAX_SESSION_MESSAGE_COUNT
-    for (let i = total - 1; i >= cut; i--) {
-      bytes += estimateMessageBytes(state.messages[i])
-      if (bytes > MAX_SESSION_MESSAGE_BYTES) {
-        cut = i + 1
-        break
-      }
-    }
-    this.trimFromOldest(state, cut)
+    const cut = computeTrimCount(state.messages, MAX_SESSION_MESSAGE_BYTES, MAX_SESSION_MESSAGE_COUNT)
+    if (cut > 0) this.trimFromOldest(state, cut)
   }
 
   /**
@@ -1112,28 +1070,8 @@ class MessageStore {
    * 渲染层继续展示（registry 的 interruptedOutput 分支）。
    */
   private reconcileInFlightTools(state: SessionState, now: number): boolean {
-    let changed = false
-    state.messages = state.messages.map(message => {
-      let partsChanged = false
-      const parts = message.parts.map(part => {
-        if (part.type !== 'tool') return part
-        const status = part.state.status
-        if (status !== 'running' && status !== 'pending') return part
-        partsChanged = true
-        changed = true
-        const start = part.state.time?.start ?? now
-        return {
-          ...part,
-          state: {
-            ...part.state,
-            status: 'interrupted' as const,
-            metadata: { ...(part.state.metadata ?? {}), interrupted: true },
-            time: { ...(part.state.time ?? {}), start, end: now },
-          },
-        }
-      })
-      return partsChanged ? { ...message, parts } : message
-    })
+    const { messages, changed } = reconcileInFlightTools(state.messages, now)
+    if (changed) state.messages = messages
     return changed
   }
 
@@ -1145,23 +1083,8 @@ class MessageStore {
 
     state.isStreaming = false
     const completedAt = Date.now()
-    const hasStreamingMessage = state.messages.some(m => m.isStreaming)
-    if (hasStreamingMessage) {
-      state.messages = state.messages.map(m => {
-        if (!m.isStreaming) return m
-        return {
-          ...m,
-          isStreaming: false,
-          info: {
-            ...m.info,
-            time: {
-              ...m.info.time,
-              completed: m.info.time.completed ?? completedAt,
-            },
-          },
-        }
-      })
-    }
+    const { messages, changed } = finalizeStreamingMessages(state.messages, completedAt)
+    if (changed) state.messages = messages
     this.reconcileInFlightTools(state, completedAt)
     this.notify([sessionId])
   }
@@ -1192,41 +1115,21 @@ class MessageStore {
     if (!state) return
 
     const now = Date.now()
-    let changed = false
-    state.messages = state.messages.map(message => {
-      let partsChanged = false
-      const parts = message.parts.map(part => {
-        if (part.type !== 'tool' || part.callID !== callID) return part
-        const status = part.state.status
-        if (status !== 'running' && status !== 'pending') return part
-        partsChanged = true
-        changed = true
-        const start = part.state.time?.start ?? now
-        if (outcome.status === 'error') {
-          return {
-            ...part,
-            state: {
-              ...part.state,
-              status: 'error' as const,
-              error: outcome.error ?? part.state.error ?? i18n.t('message:toolPart.toolFailed'),
-              time: { ...(part.state.time ?? {}), start, end: now },
-            },
-          }
-        }
-        return {
-          ...part,
-          state: {
-            ...part.state,
-            status: 'completed' as const,
-            output: outcome.output ?? part.state.output ?? '',
-            time: { ...(part.state.time ?? {}), start, end: now },
-          },
-        }
-      })
-      return partsChanged ? { ...message, parts } : message
-    })
-
-    if (changed) this.notify([sessionId])
+    const { messages, changed } = settleToolByCallID(
+      state.messages,
+      callID,
+      {
+        status: outcome.status,
+        output: outcome.output,
+        error: outcome.error,
+        errorFallback: i18n.t('message:toolPart.toolFailed'),
+      },
+      now,
+    )
+    if (changed) {
+      state.messages = messages
+      this.notify([sessionId])
+    }
   }
 
   // ============================================

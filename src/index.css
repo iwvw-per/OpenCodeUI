@@ -1459,6 +1459,16 @@ html[data-chat-width-dragging] .glass-alt {
     transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* 变形期间关掉毛玻璃：width/height/border-radius 逐帧变化会触发 backdrop-filter
+ * 每帧重新模糊整块背景，是快速滚动时掉帧的主要来源（与内容列宽拖拽同源，见下方
+ * data-chat-width-dragging）。固定底色在此刻视觉差异很小，只作用于正在变形的这个
+ * 输入框，不影响分屏另一侧。 */
+[data-input-box][data-morphing].glass {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-color: hsl(var(--bg-000));
+}
+
 /* 收起态几何：只收窄宽度、收紧圆角；高度由 JS 写成药丸像素值，参与同一条过渡。
  * 边框与背景保持同一元素、始终可见，只变色不消失。 */
 [data-input-box][data-collapsed] {
