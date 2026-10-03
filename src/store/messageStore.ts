@@ -12,7 +12,6 @@ import i18n from '../i18n'
 import type { Message, MessageError, Part, FilePart, AgentPart } from '../types/message'
 import type { ApiMessageWithParts, ApiMessage, ApiPart, ApiSession, Attachment } from '../api/types'
 import { logger } from '../utils/logger'
-import { diag } from '../utils/diag'
 import { isUserUIMessage, toUIMessage, toUIMessageInfo, toUIPart } from '../utils/messageConversion'
 import { compressMessageParts } from './turnCompression'
 import { sessionActivityStore } from './sessionActivityStore'
@@ -187,12 +186,6 @@ class MessageStore {
       this.sessionSubscribers.set(sessionId, subscribers)
     }
     subscribers.set(fn, this.getSessionVersion(sessionId))
-    diag('STORE', 'subscribeSession', {
-      sessionId,
-      subscribers: subscribers.size,
-      bucketExists: this.sessions.has(sessionId),
-      bucketCount: this.sessions.get(sessionId)?.messages.length ?? -1,
-    })
     return () => {
       subscribers.delete(fn)
       if (subscribers.size === 0) this.sessionSubscribers.delete(sessionId)
@@ -362,10 +355,6 @@ class MessageStore {
   getRevertState(sessionId: string | null): RevertState | null {
     if (!sessionId) return null
     return this.sessions.get(this.resolveKey(sessionId))?.revertState ?? null
-  }
-
-  getPrependedCount(): number {
-    return 0
   }
 
   getHasMoreHistory(sessionId: string | null): boolean {
@@ -1028,14 +1017,6 @@ class MessageStore {
     const state = this.ensureSession(sessionKey)
     // 用户消息到达/更新：抬高会话与目录锚点（侧栏排序依据）
     this.recordUserMessageAnchor(sessionKey, apiMsg)
-    diag('STORE', 'message.updated', {
-      sessionID: apiMsg.sessionID,
-      resolvedKey: sessionKey,
-      messageID: apiMsg.id,
-      role: apiMsg.role,
-      cachedSessions: this.sessions.size,
-      hasSession: this.sessions.has(sessionKey),
-    })
     // Replace an optimistic user row when the server's canonical message arrives.
     // Matching on text keeps this safe when the async prompt response has no message id.
     if (apiMsg.role === 'user') {
@@ -1082,14 +1063,6 @@ class MessageStore {
   handlePartUpdated(apiPart: ApiPart & { sessionID: string; messageID: string }) {
     const sessionKey = this.resolveKey(apiPart.sessionID)
     const state = this.sessions.get(sessionKey)
-    diag('STORE', 'part.updated', {
-      sessionID: apiPart.sessionID,
-      resolvedKey: sessionKey,
-      messageID: apiPart.messageID,
-      partID: apiPart.id,
-      type: apiPart.type,
-      hasSession: !!state,
-    })
     if (!state) return
 
     let msgIndex = this.getMessageIndex(sessionKey, state).get(apiPart.messageID)
@@ -1136,14 +1109,6 @@ class MessageStore {
   handlePartDelta(data: { sessionID: string; messageID: string; partID: string; field: string; delta: string }) {
     const sessionKey = this.resolveKey(data.sessionID)
     const state = this.sessions.get(sessionKey)
-    diag('STORE', 'part.delta', {
-      sessionID: data.sessionID,
-      resolvedKey: sessionKey,
-      messageID: data.messageID,
-      partID: data.partID,
-      field: data.field,
-      hasSession: !!state,
-    })
     if (!state) return
 
     const msgIndex = this.getMessageIndex(sessionKey, state).get(data.messageID)
