@@ -135,7 +135,8 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
         setIsLoading(false)
       }
     }
-  }, [effectiveDirectory, t])
+    // serverId 入依赖：切换主机后目录树内容与目标主机不同，漏掉它会继续用旧主机的数据
+  }, [effectiveDirectory, t, serverId])
 
   const loadStatuses = useCallback(async () => {
     if (!effectiveDirectory) {
@@ -183,7 +184,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
       if (loadId !== statusLoadIdRef.current) return
       setFileStatus(new Map())
     }
-  }, [changeMode, effectiveDirectory, sessionId])
+  }, [changeMode, effectiveDirectory, sessionId, serverId])
 
   // 加载子目录
   const loadChildren = useCallback(
@@ -231,7 +232,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
         )
       }
     },
-    [effectiveDirectory],
+    [effectiveDirectory, serverId],
   )
 
   const updateExpandedPaths = useCallback(
@@ -326,7 +327,7 @@ export function useFileExplorer(options: UseFileExplorerOptions = {}): UseFileEx
         }
       }
     },
-    [effectiveDirectory, t],
+    [effectiveDirectory, t, serverId],
   )
 
   const clearPreview = useCallback(() => {

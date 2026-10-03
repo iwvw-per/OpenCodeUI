@@ -81,7 +81,7 @@ export const RightPanel = memo(function RightPanel({
       logger.log('[RightPanel] PTY created:', pty)
       const tab: TerminalTab = {
         id: pty.id,
-        title: pty.title || 'Terminal',
+        title: pty.title || t('terminal.terminal'),
         status: 'connecting',
         serverId,
       }
@@ -89,7 +89,7 @@ export const RightPanel = memo(function RightPanel({
     } catch (error) {
       uiErrorHandler('create terminal', error)
     }
-  }, [normalizedDirectory, serverId])
+  }, [normalizedDirectory, serverId, t])
 
   // 渲染内容
   const renderContent = useCallback(
@@ -165,7 +165,7 @@ export const RightPanel = memo(function RightPanel({
         </>
       )
     },
-    [normalizedDirectory, sessionId, isPanelResizing, t],
+    [normalizedDirectory, sessionId, isPanelResizing, t, serverId],
   )
 
   if (inline) {

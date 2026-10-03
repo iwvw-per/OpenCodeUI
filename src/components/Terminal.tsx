@@ -821,6 +821,7 @@ export const Terminal = memo(function Terminal({ ptyId, directory, serverId, isA
     clearStickyModifiers,
     sendTerminalData,
     preferTouchUi,
+    serverId,
   ])
 
   useEffect(() => {

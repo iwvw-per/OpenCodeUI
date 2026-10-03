@@ -49,9 +49,12 @@ export function useEmptyWorkingShellGate(isStreaming: boolean, extraDelayMs: num
   }, [isStreaming, clear])
 
   useEffect(() => {
+    // 把 ref 在 effect 内取出来：cleanup 里再读 timersRef.current 会被 lint 判定
+    // 「那一刻 ref 可能已指向别的对象」。这里固定住同一个 Map，语义更明确。
+    const timers = timersRef.current
     return () => {
-      for (const timer of timersRef.current.values()) window.clearTimeout(timer)
-      timersRef.current.clear()
+      for (const timer of timers.values()) window.clearTimeout(timer)
+      timers.clear()
     }
   }, [])
 

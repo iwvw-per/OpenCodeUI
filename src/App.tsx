@@ -568,7 +568,6 @@ function App() {
     isMobilePanelLayout,
     rightPanelOpen,
     scrollMobilePagerTo,
-    setSidebarExpanded,
     sidebarExpanded,
   ])
 
