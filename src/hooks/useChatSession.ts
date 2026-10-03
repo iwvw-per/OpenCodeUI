@@ -795,7 +795,10 @@ export function useChatSession({
 
         // SSE 是最终事实来源，但可能在请求返回后才到达；先显示用户输入，
         // 让新建会话和网络抖动时的发送反馈保持即时。
-        optimisticMessageId = `msg-local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        // 用 opencode 的 message id 格式（msg 开头）：服务端 prompt 会复用该 id
+        // （input.messageID ?? ascending()），使乐观消息与 canonical 消息共用同一 id，
+        // 靠 id 精确替换而非文本匹配，避免出现重复的两条用户消息。
+        optimisticMessageId = `msg_${crypto.randomUUID().replace(/-/g, '')}`
         messageStore.upsertLocalMessage(
           buildLocalQueuedMessage({
             sessionId,
@@ -827,6 +830,7 @@ export function useChatSession({
             agent: input.options?.agent,
             variant: input.options?.variant,
             directory: input.directory,
+            messageID: optimisticMessageId,
           },
           paneServerId,
         )

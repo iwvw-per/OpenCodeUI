@@ -59,6 +59,11 @@ export interface SendMessageParams {
   agent?: string
   variant?: string
   directory?: string
+  /**
+   * 客户端生成的 user 消息 id。opencode 的 prompt 会复用它（`input.messageID ?? ascending()`），
+   * 使乐观消息与服务端 canonical 消息共用同一 id，从而靠 id 精确替换，避免出现重复的两条用户消息。
+   */
+  messageID?: string
 }
 
 export interface SendMessageResponse {
