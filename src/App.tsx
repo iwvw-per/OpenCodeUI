@@ -33,6 +33,7 @@ import {
 import { uiErrorHandler, isSameDirectory, collectActiveDirectoriesByServer } from './utils'
 import { makeSessionKey, sessionKeyToServerId, splitSessionKey } from './utils/sessionKey'
 import { multiServerStore } from './store/multiServerStore'
+import { hostWorkspaceStore } from './store/hostWorkspaceStore'
 import { serverStore } from './store/serverStore'
 import { initNotificationSound } from './utils/notificationSoundBridge'
 import { createPtySession } from './api/pty'
@@ -67,6 +68,7 @@ function App() {
     navigateToSession: navigateRouteToSession,
     navigateHome: navigateRouteHome,
     replaceSession,
+    restoreWorkspace,
   } = router
   // 路由里 sessionId 直接是「服务器作用域复合 key」（serverId::sessionId）；
   // 旧书签（无 :: 前缀）视为活动服务器，合成复合 key
@@ -148,6 +150,39 @@ function App() {
     () => serverStore.getActiveServerId(),
     () => serverStore.getActiveServerId(),
   )
+
+  // ── 每主机工作区快照 ──
+  // 让「主机」成为顶层上下文：每台主机各记住自己当前打开的会话与目录，
+  // 切主机时整体切换、切回来恢复。避免旧主机的会话/项目泄漏到新主机。
+  // 用 ref 追踪「最近一次已知的 active server」，以便在 server-switch 时
+  // 判断「刚刚离开的是哪台」并把它的工作区先存下来。
+  const lastActiveServerRef = useRef<string | null>(null)
+  const workspaceRef = useRef<{ sessionKey: string | null; directory: string | undefined }>({
+    sessionKey: null,
+    directory: undefined,
+  })
+
+  useEffect(() => {
+    workspaceRef.current = { sessionKey: routeSessionKey, directory: currentDirectory }
+  }, [routeSessionKey, currentDirectory])
+
+  useEffect(() => {
+    // 首次挂载：只记录当前主机，不做切换
+    if (lastActiveServerRef.current === null) {
+      lastActiveServerRef.current = activeServerId
+      return
+    }
+    if (lastActiveServerRef.current === activeServerId) return
+
+    const previousServer = lastActiveServerRef.current
+    // 1) 快照刚离开的主机（它的会话与目录）
+    hostWorkspaceStore.set(previousServer, workspaceRef.current)
+    lastActiveServerRef.current = activeServerId
+
+    // 2) 恢复目标主机的快照：有会话则打开，无则回它的 home
+    const target = hostWorkspaceStore.get(activeServerId)
+    restoreWorkspace(activeServerId, target.sessionKey, target.directory)
+  }, [activeServerId, restoreWorkspace])
 
   // URL -> focused pane session
   useEffect(() => {

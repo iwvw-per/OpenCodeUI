@@ -209,6 +209,32 @@ export function useRouter() {
     })
   }, [])
 
+  /**
+   * 一次性恢复某主机的工作区（会话 + 目录 + 服务器）。
+   *
+   * 切换主机时用：把目标主机的激活会话与目录整体写回路由。与分步调用
+   * navigateHome/setDirectory 的区别是它原子地写入 serverId 与 directory，
+   * 避免中间态把旧主机的目录带到新主机上。
+   */
+  const restoreWorkspace = useCallback(
+    (serverId: string, sessionKey: string | null, directory: string | undefined) => {
+      const normalized = directory ? normalizeToForwardSlash(directory) : undefined
+      const newHash = buildHash(sessionKey, serverId, normalized)
+      if (normalized) {
+        serverStorage.set(STORAGE_KEY_LAST_DIRECTORY, normalized)
+      } else {
+        serverStorage.remove(STORAGE_KEY_LAST_DIRECTORY)
+      }
+      if (isMobileRef.current) {
+        window.history.replaceState(null, '', newHash)
+      } else {
+        window.location.hash = newHash
+      }
+      emitRoute({ sessionId: sessionKey, serverId, directory: normalized })
+    },
+    [],
+  )
+
   return {
     sessionId: route.sessionId,
     serverId: route.serverId,
@@ -218,5 +244,6 @@ export function useRouter() {
     replaceSession,
     setDirectory,
     replaceDirectory,
+    restoreWorkspace,
   }
 }
