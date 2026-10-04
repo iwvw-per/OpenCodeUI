@@ -1094,6 +1094,76 @@ h6 {
   animation-name: slide-in-from-bottom;
 }
 
+/* ============================================
+ * 浮层开合动效（Popover / Select / DropdownMenu 共用）
+ *
+ * 全站浮层（Radix Popover、Radix Select、自定义 DropdownMenu）统一用同一组
+ * 参数：从小尺寸缩放淡入。改这里，三套一起变。
+ *
+ * 关键点：
+ * - 用独立的 `scale` 属性而非 `transform`：Radix/Floating UI 把定位写在元素的
+ *   `transform: translate3d(...)` 上，动画若用 transform 会覆盖定位、浮层跳到
+ *   左上角。`scale` 与 `transform` 是两个独立属性，可叠加，互不干扰。
+ * - 必须用 [data-state] / [data-overlay-state] 选择器，不能写 Tailwind 变体
+ *   前缀（data-[state=open]:animate-in）——手写的 CSS 类不是 Tailwind 生成的
+ *   utility，变体前缀对它们无效，会静默不生效。
+ * ============================================ */
+
+@keyframes overlay-zoom-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@keyframes overlay-zoom-out {
+  from {
+    opacity: 1;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+/* Radix 组件（Popover / Select / Tooltip）：data-state 驱动，会等 animationend 卸载 */
+.overlay-surface:is(
+    [data-state='open'],
+    [data-state='delayed-open'],
+    [data-state='instant-open']
+  ) {
+  animation: overlay-zoom-in 150ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.overlay-surface[data-state='closed'] {
+  animation: overlay-zoom-out 120ms ease-in both;
+}
+
+/* 自定义 DropdownMenu：用 data-overlay-state 显式标记，与 Radix 路径共用同一动效 */
+.overlay-surface[data-overlay-state='open'] {
+  animation: overlay-zoom-in 150ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* 定位就绪前的中间态：保持不可见，避免元素先在左上角闪一帧再跳到正确位置 */
+.overlay-surface[data-overlay-state='opening'] {
+  opacity: 0;
+}
+
+.overlay-surface[data-overlay-state='closed'] {
+  animation: overlay-zoom-out 120ms ease-in both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-surface {
+    animation-duration: 1ms !important;
+  }
+}
+
 @keyframes reasoning-shimmer {
   0% {
     background-position: 200% 0;

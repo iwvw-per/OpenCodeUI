@@ -48,6 +48,7 @@ export const SelectContent = forwardRef<
       position={position}
       className={cn(
         'relative z-[200] max-h-72 min-w-[8rem] overflow-hidden rounded-xl border border-border-200/60 glass p-1 shadow-lg',
+        'overlay-surface',
         position === 'popper' && 'data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',
         className,
       )}
