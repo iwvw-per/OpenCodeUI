@@ -170,17 +170,23 @@ export function DropdownMenu({
   return createPortal(
     <div
       aria-hidden={!isOpen}
+      // 开合动效统一走 index.css 的 .overlay-surface（与 Popover/Select 同一套
+      // 参数）。用 data-overlay-state 标记可见态：
+      // - opening：已打开但定位尚未就绪（rAF 前），不播动画，避免先闪一次收起；
+      // - open：定位就绪，播入场；
+      // - closed：收起中，播退场（useDelayedRender 保留元素到动画结束）。
+      data-overlay-state={isVisible ? 'open' : isOpen ? 'opening' : 'closed'}
       className={`
-        fixed p-1 glass border border-border-200/60 rounded-xl shadow-lg
-        transition-all duration-200 cubic-bezier(0.34, 1.15, 0.64, 1)
-        ${isVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}
+        fixed p-1 glass border border-border-200/60 rounded-xl shadow-lg overlay-surface
         ${className}
       `}
       style={{
         ...posStyle,
         ...sizeStyle,
         zIndex,
-        visibility: isOpen ? 'visible' : 'hidden',
+        // 用 shouldRender（延迟卸载标志）而非 isOpen 控制可见性：收起后元素会
+        // 保留 200ms 播放退场动画，若按 isOpen 立刻 hidden 就看不到动画了。
+        visibility: shouldRender ? 'visible' : 'hidden',
         pointerEvents: isOpen ? 'auto' : 'none',
       }}
     >
