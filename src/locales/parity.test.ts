@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-const modules = import.meta.glob('./locales/*/*.json', { eager: true }) as Record<
+// 本文件位于 src/locales/，语言资源在其一级子目录 en/、zh-CN/ 下。
+// glob 必须相对本文件写 './*/*.json'；写成 './locales/*/*.json' 会解析到
+// 不存在的 src/locales/locales/，集合恒为空，断言空对空「假通过」。
+const modules = import.meta.glob('./*/*.json', { eager: true }) as Record<
   string,
   { default: Record<string, unknown> }
 >
@@ -14,39 +17,46 @@ function flatten(value: unknown, prefix = ''): string[] {
   return keys
 }
 
-function byLangNamespace(): Map<string, Set<string>> {
-  const out = new Map<string, Set<string>>()
-  for (const [path, mod] of Object.entries(modules)) {
-    const match = path.match(/\.\/locales\/([^/]+)\/([^/]+)\.json$/)
-    if (!match) continue
-    const [, lang, ns] = match
-    out.set(`${ns}`, out.get(`${ns}`) ?? new Set())
-    for (const key of flatten(mod.default ?? mod)) {
-      out.get(ns)!.add(`${lang}:${key}`)
-    }
-  }
-  return out
+/** i18next 复数后缀：英文按数量产生 _one/_other，中文无复数。比较时归一化掉。 */
+function stripPluralSuffix(key: string): string {
+  return key.replace(/_(zero|one|two|few|many|other)$/, '')
 }
 
-/** 把某语言的全部键映射为「去掉语言前缀」的集合，便于跨语言比较。 */
+function parse(path: string): { lang: string; ns: string } | null {
+  const match = path.match(/\.\/([^/]+)\/([^/]+)\.json$/)
+  if (!match) return null
+  return { lang: match[1], ns: match[2] }
+}
+
 function keysFor(lang: string): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>()
   for (const [path, mod] of Object.entries(modules)) {
-    const match = path.match(/\.\/locales\/([^/]+)\/([^/]+)\.json$/)
-    if (!match) continue
-    const [, entryLang, ns] = match
-    if (entryLang !== lang) continue
-    out.set(ns, new Set(flatten(mod.default ?? mod)))
+    const parsed = parse(path)
+    if (!parsed || parsed.lang !== lang) continue
+    out.set(parsed.ns, new Set(flatten(mod.default ?? mod).map(stripPluralSuffix)))
   }
   return out
 }
 
+function allNamespaces(): string[] {
+  const ns = new Set<string>()
+  for (const path of Object.keys(modules)) {
+    const parsed = parse(path)
+    if (parsed) ns.add(parsed.ns)
+  }
+  return [...ns].sort()
+}
+
 describe('locale key parity', () => {
+  it('loads locale resources (guards against a broken glob)', () => {
+    expect(Object.keys(modules).length).toBeGreaterThan(0)
+  })
+
   it('has the same namespaces for every language', () => {
-    const namespaces = Object.keys(byLangNamespace())
-    const langs = ['en', 'zh-CN']
-    for (const lang of langs) {
-      expect([...keysFor(lang).keys()].sort(), lang).toEqual(namespaces.sort())
+    const namespaces = allNamespaces()
+    expect(namespaces.length).toBeGreaterThan(0)
+    for (const lang of ['en', 'zh-CN']) {
+      expect([...keysFor(lang).keys()].sort(), lang).toEqual(namespaces)
     }
   })
 

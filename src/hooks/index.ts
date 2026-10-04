@@ -1,6 +1,5 @@
 export { useClickOutside } from './useClickOutside'
 export { useDropdown } from './useDropdown'
-export { usePermissions } from './usePermissions'
 export { useTheme } from './useTheme'
 export { useModels } from './useModels'
 export { useSessions } from './useSessions'

@@ -56,6 +56,13 @@ scripts/profile-chat.mjs
 scripts/serve-dist.mjs
 scripts/trace-session-load.mjs
 
+# 一次性性能测量 / 截图 / 验证脚本（本地调试用，不入版本控制）
+scripts/measure-*.mjs
+scripts/capture-*.mjs
+scripts/poc-*.mjs
+scripts/_*.mjs
+scripts/dev-android.sh
+
 # 临时探针脚本（可能含凭据，禁止提交）
 probe-*.mjs
 

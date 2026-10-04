@@ -100,15 +100,6 @@ export function recordModelUsage(model: ModelInfo): void {
   }
 }
 
-/**
- * 获取模型的使用次数
- */
-export function getModelUsageCount(model: ModelInfo): number {
-  const key = getModelKey(model)
-  const stats = getModelUsageStats()
-  return stats[key]?.count ?? 0
-}
-
 // ============================================
 // Variant 偏好存储
 // ============================================
@@ -185,8 +176,6 @@ export function saveSessionModelSelection(sessionId: string, modelKey: string, v
 // 模型排序
 // ============================================
 
-export type ModelSortMode = 'frequency' | 'alphabetical' | 'provider'
-
 /**
  * 根据使用频率排序模型
  * - 最近使用的优先
@@ -215,48 +204,6 @@ export function sortModelsByFrequency(models: ModelInfo[]): ModelInfo[] {
     }
     return statsB.lastUsed - statsA.lastUsed
   })
-}
-
-/**
- * 按字母顺序排序模型
- */
-export function sortModelsAlphabetically(models: ModelInfo[]): ModelInfo[] {
-  return [...models].sort((a, b) => a.name.localeCompare(b.name))
-}
-
-/**
- * 按 provider 分组（返回分组后的扁平数组，常用的 provider 在前）
- */
-export function sortModelsByProvider(models: ModelInfo[]): ModelInfo[] {
-  const stats = getModelUsageStats()
-
-  // 计算每个 provider 的总使用次数
-  const providerUsage: Record<string, number> = {}
-  for (const model of models) {
-    const key = getModelKey(model)
-    const count = stats[key]?.count ?? 0
-    providerUsage[model.providerId] = (providerUsage[model.providerId] ?? 0) + count
-  }
-
-  // 按 provider 使用频率分组
-  const groups = models.reduce(
-    (acc, model) => {
-      if (!acc[model.providerId]) {
-        acc[model.providerId] = []
-      }
-      acc[model.providerId].push(model)
-      return acc
-    },
-    {} as Record<string, ModelInfo[]>,
-  )
-
-  // 按 provider 使用频率排序
-  const sortedProviders = Object.keys(groups).sort((a, b) => {
-    return (providerUsage[b] ?? 0) - (providerUsage[a] ?? 0)
-  })
-
-  // 扁平化，每个 provider 内部按使用频率排序
-  return sortedProviders.flatMap(providerId => sortModelsByFrequency(groups[providerId]))
 }
 
 // ============================================

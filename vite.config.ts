@@ -35,6 +35,9 @@ export default defineConfig({
   },
   plugins: [katexWoff2Only(), react(), tailwindcss()],
   build: {
+    // 生产环境生成 sourcemap：Lighthouse 的 valid-source-maps 审计要求
+    // 首方大 JS 有可用的 sourcemap，同时便于线上错误定位堆栈。
+    sourcemap: true,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -44,6 +47,11 @@ export default defineConfig({
           // CodeMirror 被 ContentBlock 懒加载，单独成 chunk 便于长期缓存；
           // 缺少这条规则时它会落进主 chunk，把首屏体积抬高约 25%。
           if (id.includes('@codemirror/') || id.includes('@lezer/')) return 'vendor-codemirror'
+          // shiki 主题元数据（shiki/themes，仅 9KB 的 {id,displayName,type} 列表）
+          // 被 themeStore 在首屏同步引用；engine（oniguruma）只在语法高亮 worker
+          // 里用。二者若同归 vendor-shiki，首屏会连带预加载引擎。拆开：
+          // 元数据单独小 chunk 进首屏，引擎留在 worker 按需加载。
+          if (id.includes('shiki/dist/themes')) return 'vendor-shiki-themes'
           // shiki core + engine + themes → 一个小 chunk；
           // 语言 grammar（@shikijs/langs/*）由 dynamic import 自动拆分
           if ((id.includes('shiki') || id.includes('@shikijs/')) && !id.includes('@shikijs/langs'))
@@ -56,6 +64,20 @@ export default defineConfig({
           // 可避免它们随业务代码每次发版一起失效。
           if (id.includes('@radix-ui/') || id.includes('@floating-ui/')) return 'vendor-radix'
         },
+      },
+    },
+  },
+
+  // 生产构建本地预览：与 dev 一致把 /api 代理到 opencode 后端，
+  // 便于对真实数据做性能测量（vite preview 默认不继承 server.proxy）。
+  preview: {
+    port: 4188,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:4096',
+        changeOrigin: true,
+        ws: true,
+        rewrite: path => path.replace(/^\/api/, ''),
       },
     },
   },

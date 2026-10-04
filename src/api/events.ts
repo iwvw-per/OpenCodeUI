@@ -1034,13 +1034,6 @@ export function disconnectServerSSE(serverId: string, error?: string) {
 }
 
 /**
- * 断开活动服务器 SSE（兼容旧 API）
- */
-export function disconnectSSE(error?: string) {
-  disconnectServerSSE(serverStore.getActiveServerId(), error)
-}
-
-/**
  * 获取指定服务器连接状态（返回稳定引用，供 useSyncExternalStore 使用）
  */
 export function getServerConnectionInfo(serverId: string): ConnectionInfo {

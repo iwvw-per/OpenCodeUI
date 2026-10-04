@@ -90,18 +90,6 @@ export function fromTextPart(part: { id?: string; text: string }): Attachment {
 }
 
 /**
- * 生成 @ mention 的显示文本
- */
-export function getMentionText(attachment: Attachment): string {
-  if (attachment.type === 'agent') {
-    return `@${attachment.agentName}`
-  }
-  // file/folder 用相对路径
-  const path = attachment.relativePath || attachment.displayName
-  return `@${path}`
-}
-
-/**
  * 判断附件是否有可展开的内容
  */
 export function hasExpandableContent(attachment: Attachment): boolean {

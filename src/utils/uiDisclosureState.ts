@@ -42,14 +42,6 @@ export function getUiDisclosureState(key: string, fallback: boolean): Disclosure
   return initial
 }
 
-export function setUiDisclosureState(key: string, value: boolean, touched = true) {
-  setBounded(disclosureStateCache, key, { value, touched }, MAX_DISCLOSURE_ENTRIES)
-}
-
-export function hasUserTouchedUiDisclosure(key: string): boolean {
-  return disclosureStateCache.get(key)?.touched ?? false
-}
-
 const uiStateCache = new Map<string, unknown>()
 
 export function getUiState<T>(key: string, fallback: T): T {

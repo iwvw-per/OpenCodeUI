@@ -99,18 +99,6 @@ export async function getActiveModels(directory?: string, serverId?: string): Pr
   return models
 }
 
-export async function getDefaultModels(directory?: string): Promise<Record<string, string>> {
-  const sdk = getSDKClient()
-  const data = requireRecord(
-    unwrap(await sdk.config.providers({ directory: formatPathForApi(directory) })),
-    'Invalid OpenCode providers response',
-  )
-  const defaults = requireRecord(data.default, 'Invalid OpenCode default model response')
-  return Object.fromEntries(
-    Object.entries(defaults).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-  )
-}
-
 // ============================================
 // Project API Functions
 // 基于 SDK: project.*
@@ -151,27 +139,6 @@ export async function getProjects(directory?: string, serverId?: string): Promis
 export async function initGitProject(directory?: string, serverId?: string): Promise<ApiProject> {
   const sdk = getSDKClient(serverId)
   return unwrap(await sdk.project.initGit({ directory: formatPathForApi(directory, serverId) }))
-}
-
-/**
- * 更新项目
- */
-export async function updateProject(
-  projectId: string,
-  params: {
-    name?: string
-    icon?: { url?: string; override?: string; color?: string }
-  },
-  directory?: string,
-): Promise<ApiProject> {
-  const sdk = getSDKClient()
-  return unwrap(
-    await sdk.project.update({
-      projectID: projectId,
-      directory: formatPathForApi(directory),
-      ...params,
-    }),
-  )
 }
 
 // ============================================

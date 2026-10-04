@@ -103,7 +103,6 @@ vi.mock('../hooks', () => ({
   registerSessionConsumer: (...args: unknown[]) => registerSessionConsumerMock(...args),
   updateConsumerSessionId: (...args: unknown[]) => updateConsumerSessionIdMock(...args),
   hasOtherConsumerForSession: vi.fn(() => false),
-  usePermissions: () => ({ resetPermissions: vi.fn() }),
   usePermissionHandler: () => ({
     pendingPermissionRequests: pendingPermissionRequestsMock,
     pendingQuestionRequests: [],

@@ -85,22 +85,6 @@ export async function startMcpAuth(name: string, directory?: string): Promise<{ 
 }
 
 /**
- * 移除 MCP 认证
- */
-export async function removeMcpAuth(name: string, directory?: string): Promise<void> {
-  const sdk = getSDKClient()
-  unwrap(await sdk.mcp.auth.remove({ name, directory: formatPathForApi(directory) }))
-}
-
-/**
- * 完成 MCP OAuth 认证（使用授权码）
- */
-export async function completeMcpAuth(name: string, code: string, directory?: string): Promise<void> {
-  const sdk = getSDKClient()
-  unwrap(await sdk.mcp.auth.callback({ name, code, directory: formatPathForApi(directory) }))
-}
-
-/**
  * 启动完整的 OAuth 认证流程
  */
 export async function authenticateMcp(name: string, directory?: string): Promise<void> {

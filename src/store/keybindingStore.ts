@@ -575,13 +575,6 @@ export function matchesKeybinding(e: KeyboardEvent, keyStr: string): boolean {
   )
 }
 
-/**
- * 比较两个快捷键字符串是否相同 (规范化后比较)
- */
-export function keybindingsEqual(a: string, b: string): boolean {
-  return normalizeKeybindingString(a) === normalizeKeybindingString(b)
-}
-
 export interface KeybindingBackup {
   customKeys: Record<string, string>
 }

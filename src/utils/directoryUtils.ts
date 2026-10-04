@@ -312,13 +312,6 @@ export function isWindowsAbsolutePath(path: string): boolean {
   return /^[a-zA-Z]:/.test(path)
 }
 
-/**
- * 检查路径是否是绝对路径（Windows 或 Unix）
- */
-export function isAbsolutePath(path: string): boolean {
-  return isWindowsAbsolutePath(path) || path.startsWith('/')
-}
-
 // ============================================
 // Re-export from stringUtils for compatibility
 // ============================================

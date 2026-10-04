@@ -5,7 +5,7 @@
 
 import { getSDKClient, unwrap } from './sdk'
 import { formatPathForApi, directoryCacheKey } from '../utils/directoryUtils'
-import type { FileNode, FileContent, FileStatusItem, SymbolInfo, TextSearchMatch } from './types'
+import type { FileNode, FileContent, FileStatusItem, TextSearchMatch } from './types'
 import { serverStore } from '../store/serverStore'
 
 const ROOT_DIRECTORY_CACHE_TTL_MS = 10_000
@@ -111,28 +111,9 @@ export async function getFileStatus(directory?: string, serverId?: string): Prom
 }
 
 /**
- * 搜索代码符号
- */
-export async function searchSymbols(query: string, directory?: string, serverId?: string): Promise<SymbolInfo[]> {
-  const sdk = getSDKClient(serverId)
-  return unwrap(await sdk.find.symbols({ query, directory: formatPathForApi(directory, serverId) }))
-}
-
-/**
  * 搜索文件正文内容
  */
 export async function searchText(pattern: string, directory?: string, serverId?: string): Promise<TextSearchMatch[]> {
   const sdk = getSDKClient(serverId)
   return unwrap(await sdk.find.text({ pattern, directory: formatPathForApi(directory, serverId) }))
-}
-
-/**
- * 搜索目录（便捷方法）
- */
-export async function searchDirectories(query: string, baseDirectory?: string, limit: number = 50): Promise<string[]> {
-  return searchFiles(query, {
-    directory: baseDirectory,
-    type: 'directory',
-    limit,
-  })
 }

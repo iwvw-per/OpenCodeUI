@@ -5,6 +5,7 @@ import { CodeBlock } from '../../../components/CodeBlock'
 import { ChevronDownIcon, ChevronUpIcon, CpuIcon, DollarSignIcon } from '../../../components/Icons'
 import { useCurrentSessionId, useMessages } from '../../../store'
 import { useSessionStats, formatTokens, formatCost } from '../../../hooks'
+import { formatLocaleDateTime } from '../../../utils/formatUtils'
 import type { Message, TokenUsage } from '../../../types/message'
 
 interface ContextDetailsDialogProps {
@@ -15,13 +16,6 @@ interface ContextDetailsDialogProps {
 
 function tokenTotal(tokens: TokenUsage): number {
   return tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
-}
-
-function formatTimestamp(timestamp: number | undefined): string {
-  if (!timestamp) return '—'
-  const d = new Date(timestamp)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString()
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -138,7 +132,7 @@ function ContextDetailsBody({ contextLimit }: { contextLimit: number }) {
               <CpuIcon size={14} className="opacity-60" />
               <span className="font-mono">last: {contextMsg.info.id}</span>
             </div>
-            <span className="tabular-nums">{formatTimestamp(contextMsg.info.time?.created)}</span>
+            <span className="tabular-nums">{formatLocaleDateTime(contextMsg.info.time?.created)}</span>
           </div>
         )}
       </div>
@@ -150,7 +144,7 @@ function ContextDetailsBody({ contextLimit }: { contextLimit: number }) {
             const isExpanded = expandedId === msg.info.id
 
             const headerLabel = `${msg.info.role} • ${msg.info.id}`
-            const time = formatTimestamp(msg.info.time?.created)
+            const time = formatLocaleDateTime(msg.info.time?.created)
 
             const assistantTokens = msg.info.role === 'assistant' ? tokenTotal(msg.info.tokens) : null
             const assistantCost = msg.info.role === 'assistant' ? msg.info.cost : null

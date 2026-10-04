@@ -49,17 +49,6 @@ export function liveUpdateSupported(): boolean {
   return isTauri() && /Android/i.test(navigator.userAgent)
 }
 
-/** 系统是否允许本应用发布 promoted 通知（用户可在系统设置里关闭）。 */
-export function canPromoteLiveUpdate(): boolean {
-  const bridge = getBridge()
-  if (typeof bridge?.canPromote !== 'function') return false
-  try {
-    return bridge.canPromote()
-  } catch {
-    return false
-  }
-}
-
 function call(method: 'start' | 'update', payload: LiveUpdatePayload): void {
   const bridge = getBridge()
   const fn = bridge?.[method]

@@ -165,14 +165,3 @@ export const interactive = {
    */
   toggleActiveNeutral: 'bg-bg-200 text-text-100 border border-border-200',
 } as const
-
-/**
-   * 需要「选中即 accent 浅底」时使用的强调态。
-   *
-   * 仅用于**小型强调控件**（标签页、筛选 chip）——这类元素面积小，
-   * accent 浅底能提供明确的"当前项"识别。列表行、文件树等大面积区域
-   * 请用 `interactive.rowSelected`（中性底），否则大面积 accent 会压过内容。
-   */
-export const selectedAccent = 'bg-accent-main-100/15 text-text-100'
-
-export type InteractiveTone = keyof typeof interactive

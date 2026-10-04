@@ -65,14 +65,6 @@ export async function createPtySession(params: PtyCreateParams, directory?: stri
 }
 
 /**
- * 获取单个 PTY 会话信息
- */
-export async function getPtySession(ptyId: string, directory?: string, serverId?: string): Promise<Pty> {
-  const sdk = getSDKClient(serverId)
-  return normalizePty(unwrap(await sdk.pty.get({ ptyID: ptyId, directory: formatPathForApi(directory, serverId) })) as LegacyPty)
-}
-
-/**
  * 更新 PTY 会话
  */
 export async function updatePtySession(
