@@ -215,6 +215,7 @@ export const InlineQuestion = memo(function InlineQuestion({
             <button
               onClick={handleSubmit}
               disabled={!canSubmit || isReplying}
+              data-haptic="medium"
               className="px-2.5 h-7 rounded-md text-[length:var(--fs-sm)] font-medium bg-text-100 text-bg-000 hover:bg-text-200 transition-colors disabled:opacity-50"
             >
               {t('common:submit')}
@@ -223,6 +224,7 @@ export const InlineQuestion = memo(function InlineQuestion({
           <button
             onClick={() => onReject(request.id)}
             disabled={isReplying}
+            data-haptic="strong"
             className="px-2.5 h-7 rounded-md text-[length:var(--fs-sm)] text-text-400 hover:bg-bg-200 transition-colors disabled:opacity-50"
           >
             {t('common:skip')}

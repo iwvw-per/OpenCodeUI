@@ -10,6 +10,8 @@ import { RightPanel } from './components/RightPanel'
 import { BottomPanel } from './components/BottomPanel'
 import { DesktopTitlebar } from './components/DesktopTitlebar'
 import { useDirectory, useGlobalEvents, useGlobalKeybindings, useRouter } from './hooks'
+import { useGlobalHaptics } from './hooks/useGlobalHaptics'
+import { useInputCapabilities } from './hooks/useInputCapabilities'
 import { useViewportHeight } from './hooks/useViewportHeight'
 import { useCloseServiceDialog } from './hooks/useCloseServiceDialog'
 import { useWakeLock } from './hooks/useWakeLock'
@@ -36,6 +38,7 @@ import { multiServerStore } from './store/multiServerStore'
 import { hostWorkspaceStore } from './store/hostWorkspaceStore'
 import { serverStore } from './store/serverStore'
 import { initNotificationSound } from './utils/notificationSoundBridge'
+import { initLiveUpdateSync } from './utils/liveUpdateSync'
 import { createPtySession } from './api/pty'
 import type { TerminalTab } from './store/layoutStore'
 import type { SettingsTab } from './features/settings/SettingsDialog'
@@ -109,6 +112,9 @@ function App() {
     return cleanup
   }, [])
 
+  // Android 实况通知（ColorOS 流体云）：会话进行中时发布/更新，结束时取消。
+  useEffect(() => initLiveUpdateSync(), [])
+
   useEffect(() => {
     if (!isTauri() || isTauriMobile()) return
 
@@ -124,6 +130,11 @@ function App() {
 
   useViewportHeight()
   useWakeLock(wakeLock)
+
+  // 移动端全局触觉反馈：一处 document 级监听覆盖全站可交互操作。
+  // 仅在触摸优先设备启用，桌面/混合设备不震。
+  const { preferTouchUi } = useInputCapabilities()
+  useGlobalHaptics(preferTouchUi)
 
   const activeDirectories = useMemo(
     () =>

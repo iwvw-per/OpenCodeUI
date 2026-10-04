@@ -42,6 +42,7 @@ export function ConfirmDialog({
             // Optional: close automatically or let parent handle it
           }}
           isLoading={isLoading}
+          data-haptic="strong"
         >
           {confirmText ?? t('common:confirm')}
         </Button>

@@ -20,6 +20,7 @@ import { memo, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from '
 import type { CSSProperties } from 'react'
 import type { Message } from '../types/message'
 import { useChatViewport } from '../features/chat/chatViewport'
+import { hapticTap } from '../utils/haptics'
 import { buildOutlineSourceEntries, truncateOutlineLabel, type OutlineSourceEntry } from './outlineIndexModel'
 
 const EMPTY_MESSAGES: Message[] = []
@@ -581,17 +582,7 @@ const TouchFisheye = memo(function TouchFisheye({ entries, onSelect, visual, own
   }, [ownerVisibleIndex, entries, getTicks])
 
   const vibrate = useCallback(() => {
-    try {
-      const bridge = (window as unknown as { __opencode_android?: { vibrate?: (ms: number) => void } })
-        .__opencode_android
-      if (bridge?.vibrate) {
-        bridge.vibrate(8)
-        return
-      }
-      navigator.vibrate?.(5)
-    } catch {
-      /* ignore */
-    }
+    hapticTap('light')
   }, [])
 
   useEffect(() => {

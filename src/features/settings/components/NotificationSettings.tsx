@@ -10,6 +10,7 @@ import {
   ShieldIcon,
   QuestionIcon,
   AlertCircleIcon,
+  VibrateIcon,
 } from '../../../components/Icons'
 import { useNotification } from '../../../hooks'
 import { notificationStore } from '../../../store'
@@ -18,7 +19,10 @@ import {
   useNotificationEventSettings,
 } from '../../../store/notificationEventSettingsStore'
 import { soundStore, useSoundSettings } from '../../../store/soundStore'
-import { Toggle, SettingRow, SettingField, SettingsSection, SettingsCardRow } from './SettingsUI'
+import { hapticStore, useHapticSettings, HAPTIC_INTENSITY_ORDER } from '../../../store/hapticStore'
+import { hapticsSupported, hapticTap } from '../../../utils/haptics'
+import { liveUpdateSupported } from '../../../utils/liveUpdate'
+import { Toggle, SettingRow, SettingField, SettingsSection, SettingsCardRow, SegmentedControl } from './SettingsUI'
 import { BUILTIN_SOUNDS, SOUND_OPTIONS, isSoundSupported, playSound } from '../../../utils/soundPlayer'
 import { cn } from '../../../utils/cn'
 import { interactive } from '../../../utils/interaction'
@@ -413,6 +417,10 @@ export function NotificationSettings() {
   const [toastEnabled, setToastEnabledState] = useState(notificationStore.toastEnabled)
   const soundSettings = useSoundSettings()
   const soundSupported = isSoundSupported()
+  const hapticSettings = useHapticSettings()
+  const hapticSupported = hapticsSupported()
+  const eventSettings = useNotificationEventSettings()
+  const liveUpdateEnabled = eventSettings.liveUpdateEnabled
 
   const handleTestNotification = () => {
     sendNotification(t('notifications.testTitle'), t('notifications.testBody'))
@@ -507,6 +515,25 @@ export function NotificationSettings() {
         </SettingRow>
       </SettingsSection>
 
+      {liveUpdateSupported() && (
+        <SettingsSection
+          title={t('notifications.liveUpdate')}
+          description={t('notifications.liveUpdateDesc')}
+        >
+          <SettingRow
+            label={t('notifications.liveUpdateLabel')}
+            description={t('notifications.liveUpdateLabelDesc')}
+            icon={<BellIcon size={14} />}
+            onClick={() => notificationEventSettingsStore.setLiveUpdateEnabled(!liveUpdateEnabled)}
+          >
+            <Toggle
+              enabled={liveUpdateEnabled}
+              onChange={() => notificationEventSettingsStore.setLiveUpdateEnabled(!liveUpdateEnabled)}
+            />
+          </SettingRow>
+        </SettingsSection>
+      )}
+
       <SettingsSection title={t('notifications.soundSettings')} description={t('notifications.soundSettingsDesc')}>
         {soundSupported ? (
           <>
@@ -557,6 +584,49 @@ export function NotificationSettings() {
         ) : (
           <div className="px-4 py-3 text-[length:var(--fs-xs)] text-text-300 leading-relaxed">
             {t('notifications.soundNotSupported')}
+          </div>
+        )}
+      </SettingsSection>
+
+      <SettingsSection title={t('notifications.hapticSettings')} description={t('notifications.hapticSettingsDesc')}>
+        {hapticSupported ? (
+          <>
+            <SettingRow
+              label={t('notifications.hapticEnabled')}
+              description={t('notifications.hapticEnabledDesc')}
+              icon={<VibrateIcon size={14} />}
+              onClick={() => hapticStore.setEnabled(!hapticSettings.enabled)}
+            >
+              <Toggle
+                enabled={hapticSettings.enabled}
+                onChange={() => hapticStore.setEnabled(!hapticSettings.enabled)}
+              />
+            </SettingRow>
+
+            {hapticSettings.enabled && (
+              <SettingField
+                label={t('notifications.hapticIntensity')}
+                description={t('notifications.hapticIntensityDesc')}
+              >
+                <SegmentedControl
+                  value={hapticSettings.intensity}
+                  fullWidth
+                  options={HAPTIC_INTENSITY_ORDER.map(intensity => ({
+                    value: intensity,
+                    label: t(`notifications.hapticIntensity_${intensity}`),
+                  }))}
+                  onChange={next => {
+                    hapticStore.setIntensity(next)
+                    // 立即用新强度回一记，让用户直接感知差异。
+                    hapticTap('medium')
+                  }}
+                />
+              </SettingField>
+            )}
+          </>
+        ) : (
+          <div className="px-4 py-3 text-[length:var(--fs-xs)] text-text-300 leading-relaxed">
+            {t('notifications.hapticNotSupported')}
           </div>
         )}
       </SettingsSection>

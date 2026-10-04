@@ -87,6 +87,7 @@ export const InlinePermission = memo(function InlinePermission({
       <button
         onClick={() => onReply(request.id, 'once')}
         disabled={isReplying}
+        data-haptic="strong"
         className="px-2.5 h-7 rounded-md text-[length:var(--fs-sm)] font-medium bg-text-100 text-bg-000 hover:bg-text-200 transition-colors disabled:opacity-50"
       >
         {t('permissionDialog.allowOnce')}
@@ -94,6 +95,7 @@ export const InlinePermission = memo(function InlinePermission({
       <button
         onClick={handleAlways}
         disabled={isReplying}
+        data-haptic="strong"
         className="px-2.5 h-7 rounded-md text-[length:var(--fs-sm)] text-text-300 hover:bg-bg-200 transition-colors disabled:opacity-50"
       >
         {t('permissionDialog.alwaysAllow')}
@@ -101,6 +103,7 @@ export const InlinePermission = memo(function InlinePermission({
       <button
         onClick={() => onReply(request.id, 'reject')}
         disabled={isReplying}
+        data-haptic="strong"
         className="px-2.5 h-7 rounded-md text-[length:var(--fs-sm)] text-text-400 hover:bg-danger-100/10 transition-colors disabled:opacity-50"
       >
         {t('common:reject')}

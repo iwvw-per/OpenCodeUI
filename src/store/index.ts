@@ -81,6 +81,9 @@ export { modelVisibilityStore, useHiddenModelKeys } from './modelVisibilityStore
 export { soundStore, useSoundSettings, exportSoundBackup, importSoundBackup } from './soundStore'
 export type { SoundBackup, SoundSettings, EventSoundConfig } from './soundStore'
 
+export { hapticStore, useHapticSettings, exportHapticBackup, importHapticBackup } from './hapticStore'
+export type { HapticSettings } from './hapticStore'
+
 export {
   notificationEventSettingsStore,
   useNotificationEventSettings,
