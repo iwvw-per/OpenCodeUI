@@ -1571,10 +1571,10 @@ function InputBoxComponent({
                 FAB 是锚点的子节点，因此 right 相对输入框右缘解析——
                 收起时挂在药丸右侧，展开时滑到输入框右下角。 */}
             <div className="relative">
-              {/* 顶边角标（欢迎页项目选择）：骑在输入框顶边线上，与输入框同一子树、
-                  同一层级，随输入框一起移动，不会被输入框覆盖。 */}
+              {/* 顶边角标（欢迎页项目选择）：做成骑在输入框顶边的「标签」——
+                  底边与输入框顶边重合、只保留上方圆角，与输入框连成一体。 */}
               {topAccessory && (
-                <div className="absolute left-0 top-0 z-40 -translate-y-1/2">{topAccessory}</div>
+                <div className="absolute left-6 bottom-full z-40 -mb-px">{topAccessory}</div>
               )}
               <div className="chat-fab-anchor" data-collapsed={isCollapsed}>
                 <ChatFab

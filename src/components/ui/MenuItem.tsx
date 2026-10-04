@@ -35,7 +35,7 @@ export function MenuItem({
       onClick={onClick}
       {...selectionProps}
       className={cn(
-        'w-full px-2 py-2 rounded-lg flex items-start gap-2 text-left bg-transparent border-none select-none',
+        'w-full px-2.5 py-1.5 rounded-lg flex items-start gap-2 text-left bg-transparent border-none select-none',
         'transition-colors duration-150',
         // 禁用态优先于交互态：用 disabled: 前缀而非三元，避免顺序依赖
         interactive.disabled,
@@ -47,11 +47,11 @@ export function MenuItem({
         <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 mt-0.5 text-text-400">{icon}</span>
       )}
       <div className="flex-1 min-w-0">
-        <div className={`text-[length:var(--fs-base)] ${disabled ? 'text-text-500' : selected ? 'text-text-100' : 'text-text-200'}`}>
+        <div className={`text-[length:var(--fs-sm)] ${disabled ? 'text-text-500' : selected ? 'text-text-100' : 'text-text-200'}`}>
           {label}
         </div>
         {description && (
-          <div className="text-[length:var(--fs-sm)] text-text-500 mt-0.5 line-clamp-2" title={description}>
+          <div className="text-[length:var(--fs-xs)] text-text-500 mt-0.5 line-clamp-2" title={description}>
             {description}
           </div>
         )}

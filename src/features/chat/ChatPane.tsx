@@ -347,6 +347,20 @@ export const ChatPane = memo(function ChatPane({
     return () => ro.disconnect()
   }, [])
 
+  // 对话区可用高度：欢迎态输入框需要垂直居中，用整数像素 top 定位避免
+  // translateY(50%) 造成的半像素位移（会让文字子像素模糊）。
+  const [chatContentHeight, setChatContentHeight] = useState(0)
+  useEffect(() => {
+    if (!chatContentEl) return
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        setChatContentHeight(entry.contentRect.height)
+      }
+    })
+    ro.observe(chatContentEl)
+    return () => ro.disconnect()
+  }, [chatContentEl])
+
   // ============================================
   // Chat Session
   // ============================================
@@ -1079,13 +1093,22 @@ export const ChatPane = memo(function ChatPane({
         className={`absolute left-0 right-0 z-10 pointer-events-none ${
           hostSlideState.switching
             ? 'transition-none'
-            : 'transition-[bottom,transform] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none'
+            : 'transition-[top] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none'
         }`}
         style={{
-          // 欢迎态（无会话无消息）：输入框居中悬浮，hero 在正上方；
+          // 欢迎态（无会话无消息）：输入框垂直居中悬浮，hero 在正上方；
           // 发送后 showWelcome 翻 false，容器滑回贴底 —— 与原始设计一致。
-          bottom: showWelcome ? '50%' : '0',
-          transform: showWelcome ? 'translateY(50%)' : 'translateY(0)',
+          //
+          // 用整数像素 top 定位，而不是 bottom:50% + translateY(50%)：
+          // 后者会产生非整数位移（实测 65.75px），让整个子树落在半像素上，
+          // 文字/图标子像素渲染发虚。这里显式取整，落到整数像素网格。
+          top:
+            showWelcome && chatContentHeight > 0
+              ? `${Math.round((chatContentHeight - inputBoxHeight) / 2)}px`
+              : undefined,
+          bottom: showWelcome ? undefined : '0',
+          // 欢迎态且尚未测到容器/自身高度时先隐藏，避免贴顶闪一帧或半像素。
+          visibility: showWelcome && chatContentHeight === 0 ? 'hidden' : undefined,
         }}
       >
         {!showCompactShell && <WelcomeHero active={showWelcome} disableTransition={hostSlideState.switching} />}

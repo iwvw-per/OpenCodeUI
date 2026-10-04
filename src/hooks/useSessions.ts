@@ -28,6 +28,11 @@ interface UseSessionsOptions {
   rootsOnly?: boolean
   /** 按目录过滤 */
   directory?: string
+  /**
+   * 多目录聚合：传入时把这些目录（如同一 git 项目的多个 worktree）的会话合并成
+   * 一个列表，不再区分分支/子目录层级。与 directory 二选一，优先本项。
+   */
+  directories?: string[]
   /** 延迟启用，用于懒加载 */
   enabled?: boolean
   /** 指定服务器（缺省用活动服务器）。多服务器模式下每个服务器一个实例 */
@@ -69,10 +74,20 @@ type SearchState = {
 const EMPTY_SESSIONS: ApiSession[] = []
 
 export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult {
-  const { pageSize = 20, initialSearch = '', rootsOnly = true, directory, enabled = true, serverId } = options
+  const { pageSize = 20, initialSearch = '', rootsOnly = true, directory, directories, enabled = true, serverId } =
+    options
 
   // 标准化 directory 路径 (移除末尾斜杠，统一正斜杠)
   const normalizedDirectory = directory ? directory.replace(/\\/g, '/').replace(/\/$/, '') : undefined
+
+  // 多目录聚合：规范化 + 去重 + 稳定排序，作为依赖键避免每帧重算。
+  const normalizedDirectories = useMemo(() => {
+    if (!directories || directories.length === 0) return null
+    const set = new Set(directories.map(dir => dir.replace(/\\/g, '/').replace(/\/$/, '')))
+    return Array.from(set).sort()
+  }, [directories])
+  const isAggregate = normalizedDirectories !== null
+  const directoriesKey = normalizedDirectories ? normalizedDirectories.join('\u0001') : ''
 
   const [search, setSearch] = useState(initialSearch)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -94,24 +109,59 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
   /** 索引桶：服务器 + 目录 + 活跃视图（本 hook 只查活跃列表）。
    *  scope 固定 'sidebar'：侧栏列表按 pageSize 分页，与上下条导航（30 条）分开存，
    *  否则两者会互相覆盖 loadedLimit。 */
+  // 聚合模式：为每个目录各建一个真实桶（SSE 按 directory 路由才能落到正确桶），
+  // 读取侧再把各桶快照合并；单目录模式保持原单桶不变。
   const bucket: SessionListBucketKey = {
     serverId: resolvedServerId,
     directory: normalizedDirectory,
     view: 'active',
     scope: 'sidebar',
   }
-  const bucketIdKey = `${resolvedServerId}\u0000${normalizedDirectory ?? ''}`
+  const directoryBuckets = useMemo<SessionListBucketKey[]>(() => {
+    if (!isAggregate || !normalizedDirectories) return []
+    return normalizedDirectories.map(dir => ({
+      serverId: resolvedServerId,
+      directory: dir,
+      view: 'active' as const,
+      scope: 'sidebar',
+    }))
+  }, [isAggregate, normalizedDirectories, resolvedServerId])
+  const bucketIdKey = `${resolvedServerId}\u0000${isAggregate ? directoriesKey : (normalizedDirectory ?? '')}`
+
+  // 全局版本订阅：任何桶变化都触发重算（聚合需要感知所有目录桶）。
+  const indexVersion = useSyncExternalStore(
+    cb => sessionListIndexStore.subscribe(cb),
+    () => sessionListIndexStore.getVersion(),
+    () => sessionListIndexStore.getVersion(),
+  )
 
   // 索引快照（同步、引用稳定）：这是「切回旧主机首帧即有内容」的关键。
   // 搜索态返回空，由 searchState 接管。
-  const indexSessions = useSyncExternalStore(
-    cb => sessionListIndexStore.subscribe(cb),
-    () => (indexable ? sessionListIndexStore.getSnapshot(bucket) : EMPTY_SESSIONS),
-    () => (indexable ? sessionListIndexStore.getSnapshot(bucket) : EMPTY_SESSIONS),
-  )
+  // 聚合模式：合并各目录桶（按 loadedLimit 切片）去重后按锚点排序，结果随版本稳定。
+  const indexSessions = useMemo(() => {
+    if (!indexable) return EMPTY_SESSIONS
+    if (!isAggregate) return sessionListIndexStore.getSnapshot(bucket)
+    const seen = new Set<string>()
+    const merged: ApiSession[] = []
+    for (const dirBucket of directoryBuckets) {
+      const limit = sessionListIndexStore.getLoadedLimit(dirBucket) || pageSize
+      for (const session of sessionListIndexStore.getSnapshot(dirBucket).slice(0, limit)) {
+        if (seen.has(session.id)) continue
+        seen.add(session.id)
+        merged.push(session)
+      }
+    }
+    return sortSessionsByAnchor(merged)
+    // bucket 每帧新建，用 bucketIdKey 代替；indexVersion 覆盖内容变化
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indexable, isAggregate, directoryBuckets, bucketIdKey, indexVersion, pageSize])
 
-  const loadedLimit = indexable ? sessionListIndexStore.getLoadedLimit(bucket) : 0
-  const hasIndexContent = indexable && sessionListIndexStore.has(bucket)
+  const hasIndexContent = useMemo(() => {
+    if (!indexable) return false
+    if (!isAggregate) return sessionListIndexStore.has(bucket)
+    return directoryBuckets.some(dirBucket => sessionListIndexStore.has(dirBucket))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indexable, isAggregate, directoryBuckets, bucketIdKey, indexVersion])
 
   const [isLoading, setIsLoading] = useState(enabled && !hasIndexContent)
 
@@ -163,15 +213,51 @@ try {
           // 「刚好这么多」和「还有更多」——会话数正好等于 pageSize 时会多出一个
           // 点了没反应的「展开更多会话」按钮（取回同样条数后 hasMore 立刻变 false）。
           const requestedLimit = currentLimitRef.current
-          const data = await getSessions(
-            {
-              roots: rootsOnly,
-              limit: requestedLimit + 1,
-              directory: normalizedDirectory,
-              ...queryParams,
-            },
-            serverId,
-          )
+          let data: ApiSession[]
+          let hasMore: boolean
+          // 聚合模式：记录每个目录各自的列表，写回各自桶（SSE 按目录路由才一致）
+          let perDirectoryLists: { bucket: SessionListBucketKey; list: ApiSession[] }[] | null = null
+          if (isAggregate && normalizedDirectories) {
+            // 聚合：每个目录各拉一次（多取一条判 hasMore），合并去重后按时间排序。
+            const perDirectory = await Promise.all(
+              normalizedDirectories.map(dir =>
+                getSessions(
+                  { roots: rootsOnly, limit: requestedLimit + 1, directory: dir, ...queryParams },
+                  serverId,
+                ).catch(() => [] as ApiSession[]),
+              ),
+            )
+            const seen = new Set<string>()
+            const merged: ApiSession[] = []
+            let anyHasMore = false
+            perDirectoryLists = []
+            normalizedDirectories.forEach((dir, i) => {
+              const list = perDirectory[i]
+              if (list.length > requestedLimit) anyHasMore = true
+              perDirectoryLists!.push({
+                bucket: { serverId: resolvedServerId, directory: dir, view: 'active', scope: 'sidebar' },
+                list,
+              })
+              for (const session of list) {
+                if (seen.has(session.id)) continue
+                seen.add(session.id)
+                merged.push(session)
+              }
+            })
+            data = merged
+            hasMore = anyHasMore
+          } else {
+            data = await getSessions(
+              {
+                roots: rootsOnly,
+                limit: requestedLimit + 1,
+                directory: normalizedDirectory,
+                ...queryParams,
+              },
+              serverId,
+            )
+            hasMore = data.length > requestedLimit
+          }
 
           // 检查是否是最新的请求
           if (requestId !== requestIdRef.current) return
@@ -183,11 +269,21 @@ try {
 
           if (isSearch) {
             setSearchState({ sessions: sortSessionsByAnchor(data.slice(0, requestedLimit)), isLoading: false, error: null })
+          } else if (perDirectoryLists) {
+            // 每个目录写回自己的桶；loadedLimit 记为 requestedLimit（与单目录语义一致，
+            // 空目录也算「已加载」），否则 SSE 增量会因 loadedLimit===0 被丢弃。
+            for (const { bucket: dirBucket, list } of perDirectoryLists) {
+              sessionListIndexStore.replace(dirBucket, list, {
+                limit: requestedLimit,
+                hasMore: list.length > requestedLimit,
+              })
+            }
+            setListError(null)
           } else {
             // 索引存全量页数据（含多取的那条），由读取侧按 loadedLimit 切片
             sessionListIndexStore.replace(bucket, data, {
               limit: requestedLimit,
-              hasMore: data.length > requestedLimit,
+              hasMore,
             })
             // 拉取成功：清掉失败态（列表有内容后错误不再展示）
             setListError(null)
@@ -225,7 +321,7 @@ try {
     },
     // bucket 是每帧新建对象，用它做依赖会无限重跑；用稳定的 id 字符串代替。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rootsOnly, normalizedDirectory, enabled, serverId, bucketIdKey, hasIndexContent],
+    [rootsOnly, normalizedDirectory, normalizedDirectories, enabled, serverId, bucketIdKey, hasIndexContent],
   )
 
   fetchSessionsRef.current = fetchSessions
@@ -252,11 +348,22 @@ try {
         void fetchSessionsRef.current({ search: search || undefined })
         return
       }
-      // 索引有内容：先上屏，再按需后台刷新（陈旧才拉）
-      if (sessionListIndexStore.has(bucket)) {
-        const age = Date.now() - sessionListIndexStore.getFetchedAt(bucket)
+      // 索引有内容：先上屏，再按需后台刷新（陈旧才拉）。
+      // 直接读 store（而非闭包里的 memo），避免 setTimeout 期间内容已到达却仍判空。
+      const buckets = isAggregate ? directoryBuckets : [bucket]
+      const hasContent = buckets.some(b => sessionListIndexStore.has(b))
+      if (hasContent) {
         setIsLoading(false)
-        if (age > SESSION_LIST_TTL_MS) {
+        let oldest = Number.POSITIVE_INFINITY
+        for (const b of buckets) {
+          const at = sessionListIndexStore.getFetchedAt(b)
+          if (at === 0) {
+            oldest = 0
+            break
+          }
+          if (at < oldest) oldest = at
+        }
+        if (oldest > 0 && Date.now() - oldest > SESSION_LIST_TTL_MS) {
           void fetchSessionsRef.current({ search: undefined, skipCache: true, silent: true })
         }
         return
@@ -279,6 +386,12 @@ try {
   useEffect(() => {
     if (!enabled) return
 
+    // 聚合模式下会话可能来自任一目录，搜索态过滤要按目录集合判断
+    const dirMatch = (session: ApiSession) =>
+      normalizedDirectories
+        ? normalizedDirectories.some(dir => matchesDirectory(session, dir))
+        : matchesDirectory(session, normalizedDirectory)
+
     const subscribe = serverId
       ? (cb: Parameters<typeof subscribeToServerEvents>[1]) => subscribeToServerEvents(serverId, cb)
       : subscribeToEvents
@@ -287,7 +400,7 @@ try {
       onSessionCreated: session => {
         if (session.parentID) return
         if (!searchRef.current) return // 索引路径由 useGlobalEvents 维护
-        if (!matchesDirectory(session, normalizedDirectory)) return
+        if (!dirMatch(session)) return
         void fetchSessionsRef.current({ search: searchRef.current || undefined })
       },
       onSessionUpdated: session => {
@@ -297,7 +410,7 @@ try {
           setSearchState(prev => ({ ...prev, sessions: prev.sessions.filter(item => item.id !== session.id) }))
           return
         }
-        if (matchesDirectory(session, normalizedDirectory)) {
+        if (dirMatch(session)) {
           void fetchSessionsRef.current({ search: searchRef.current || undefined })
         } else {
           setSearchState(prev => ({ ...prev, sessions: prev.sessions.filter(item => item.id !== session.id) }))
@@ -319,23 +432,28 @@ try {
     })
 
     return unsubscribe
-  }, [enabled, normalizedDirectory, pageSize, serverId])
+  }, [enabled, normalizedDirectory, normalizedDirectories, pageSize, serverId])
 
   // 切服务器：不在此清索引。索引按 serverId 分桶，新服务器的桶要么有内容
   // （切回旧主机即时出）要么为空（走上面的初始加载）。旧服务器的桶保留复用。
 
   // 读取侧：按 loadedLimit 切片。排序由 index store 负责（就地更新语义，
   // 避免流式期间并行会话交替更新导致列表来回跳）。
+  // 聚合模式：indexSessions 已按各桶 loadedLimit 合并，无需再切。
   const sessions = useMemo(() => {
     if (searching) return searchState.sessions
     if (!indexable) return EMPTY_SESSIONS
-    const limit = loadedLimit || pageSize
+    if (isAggregate) return indexSessions
+    const limit = sessionListIndexStore.getLoadedLimit(bucket) || pageSize
     return indexSessions.slice(0, limit)
-  }, [searching, searchState.sessions, indexable, indexSessions, loadedLimit, pageSize])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searching, searchState.sessions, indexable, isAggregate, indexSessions, bucketIdKey, indexVersion, pageSize])
 
   const hasMore = searching
     ? searchState.sessions.length >= currentLimitRef.current
-    : sessionListIndexStore.getHasMore(bucket)
+    : isAggregate
+      ? directoryBuckets.some(dirBucket => sessionListIndexStore.getHasMore(dirBucket))
+      : sessionListIndexStore.getHasMore(bucket)
 
   // 加载更多：递增 limit 重新拉取完整列表
   const loadMore = useCallback(async () => {
@@ -406,10 +524,15 @@ try {
         }))
         return
       }
+      // 聚合模式：会话可能落在任一个目录桶，逐个尝试（命中即改）
+      if (isAggregate) {
+        for (const dirBucket of directoryBuckets) sessionListIndexStore.patch(dirBucket, sessionId, patch)
+        return
+      }
       sessionListIndexStore.patch(bucket, sessionId, patch)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bucketIdKey],
+    [bucketIdKey, isAggregate, directoryBuckets],
   )
 
   const removeLocalSession = useCallback(
@@ -418,10 +541,14 @@ try {
         setSearchState(prev => ({ ...prev, sessions: prev.sessions.filter(session => session.id !== sessionId) }))
         return
       }
+      if (isAggregate) {
+        for (const dirBucket of directoryBuckets) sessionListIndexStore.remove(dirBucket, sessionId)
+        return
+      }
       sessionListIndexStore.remove(bucket, sessionId)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bucketIdKey],
+    [bucketIdKey, isAggregate, directoryBuckets],
   )
 
   return {
