@@ -20,6 +20,7 @@ describe('notificationEventSettingsStore', () => {
         question: { systemEnabled: false },
         error: { systemEnabled: true },
       },
+      liveUpdateEnabled: true,
     })
   })
 

@@ -5,6 +5,7 @@ import { getMaterialIconUrl } from '../../../utils/materialIcons'
 import { cn } from '../../../utils/cn'
 import { layoutStore } from '../../../store/layoutStore'
 import { useInputCapabilities } from '../../../hooks/useInputCapabilities'
+import { hapticTap } from '../../../utils/haptics'
 import { buildDiffPreview, type ChangedFile } from './changedFiles'
 
 const MAX_VISIBLE = 6
@@ -106,12 +107,17 @@ export const DiffChips = memo(function DiffChips({ files, className }: DiffChips
     (file: ChangedFile) => (event: React.PointerEvent<HTMLButtonElement>) => {
       // 触摸端才走长按；鼠标交给 hover / click。
       if (!preferTouchUi || event.pointerType === 'mouse') return
+      const el = event.currentTarget
       longPressFiredRef.current = false
       pointerStartRef.current = { x: event.clientX, y: event.clientY }
       clearLongPress()
       longPressTimerRef.current = window.setTimeout(() => {
         longPressTimerRef.current = null
         longPressFiredRef.current = true
+        hapticTap('strong')
+        // 标记为 none：抑制随后合成的 click 再补一记 light 震动。
+        // 全局监听在捕获阶段先读到该标记，click 处理器随后清除它。
+        el.setAttribute('data-haptic', 'none')
         setActivePath(null)
         layoutStore.revealChangesFile(file.path, 'right')
       }, LONG_PRESS_MS)
@@ -140,9 +146,10 @@ export const DiffChips = memo(function DiffChips({ files, className }: DiffChips
   const handleChipClick = useCallback(
     (file: ChangedFile) => (event: React.MouseEvent<HTMLButtonElement>) => {
       if (preferTouchUi) {
-        // 长按已经进过面板，抑制紧随其后的合成 click。
+        // 长按已经进过面板，抑制紧随其后的合成 click，并清掉临时标记。
         if (longPressFiredRef.current) {
           longPressFiredRef.current = false
+          event.currentTarget.removeAttribute('data-haptic')
           return
         }
         anchorRef.current = event.currentTarget

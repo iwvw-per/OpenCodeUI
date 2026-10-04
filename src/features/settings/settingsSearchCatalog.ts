@@ -109,8 +109,16 @@ export const SETTINGS_SEARCH_DEFINITIONS: SettingsSearchDefinition[] = [
     'notifications.systemNotifications',
     'notifications.inAppAlerts',
     'notifications.toastNotifications',
+    'notifications.liveUpdate',
     'notifications.soundSettings',
+    'notifications.hapticSettings',
   ]),
+  {
+    tab: 'notifications',
+    labelKey: 'notifications.liveUpdateLabel',
+    contextKey: 'notifications.liveUpdate',
+    fallbackKey: 'notifications.inAppAlerts',
+  },
   {
     tab: 'notifications',
     labelKey: 'notifications.testNotification',
@@ -139,6 +147,11 @@ export const SETTINGS_SEARCH_DEFINITIONS: SettingsSearchDefinition[] = [
     tab: 'notifications' as const,
     labelKey: `notifications.${label}`,
     fallbackKey: 'notifications.soundSettings',
+  })),
+  ...['hapticEnabled', 'hapticIntensity'].map(label => ({
+    tab: 'notifications' as const,
+    labelKey: `notifications.${label}`,
+    fallbackKey: 'notifications.hapticSettings',
   })),
   ...definitions('service', [
     'service.localService',

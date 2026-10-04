@@ -24,6 +24,7 @@ import {
 } from '../store'
 import { exportKeybindingBackup, importKeybindingBackup, type KeybindingBackup } from '../store/keybindingStore'
 import { exportSoundBackup, importSoundBackup, type SoundBackup } from '../store/soundStore'
+import { exportHapticBackup, importHapticBackup, type HapticSettings } from '../store/hapticStore'
 import {
   exportPerServerStorageBackup,
   importPerServerStorageBackup,
@@ -48,6 +49,8 @@ export interface SettingsBackupModules {
   keybindings: KeybindingBackup
   notifications: NotificationBackup
   sound: SoundBackup
+  /** 触觉反馈（可选：旧备份文件没有该模块，导入时保持默认） */
+  haptic?: HapticSettings
   update: UpdateSettingsBackup
 }
 
@@ -144,6 +147,7 @@ export async function exportSettingsBackup(): Promise<{ fileName: string; data: 
       keybindings: exportKeybindingBackup(),
       notifications: exportNotificationBackup(),
       sound: await exportSoundBackup(),
+      haptic: exportHapticBackup(),
       update: exportUpdateSettingsBackup(),
     },
   }
@@ -174,6 +178,7 @@ export async function importSettingsBackup(file: File): Promise<void> {
   importKeybindingBackup(backup.modules.keybindings)
   importNotificationBackup(backup.modules.notifications)
   await importSoundBackup(backup.modules.sound)
+  importHapticBackup(backup.modules.haptic)
   importUpdateSettingsBackup(backup.modules.update)
 }
 

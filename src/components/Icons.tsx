@@ -73,6 +73,7 @@ import {
   CircleHelp,
   Slash,
   FileDiff,
+  Vibrate,
   Waypoints,
   GitCompare,
   ListTodo,
@@ -194,6 +195,7 @@ export const WifiOffIcon = wrap(WifiOff)
 export const BellIcon = wrap(Bell)
 export const DownloadIcon = wrap(Download)
 export const PinIcon = wrap(Pin)
+export const VibrateIcon = wrap(Vibrate)
 
 // Aliases
 export const ComposeIcon = wrap(SquarePen)

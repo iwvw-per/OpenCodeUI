@@ -11,6 +11,7 @@ import { ChevronDownIcon, SearchIcon, ThinkingIcon, EyeIcon, PinIcon } from '../
 import { DropdownMenu } from '../../components/ui'
 import type { ModelInfo } from '../../api'
 import { useInputCapabilities } from '../../hooks/useInputCapabilities'
+import { hapticTap } from '../../utils/haptics'
 import {
   getModelKey,
   groupModelsByProvider,
@@ -171,51 +172,49 @@ const ModelListPanel = memo(function ModelListPanel({
   unpinLabel,
 }: ModelListPanelProps) {
   return (
-    <div ref={menuRef} className="flex flex-col min-h-0 pt-1.5">
-      {/* 搜索栏 */}
-      <div className="shrink-0 px-2 pb-1.5">
-        <div className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-bg-200/40 transition-colors focus-within:bg-bg-200/60">
-          <SearchIcon aria-hidden="true" className="w-3.5 h-3.5 text-text-400 flex-shrink-0" />
-          <input
-            ref={searchInputRef}
-            type="text"
-            name="model-search"
-            value={searchQuery}
-            onChange={e => {
-              setSearchQuery(e.target.value)
-              setHighlightedIndex(0)
-            }}
-            onKeyDown={handleSearchKeyDown}
-            placeholder={searchPlaceholder}
-            aria-label={searchPlaceholder}
-            autoComplete="off"
-            className="flex-1 bg-transparent border-none outline-none text-[length:var(--fs-base)] text-text-100 placeholder:text-text-400"
-          />
-        </div>
+    <div ref={menuRef} className="flex flex-col min-h-0">
+      {/* 搜索栏：与项目选择框统一——无底色、下方分隔线、--fs-sm */}
+      <div className="flex items-center gap-2 border-b border-border-200 px-2.5 py-1.5">
+        <SearchIcon aria-hidden="true" className="size-3.5 shrink-0 text-text-400" />
+        <input
+          ref={searchInputRef}
+          type="text"
+          name="model-search"
+          value={searchQuery}
+          onChange={e => {
+            setSearchQuery(e.target.value)
+            setHighlightedIndex(0)
+          }}
+          onKeyDown={handleSearchKeyDown}
+          placeholder={searchPlaceholder}
+          aria-label={searchPlaceholder}
+          autoComplete="off"
+          className="min-w-0 flex-1 bg-transparent border-none outline-none text-[length:var(--fs-sm)] text-text-100 placeholder:text-text-400"
+        />
       </div>
 
-      {/* 列表 — 左侧 padding 给内容，右侧留给滚动条不覆盖内容 */}
+      {/* 列表 — 与项目选择框统一：p-1 内边距、行 rounded-lg */}
       <div
         ref={listRef}
         id={listboxId}
         role="list"
         aria-label={searchPlaceholder}
-        className={`overflow-y-auto custom-scrollbar flex-1 min-h-0 pl-2 pr-1 ${maxListHeight}`}
+        className={`overflow-y-auto custom-scrollbar flex-1 min-h-0 p-1 ${maxListHeight}`}
       >
         {flatList.length === 0 ? (
           <div className="px-4 py-10 text-center" role="status" aria-live="polite">
-            <div className="text-[length:var(--fs-base)] text-text-400">{noResultsText}</div>
-            <div className="text-[length:var(--fs-sm)] text-text-500 mt-1">{noResultsHint}</div>
+            <div className="text-[length:var(--fs-sm)] text-text-400">{noResultsText}</div>
+            <div className="text-[length:var(--fs-xs)] text-text-500 mt-1">{noResultsHint}</div>
           </div>
         ) : (
-          <div className="flex flex-col gap-1 pb-1 pr-1">
+          <div className="flex flex-col gap-0.5">
             {flatList.map((item, index) => {
               if (item.type === 'header') {
                 return (
                   <div
                     key={item.key}
                     aria-hidden="true"
-                    className="px-2.5 pt-3 pb-1 first:pt-0.5 text-[length:var(--fs-xxs)] font-semibold text-text-400/60 uppercase tracking-wider select-none"
+                    className="px-2.5 pt-2.5 pb-1 first:pt-0.5 text-[length:var(--fs-xxs)] font-semibold text-text-400/60 uppercase tracking-wider select-none"
                   >
                     {item.data.name}
                   </div>
@@ -233,7 +232,7 @@ const ModelListPanel = memo(function ModelListPanel({
                 <div
                   key={item.key}
                   className={`
-                    group flex items-center gap-2 px-2.5 py-2 rounded-lg transition-colors duration-100
+                    group flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-colors duration-100
                     ${isSelected ? 'bg-accent-main-100/15 text-accent-main-100' : 'text-text-200'}
                     ${isHL && !isSelected ? 'bg-bg-200 text-text-100' : ''}
                   `}
@@ -261,7 +260,7 @@ const ModelListPanel = memo(function ModelListPanel({
                     onTouchEnd={onTouchEnd}
                     onTouchMove={onTouchEnd}
                     title={`${model.name} · ${model.providerName}${model.contextLimit ? ` · ${formatContext(model.contextLimit)}` : ''}`}
-                    className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md bg-transparent border-none p-0 text-left text-[length:var(--fs-base)] outline-none focus-visible:outline-none"
+                    className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md bg-transparent border-none p-0 text-left text-[length:var(--fs-sm)] outline-none focus-visible:outline-none"
                   >
                     {/* Left: name + capability icons */}
                     <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
@@ -514,7 +513,7 @@ export const ModelSelector = memo(
         longPressFiredRef.current = true
         toggleModelPin(model)
         setRefreshTrigger(c => c + 1)
-        if (navigator.vibrate) navigator.vibrate(30)
+        hapticTap('strong')
       }, 500)
     }, [])
 

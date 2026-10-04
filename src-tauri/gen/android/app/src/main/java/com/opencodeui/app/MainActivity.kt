@@ -1,6 +1,10 @@
 package com.opencodeui.app
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -13,9 +17,11 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.activity.enableEdgeToEdge
+import androidx.core.app.NotificationCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import org.json.JSONObject
 
 class MainActivity : TauriActivity() {
 
@@ -168,6 +174,38 @@ class MainActivity : TauriActivity() {
     @android.webkit.JavascriptInterface
     fun vibrate(ms: Int) {
       val duration = ms.coerceIn(1, 50).toLong()
+      val vibrator = resolveVibrator() ?: return
+      if (android.os.Build.VERSION.SDK_INT >= 26) {
+        vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE))
+      } else {
+        @Suppress("DEPRECATION")
+        vibrator.vibrate(duration)
+      }
+    }
+
+    /**
+     * 支持振幅的震动：durations/amplitudes 为交替的 [震动, 间隔, 震动…] 与对应振幅
+     * （1-255，0 表示该段不震）。振幅能力由设备决定，不支持时自动退回 DEFAULT_AMPLITUDE。
+     * 供移动端触觉反馈分级（轻/中/强）使用。
+     */
+    @android.webkit.JavascriptInterface
+    fun vibratePattern(durations: String, amplitudes: String) {
+      val durationsArray = durations.split(",").mapNotNull { it.trim().toLongOrNull() }.toLongArray()
+      if (durationsArray.isEmpty()) return
+      val vibrator = resolveVibrator() ?: return
+      if (android.os.Build.VERSION.SDK_INT >= 26) {
+        val ampArray = amplitudes.split(",").mapNotNull { it.trim().toIntOrNull() }.toIntArray()
+        val safeAmps = IntArray(durationsArray.size) { index ->
+          (ampArray.getOrNull(index) ?: VibrationEffect.DEFAULT_AMPLITUDE).coerceIn(0, 255)
+        }
+        vibrator.vibrate(VibrationEffect.createWaveform(durationsArray, safeAmps, -1))
+      } else {
+        @Suppress("DEPRECATION")
+        vibrator.vibrate(durationsArray, -1)
+      }
+    }
+
+    private fun resolveVibrator(): Vibrator? {
       val vibrator = if (android.os.Build.VERSION.SDK_INT >= 31) {
         val vm = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
         vm.defaultVibrator
@@ -175,13 +213,123 @@ class MainActivity : TauriActivity() {
         @Suppress("DEPRECATION")
         getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
       }
-      if (!vibrator.hasVibrator()) return
-      if (android.os.Build.VERSION.SDK_INT >= 26) {
-        vibrator.vibrate(VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE))
-      } else {
-        @Suppress("DEPRECATION")
-        vibrator.vibrate(duration)
+      return if (vibrator.hasVibrator()) vibrator else null
+    }
+  }
+
+  /**
+   * 实况通知（Android 16 Live Updates / ColorOS 流体云）。
+   * 通过 __opencode_android_live 暴露给前端，产出 promoted ongoing 通知。
+   * start/update 复用同一 id 原地更新；end 取消。
+   */
+  private inner class LiveUpdateBridge {
+    @android.webkit.JavascriptInterface
+    fun start(json: String) {
+      postLiveUpdate(json)
+    }
+
+    @android.webkit.JavascriptInterface
+    fun update(json: String) {
+      postLiveUpdate(json)
+    }
+
+    @android.webkit.JavascriptInterface
+    fun end(id: Int) {
+      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+      nm.cancel(if (id > 0) id else defaultLiveUpdateId)
+    }
+
+    /** 系统是否允许本应用发布 promoted 通知（用户可在设置里关闭）。仅 Android 16+ 有意义。 */
+    @android.webkit.JavascriptInterface
+    fun canPromote(): Boolean {
+      if (Build.VERSION.SDK_INT < 36) return false
+      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+      return nm.canPostPromotedNotifications()
+    }
+  }
+
+  private fun ensureLiveUpdateChannel() {
+    if (Build.VERSION.SDK_INT < 26) return
+    val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    if (nm.getNotificationChannel(liveUpdateChannelId) == null) {
+      val channel = NotificationChannel(
+        liveUpdateChannelId,
+        "AI 任务进度",
+        NotificationManager.IMPORTANCE_LOW
+      ).apply {
+        description = "显示 AI 生成等任务的实时进度"
+        setShowBadge(false)
       }
+      nm.createNotificationChannel(channel)
+    }
+  }
+
+  private fun postLiveUpdate(json: String) {
+    val obj = try {
+      JSONObject(json)
+    } catch (_: Exception) {
+      return
+    }
+    val id = obj.optInt("id", defaultLiveUpdateId)
+    val title = obj.optString("title", "OpenCode")
+    val body = obj.optString("body", "")
+    val shortText = obj.optString("shortText", "")
+    val sessionId = obj.optString("sessionId", "")
+    val hasProgress = obj.has("progress")
+    val progress = obj.optInt("progress", 0).coerceIn(0, 100)
+
+    ensureLiveUpdateChannel()
+
+    val intent = Intent(this, MainActivity::class.java).apply {
+      action = Intent.ACTION_VIEW
+      flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+      putExtra("opencode_session_id", sessionId)
+    }
+    val pendingIntent = PendingIntent.getActivity(
+      this,
+      id,
+      intent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    val builder = NotificationCompat.Builder(this, liveUpdateChannelId)
+      .setSmallIcon(R.drawable.ic_stat_opencode)
+      .setContentTitle(title)
+      .setContentText(body)
+      .setContentIntent(pendingIntent)
+      .setOngoing(true)
+      .setOnlyAlertOnce(true)
+      .setShowWhen(false)
+    if (hasProgress) {
+      builder.setProgress(100, progress, false)
+    } else {
+      builder.setProgress(0, 0, true)
+    }
+    // 请求系统提升为实况通知（Android 16+）；低于该版本该 extra 被忽略，仅作普通常驻通知。
+    // 用 getExtras 写入而非 setRequestPromotedOngoing，避免依赖 androidx.core 1.17+（需 Kotlin 2.0）。
+    builder.getExtras().putBoolean("android.requestPromotedOngoing", true)
+    if (Build.VERSION.SDK_INT >= 36 && shortText.isNotEmpty()) {
+      builder.getExtras().putString("android.shortCriticalText", shortText)
+    }
+
+    try {
+      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+      nm.notify(id, builder.build())
+    } catch (_: Exception) {
+      // 通知失败不应影响主流程
+    }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    val sessionId = intent.getStringExtra("opencode_session_id")
+    if (!sessionId.isNullOrEmpty()) {
+      val quoted = JSONObject.quote(sessionId)
+      cachedWebView?.evaluateJavascript(
+        "window.location.hash = '#/session/' + $quoted",
+        null
+      )
     }
   }
 
@@ -295,6 +443,11 @@ class MainActivity : TauriActivity() {
     } catch (_: Exception) {
       // ignore - may be added already
     }
+    try {
+      webView.addJavascriptInterface(LiveUpdateBridge(), "__opencode_android_live")
+    } catch (_: Exception) {
+      // ignore - may be added already
+    }
   }
 
   private fun findWebView(view: View): WebView? {
@@ -305,5 +458,10 @@ class MainActivity : TauriActivity() {
       }
     }
     return null
+  }
+
+  companion object {
+    private const val liveUpdateChannelId = "opencode_live_update"
+    private const val defaultLiveUpdateId = 9001
   }
 }

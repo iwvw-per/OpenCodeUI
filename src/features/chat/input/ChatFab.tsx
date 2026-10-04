@@ -43,6 +43,7 @@ export const ChatFab = memo(function ChatFab({ collapsed, mode, sending, disable
       type="button"
       data-collapsed={collapsed}
       data-mode={mode}
+      data-haptic={mode === 'send' ? 'medium' : mode === 'stop' ? 'strong' : 'light'}
       disabled={disabled}
       onClick={onClick}
       aria-label={label}

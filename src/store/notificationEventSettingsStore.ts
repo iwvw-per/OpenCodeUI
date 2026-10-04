@@ -7,10 +7,13 @@ export interface NotificationEventConfig {
 
 export interface NotificationEventSettings {
   events: Record<NotificationType, NotificationEventConfig>
+  /** Android 16 实况通知（ColorOS 流体云）开关 */
+  liveUpdateEnabled: boolean
 }
 
 export interface NotificationEventSettingsBackup {
   events: Record<NotificationType, NotificationEventConfig>
+  liveUpdateEnabled?: boolean
 }
 
 type Subscriber = () => void
@@ -25,6 +28,7 @@ function createDefaultSettings(): NotificationEventSettings {
       question: { systemEnabled: true },
       error: { systemEnabled: true },
     },
+    liveUpdateEnabled: true,
   }
 }
 
@@ -63,6 +67,8 @@ function loadSettings(): NotificationEventSettings {
               : defaults.events.error.systemEnabled,
         },
       },
+      liveUpdateEnabled:
+        typeof parsed?.liveUpdateEnabled === 'boolean' ? parsed.liveUpdateEnabled : defaults.liveUpdateEnabled,
     }
   } catch {
     return defaults
@@ -127,6 +133,8 @@ function normalizeSettings(raw: unknown): NotificationEventSettings {
             : defaults.events.error.systemEnabled,
       },
     },
+    liveUpdateEnabled:
+      typeof parsed?.liveUpdateEnabled === 'boolean' ? parsed.liveUpdateEnabled : defaults.liveUpdateEnabled,
   }
 }
 
@@ -161,6 +169,16 @@ class NotificationEventSettingsStore {
         [type]: { systemEnabled },
       },
     }
+    this.persist()
+    this.notify()
+  }
+
+  isLiveUpdateEnabled(): boolean {
+    return this.state.liveUpdateEnabled !== false
+  }
+
+  setLiveUpdateEnabled(liveUpdateEnabled: boolean) {
+    this.state = { ...this.state, liveUpdateEnabled }
     this.persist()
     this.notify()
   }
