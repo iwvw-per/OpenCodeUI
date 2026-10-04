@@ -162,6 +162,9 @@ export function Header({
 
   const sessionTitle = currentSessionTitle || t('header.newChat')
   const isCompact = presentation.isCompact
+  // 移动端：顶栏只保留会话标题与面板开关，
+  // 隐藏分享、MCP、工作状态三个按钮，避免窄屏顶栏过于拥挤。
+  const isMobileLayout = isTauriMobile()
 
   useEffect(() => {
     document.title = currentSessionTitle ? `${currentSessionTitle} - OpenCode` : 'OpenCode'
@@ -451,18 +454,20 @@ export function Header({
             <PanelRightIcon size={16} />
           </IconButton>
 
-          <IconButton
-            aria-label={t('workStatus.railToggle')}
-            title={t('workStatus.railToggle')}
-            aria-pressed={workStatus.enabled}
-            onClick={() => workStatusStore.toggleEnabled()}
-            className={cn(
-              workStatus.enabled ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
-              interactive.subtle,
-            )}
-          >
-            <LayersIcon size={16} />
-          </IconButton>
+          {!isMobileLayout && (
+            <IconButton
+              aria-label={t('workStatus.railToggle')}
+              title={t('workStatus.railToggle')}
+              aria-pressed={workStatus.enabled}
+              onClick={() => workStatusStore.toggleEnabled()}
+              className={cn(
+                workStatus.enabled ? interactive.toggleActive : 'text-text-300 hover:text-text-100 border border-transparent',
+                interactive.subtle,
+              )}
+            >
+              <LayersIcon size={16} />
+            </IconButton>
+          )}
 
           {canOpenDirectory && (
             <IconButton
@@ -475,18 +480,20 @@ export function Header({
             </IconButton>
           )}
 
-          {/* MCP 连接状态与开关：弹窗内嵌 McpPanel（懒加载） */}
-          <IconButton
-            aria-label={t('header.mcpStatus')}
-            title={t('header.mcpStatus')}
-            onClick={() => setMcpDialogOpen(true)}
-            className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
-          >
-            <PlugIcon size={16} />
-          </IconButton>
+          {/* MCP 连接状态与开关：弹窗内嵌 McpPanel（懒加载）。移动端隐藏。 */}
+          {!isMobileLayout && (
+            <IconButton
+              aria-label={t('header.mcpStatus')}
+              title={t('header.mcpStatus')}
+              onClick={() => setMcpDialogOpen(true)}
+              className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
+            >
+              <PlugIcon size={16} />
+            </IconButton>
+          )}
 
-          {/* 分享会话：与标题分离，作为常规操作按钮（仅有会话时显示） */}
-          {sessionId && (
+          {/* 分享会话：与标题分离，作为常规操作按钮（仅有会话时显示）。移动端隐藏。 */}
+          {sessionId && !isMobileLayout && (
             <IconButton
               aria-label={t('header.shareSession')}
               title={t('header.shareSession')}

@@ -9,6 +9,7 @@ import { splitSessionKey } from '../../../utils/sessionKey'
 import { getDirectoryName } from '../../../utils/directoryUtils'
 import { cn } from '../../../utils/cn'
 import { interactive } from '../../../utils/interaction'
+import { formatLocaleDateTime } from '../../../utils/formatUtils'
 import { ExpandableSection } from '../../../components/ui/AnimatedPresence'
 
 interface ArchivedSessionsDialogProps {
@@ -17,13 +18,6 @@ interface ArchivedSessionsDialogProps {
   serverId?: string
   /** 恢复后跳转/刷新用（当前不需要，保留以便调用方联动） */
   activeSessionKey?: string | null
-}
-
-function formatArchivedAt(timestamp: number | undefined): string {
-  if (!timestamp) return '—'
-  const d = new Date(timestamp)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString()
 }
 
 export function ArchivedSessionsDialog({ isOpen, onClose, serverId }: ArchivedSessionsDialogProps) {
@@ -326,7 +320,7 @@ function ArchivedSessionsBody({ serverId }: { serverId?: string }) {
                             {session.title || t('commands:sessions.untitledChat', { defaultValue: 'Untitled' })}
                           </div>
                           <div className="mt-0.5 text-[length:var(--fs-xxs)] tabular-nums text-text-500">
-                            {formatArchivedAt(session.time?.archived)}
+                            {formatLocaleDateTime(session.time?.archived)}
                           </div>
                         </div>
 

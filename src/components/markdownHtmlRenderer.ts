@@ -621,9 +621,3 @@ export function renderMarkdownToHtml(src: string, isReasoning: boolean): string 
   const html = marked.parse(src, { renderer, async: false }) as string
   return sanitizeHtml(html)
 }
-
-export function renderMarkdownInlineToHtml(src: string, isReasoning: boolean): string {
-  const renderer = getRenderer(isReasoning)
-  const html = marked.parseInline(src, { renderer }) as string
-  return sanitizeHtml(html)
-}

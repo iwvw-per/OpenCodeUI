@@ -67,8 +67,3 @@ export function invalidateMicroCache(keyPrefix: string): void {
     if (key.startsWith(keyPrefix)) inflight.delete(key)
   }
 }
-
-/** 测试用：清空在途登记（结果缓存由 ttlCache 自行管理） */
-export function resetMicroCacheInflight(): void {
-  inflight.clear()
-}

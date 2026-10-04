@@ -4,6 +4,12 @@ import { AttachmentDetailModal } from './AttachmentDetailModal'
 import type { Attachment } from './types'
 import { FullscreenProvider } from '../../contexts'
 
+// CodePreview 懒加载依赖 CodeMirror，在假定时器下动态 import 不会解析；
+// 用轻量替身让内容直接渲染，测试聚焦 modal 的挂载/关闭过渡行为。
+vi.mock('../../components/CodePreview', () => ({
+  CodePreview: ({ code }: { code: string }) => <pre>{code}</pre>,
+}))
+
 describe('AttachmentDetailModal', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -20,7 +26,7 @@ describe('AttachmentDetailModal', () => {
     vi.useRealTimers()
   })
 
-  it('stays mounted during close transition for text attachments', () => {
+  it('stays mounted during close transition for text attachments', async () => {
     const attachment: Attachment = {
       id: 'attachment-1',
       type: 'file',
@@ -35,8 +41,10 @@ describe('AttachmentDetailModal', () => {
       </FullscreenProvider>,
     )
 
-    act(() => {
+    // CodePreview 懒加载：先跑定时器，再 flush 动态 import 的微任务
+    await act(async () => {
       vi.runAllTimers()
+      await Promise.resolve()
     })
 
     expect(screen.getByText('notes.txt')).toBeInTheDocument()

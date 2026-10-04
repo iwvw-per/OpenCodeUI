@@ -190,18 +190,6 @@ async function highlightWithCache(
   }
 }
 
-export function getHighlightCacheStats() {
-  return {
-    htmlCacheSize: htmlCache.size,
-    tokensCacheSize: tokensCache.size,
-  }
-}
-
-export function clearHighlightCache() {
-  htmlCache.clear()
-  tokensCache.clear()
-}
-
 export { getShikiTheme }
 
 // ============================================

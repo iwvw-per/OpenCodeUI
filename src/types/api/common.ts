@@ -6,11 +6,6 @@ import type {
   UnknownError as SDKUnknownError,
 } from '@opencode-ai/sdk/v2/client'
 
-export interface ErrorInfo {
-  name: string
-  data: unknown
-}
-
 export type ProviderAuthError = SDKProviderAuthError
 
 export type UnknownError = SDKUnknownError

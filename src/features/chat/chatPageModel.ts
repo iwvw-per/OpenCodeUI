@@ -308,14 +308,6 @@ export function buildStableChatPages(
   return buildChatPages(messages, pageMessageCount, maxRenderWeight).map(page => ({ ...page, key: allocateKey(page) }))
 }
 
-export function buildContentKeyedChatPages(
-  messages: Message[],
-  pageMessageCount = PAGE_MESSAGE_COUNT,
-  maxRenderWeight = PAGE_EXTREME_RENDER_WEIGHT,
-): StableChatPage[] {
-  return buildChatPages(messages, pageMessageCount, maxRenderWeight)
-}
-
 function flattenPageMessagesChronological(page: ChatPage): Message[] {
   return page.rows.flatMap(row => row.messages)
 }

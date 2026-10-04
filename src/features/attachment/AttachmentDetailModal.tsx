@@ -5,13 +5,19 @@ import { DownloadIcon, PlusIcon, MinusIcon } from '../../components/Icons'
 import { CopyButton } from '../../components/ui'
 import { cn } from '../../utils/cn'
 import { interactive } from '../../utils/interaction'
+import { lazy, Suspense } from 'react'
 import { getAttachmentIcon } from './utils'
 import { saveData } from '../../utils/downloadUtils'
 import type { Attachment } from './types'
-import { CodePreview } from '../../components/CodePreview'
 import { detectLanguage } from '../../utils/languageUtils'
 import { useFullscreen } from '../../contexts'
 import type { FullscreenLayer } from '../../contexts'
+
+// CodePreview 依赖 CodeMirror（约 300KB）。附件预览是低频入口，
+// 静态引入会把它拖进首屏 boot 图；改为懒加载，仅打开预览时拉取。
+const CodePreview = lazy(() =>
+  import('../../components/CodePreview').then(module => ({ default: module.CodePreview })),
+)
 
 // ============================================
 // 常量
@@ -102,7 +108,9 @@ export const AttachmentDetailModal = memo(function AttachmentDetailModal({
         isImage && hasUrl ? (
           <ZoomableImage url={attachment.url!} alt={attachment.displayName} />
         ) : hasContent ? (
-          <CodePreview code={attachment.content!} language={detectLanguage(attachment.displayName) || 'text'} />
+          <Suspense fallback={null}>
+            <CodePreview code={attachment.content!} language={detectLanguage(attachment.displayName) || 'text'} />
+          </Suspense>
         ) : (
           <div className="flex items-center justify-center h-full text-text-400 text-[length:var(--fs-base)]">
             {t('attachment.noPreview')}

@@ -1,9 +1,6 @@
 /** 初始消息加载数量（旧版按条数分页、本轮 diff 兜底等仍在用） */
 export const INITIAL_MESSAGE_LIMIT = 50
 
-/** 历史加载批次大小（旧版无游标 serve 的 limit 递增回退） */
-export const HISTORY_LOAD_BATCH_SIZE = 50
-
 /** 首屏默认加载的完整对话轮数 */
 export const INITIAL_TURN_LIMIT = 3
 

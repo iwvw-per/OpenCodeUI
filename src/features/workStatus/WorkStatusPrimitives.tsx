@@ -242,15 +242,6 @@ export function WorkStatusRowAction({
   )
 }
 
-export function WorkStatusPill({ children, tone }: { children: ReactNode; tone?: 'muted' | 'info' | 'success' }) {
-  const toneClass = tone === 'info' ? 'text-info-100' : tone === 'success' ? 'text-success-100' : 'text-text-400'
-  return (
-    <span className={cn('rounded-full bg-bg-300 px-1.5 py-px text-[length:var(--fs-xxs)] font-medium leading-4', toneClass)}>
-      {children}
-    </span>
-  )
-}
-
 /** 上下文窗口占用：画在对应行下方，而不是塞进行里 */
 export function WorkStatusMeter({ percent, color }: { percent: number; color: string }) {
   return (

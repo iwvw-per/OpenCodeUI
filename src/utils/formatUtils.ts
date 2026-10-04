@@ -86,6 +86,18 @@ export function formatDetailedDateTime(ms: number): string {
   return `${y}-${mon}-${d} ${h}:${m}:${s}`
 }
 
+/**
+ * Format a timestamp (ms) to a locale-aware string, returning a placeholder for
+ * missing/invalid values. Consolidates the identical helpers previously copied
+ * into ContextDetailsDialog / ArchivedSessionsDialog.
+ */
+export function formatLocaleDateTime(ms: number | undefined, fallback = '—'): string {
+  if (!ms) return fallback
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return fallback
+  return date.toLocaleString()
+}
+
 /** Format completed time according to the selected display mode */
 export function formatCompletedAt(ms: number, format: CompletedAtFormat): string {
   return format === 'dateTime' ? formatDateTime(ms) : formatTime(ms)

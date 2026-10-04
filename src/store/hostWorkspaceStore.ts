@@ -9,8 +9,6 @@
 // 与 messageStore / sessionListIndexStore 的「按 serverId 分桶」是同一原则：
 // 主机的 UI 上下文也应分桶，而不是全局单份。
 
-import { useSyncExternalStore } from 'react'
-
 export interface HostWorkspace {
   /** 该主机当前激活的会话（复合 key: serverId::sessionId），无则为 null */
   sessionKey: string | null
@@ -135,10 +133,3 @@ class HostWorkspaceStore {
 }
 
 export const hostWorkspaceStore = new HostWorkspaceStore()
-
-/** 订阅某主机的激活工作区 */
-export function useHostWorkspace(serverId: string | null | undefined): HostWorkspace {
-  const subscribe = hostWorkspaceStore.subscribe
-  const getSnapshot = () => (serverId ? hostWorkspaceStore.get(serverId) : EMPTY_WORKSPACE)
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
-}

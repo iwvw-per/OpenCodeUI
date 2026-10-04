@@ -81,12 +81,8 @@ export const apiErrorHandler = createErrorHandler('api')
 export const sessionErrorHandler = createErrorHandler('session')
 export const permissionErrorHandler = createErrorHandler('permission')
 export const uiErrorHandler = createErrorHandler('ui')
-export const parseErrorHandler = createErrorHandler('parse')
-export const sseErrorHandler = createErrorHandler('sse')
 export const fileErrorHandler = createErrorHandler('file')
-export const syntaxErrorHandler = createErrorHandler('syntax')
 export const globalErrorHandler = createErrorHandler('global')
-export const revertErrorHandler = createErrorHandler('revert')
 export const clipboardErrorHandler = createErrorHandler('clipboard')
 
 /**

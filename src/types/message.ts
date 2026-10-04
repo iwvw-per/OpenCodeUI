@@ -172,8 +172,6 @@ export interface ToolStateError {
   time: { start: number; end: number }
 }
 
-export type ToolStateStrict = ToolStatePending | ToolStateRunning | ToolStateCompleted | ToolStateError
-
 // 宽松的 ToolState 类型，用于实际渲染（API 返回的数据可能不完全符合严格类型）
 export interface ToolState {
   /**

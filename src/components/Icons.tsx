@@ -77,7 +77,6 @@ import {
   Waypoints,
   GitCompare,
   ListTodo,
-  ListFilter,
   Layers,
   Minus,
   Paperclip,
@@ -93,13 +92,11 @@ import {
   AppWindow,
   ZoomIn,
   ZoomOut,
-  Hash,
   ArrowUpNarrowWide,
   ArrowDownNarrowWide,
   CalendarPlus,
   ListChecks,
   MoreHorizontal,
-  FolderPlus,
   Archive,
   ChartNoAxesColumn,
   Gauge,
@@ -251,7 +248,6 @@ export const PatchIcon = wrap(FileDiff)
 export const GitWorktreeIcon = wrap(Waypoints)
 export const GitDiffIcon = wrap(GitCompare)
 export const PermissionListIcon = wrap(ListTodo)
-export const ListFilterIcon = wrap(ListFilter)
 export const LayersIcon = wrap(Layers)
 export const StatsIcon = wrap(ChartNoAxesColumn)
 export const GaugeIcon = wrap(Gauge)
@@ -269,7 +265,6 @@ export const SplitHorizontalIcon = wrap(Columns2)
 export const SplitVerticalIcon = wrap(Rows2)
 export const GripVerticalIcon = wrap(GripVertical)
 export const AppWindowIcon = wrap(AppWindow)
-export const HashIcon = wrap(Hash)
 export const SortIcon = wrap(ArrowUpNarrowWide)
 export const SortDescIcon = wrap(ArrowDownNarrowWide)
 export const CalendarPlusIcon = wrap(CalendarPlus)
@@ -277,5 +272,4 @@ export const ManageSessionsIcon = wrap(ListChecks)
 export const CollapseAllIcon = wrap(ChevronsDownUp)
 export const ExpandAllIcon = wrap(ChevronsUpDown)
 export const MenuDotsIcon = wrap(MoreHorizontal)
-export const FolderPlusIcon = wrap(FolderPlus)
 export const ArchiveIcon = wrap(Archive)

@@ -19,7 +19,7 @@ import {
   updateConsumerSessionId,
   hasOtherConsumerForSession,
 } from '../hooks'
-import { usePermissions, usePermissionHandler, useMessageAnimation, useDirectory, useSessionContext } from '../hooks'
+import { usePermissionHandler, useMessageAnimation, useDirectory, useSessionContext } from '../hooks'
 import { useNotification } from './useNotification'
 import { notificationEventSettingsStore } from '../store/notificationEventSettingsStore'
 import {
@@ -128,7 +128,6 @@ export function useChatSession({
   )
 
   // Hooks
-  const { resetPermissions } = usePermissions()
   const { currentDirectory } = useDirectory()
   const { createSession, sessions } = useSessionContext()
   const { sendNotification } = useNotification()
@@ -1015,9 +1014,8 @@ export function useChatSession({
         messageStore.clearSession(routeSessionId)
       }
     }
-    resetPermissions()
     resetPendingRequests()
-  }, [routeSessionId, paneId, resetPermissions, resetPendingRequests])
+  }, [routeSessionId, paneId, resetPendingRequests])
 
   const handleForkMessage = useCallback(
     async (message: UIMessage, forkMessageId?: string) => {

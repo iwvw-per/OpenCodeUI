@@ -8,7 +8,6 @@
 
 // Common types
 export type {
-  ErrorInfo,
   ProviderAuthError,
   UnknownError,
   MessageOutputLengthError,

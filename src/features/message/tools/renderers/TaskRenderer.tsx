@@ -273,7 +273,10 @@ export const TaskAgentBadge = memo(function TaskAgentBadge({
       onClick={openSession}
       // 整行 hover 已经给底色，内层徽标按钮不再叠加自己的底色，
       // 否则一行里出现两层高亮。只补 cursor 与轻微透明度表达可点。
-      className="inline-flex cursor-pointer rounded-sm transition-opacity hover:opacity-80"
+      // data-compact 关掉移动端 button 的 32px 最小高度：徽标是行内小标签，
+      // 被撑高后 chip 会贴在顶部、与同行文字错位。
+      data-compact=""
+      className="inline-flex items-center cursor-pointer rounded-sm transition-opacity hover:opacity-80"
       title={t('task.openSession')}
     >
       <Chip tone={tone}>{agentType}</Chip>

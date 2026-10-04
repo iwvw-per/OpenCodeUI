@@ -15,15 +15,6 @@ export async function getHealth(): Promise<HealthInfo> {
 }
 
 /**
- * 释放所有资源
- */
-export async function disposeGlobal(): Promise<boolean> {
-  const sdk = getSDKClient()
-  unwrap(await sdk.global.dispose())
-  return true
-}
-
-/**
  * 释放当前实例
  */
 export async function disposeInstance(directory?: string): Promise<boolean> {
