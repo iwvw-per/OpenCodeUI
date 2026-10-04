@@ -209,6 +209,36 @@ class ActiveSessionStore {
     this.notify()
   }
 
+  /**
+   * 用某台服务器的权威全量状态替换它名下的所有条目。
+   *
+   * 服务端 /session/status（不带 directory）返回该实例所有 busy/retry 会话，
+   * idle 的缺席即代表已结束。mergeStatusRefresh 只增不删，无法清掉后台冻结期间
+   * 残留的陈旧 busy 条目；回前台对齐时必须整台替换，同时保留其它服务器的状态。
+   * 该服务器仍有未回复 pending 的会话予以保留，避免把等待中的条目误清。
+   */
+  replaceServerStatus(serverId: string, statusMap: SessionStatusMap) {
+    const prefix = `${serverId}::`
+    const nextMap: SessionStatusMap = {}
+    for (const [key, status] of Object.entries(this.state.statusMap)) {
+      if (!key.startsWith(prefix)) nextMap[key] = status
+    }
+    const replaced = this.applyStatusSnapshot(statusMap, nextMap)
+    // 仍有未回复 pending 的会话要保留，否则等待用户操作的条目会被误清
+    for (const sessionId of this.pendingRequestSessionIds()) {
+      if (!sessionId.startsWith(prefix)) continue
+      if (!replaced[sessionId]) replaced[sessionId] = { type: 'busy' }
+    }
+    this.state = { statusMap: replaced, initialized: true }
+    this.notify()
+  }
+
+  private pendingRequestSessionIds(): Set<string> {
+    const ids = new Set<string>()
+    for (const req of this.pendingRequests.values()) ids.add(req.sessionId)
+    return ids
+  }
+
   // ============================================
   // 初始化：从 /permission + /question API 补充
   // ============================================
@@ -317,8 +347,9 @@ class ActiveSessionStore {
   // SSE 事件：session status 更新
   // ============================================
 
-  updateStatus(sessionId: string, status: SessionStatus) {
+  updateStatus(sessionId: string, status: SessionStatus): boolean {
     const newMap = { ...this.state.statusMap }
+    let cleared = false
 
     if (status.type === 'idle') {
       if (this.hasPendingForSession(sessionId)) {
@@ -326,6 +357,7 @@ class ActiveSessionStore {
       } else {
         this.deferredIdleSessions.delete(sessionId)
         delete newMap[sessionId]
+        cleared = true
       }
     } else if (status.type === 'retry') {
       this.deferredIdleSessions.delete(sessionId)
@@ -337,6 +369,7 @@ class ActiveSessionStore {
 
     this.state = { ...this.state, statusMap: newMap }
     this.notify()
+    return cleared
   }
 
   removeSession(sessionId: string) {

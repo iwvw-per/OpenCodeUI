@@ -250,7 +250,8 @@
     "retrying": "Retrying",
     "working": "Working",
     "attempt": "attempt {{count}}",
-    "waitingForInput": "Waiting for input"
+    "waitingForInput": "Waiting for input",
+    "tasksCount": "{{count}} tasks"
   },
   "notification": {
     "completed": "Completed",

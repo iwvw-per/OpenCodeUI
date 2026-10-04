@@ -3021,7 +3021,7 @@ dependencies = [
 
 [[package]]
 name = "opencodeui"
-version = "0.6.114-canary.6"
+version = "0.6.114-canary.7"
 dependencies = [
  "futures-util",
  "log",
