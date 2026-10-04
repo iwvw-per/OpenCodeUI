@@ -117,6 +117,8 @@ class SessionListIndexStore {
   private subscribers = new Set<() => void>()
   /** 快照缓存：满足 useSyncExternalStore 对稳定引用的要求 */
   private snapshotCache = new Map<string, { revision: number; value: ApiSession[] }>()
+  /** 全局版本号：任何桶内容变化都递增。用于多桶聚合时的订阅触发 */
+  private version = 0
 
   constructor() {
     // 用户消息锚点变化时重排相关会话所在的桶（这是唯一会改变已有项顺序的时机）。
@@ -144,8 +146,14 @@ class SessionListIndexStore {
   }
 
   private emit() {
+    this.version++
     this.snapshotCache.clear()
     for (const fn of this.subscribers) fn()
+  }
+
+  /** 全局内容版本：任何桶变化都递增。供聚合读取侧作为 useMemo 依赖 */
+  getVersion(): number {
+    return this.version
   }
 
   private getOrCreate(key: SessionListBucketKey): Bucket {

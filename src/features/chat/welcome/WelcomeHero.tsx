@@ -120,7 +120,8 @@ export function WelcomeProjectPill({
           aria-expanded={effectiveOpen}
           aria-label={t('emptyState.switchProject')}
           className={cn(
-            'pointer-events-auto inline-flex max-w-full items-center gap-1.5 rounded-full border border-border-200 bg-bg-100 px-2.5 py-1 text-[length:var(--fs-xs)] text-text-300 shadow-sm transition-opacity duration-200 hover:border-accent-main-100/50 hover:text-text-100',
+            // 标签式：骑在输入框顶边，底边与之相接（直角）。
+            'pointer-events-auto inline-flex max-w-full items-center gap-1.5 rounded-t-lg border border-b-0 border-border-200/60 bg-bg-000 px-3 py-1 text-[length:var(--fs-xs)] text-text-300 transition-opacity duration-200 hover:text-text-100',
             interactive.focusRingCompact,
             !active && 'opacity-0 pointer-events-none',
           )}

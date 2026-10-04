@@ -70,6 +70,7 @@ describe('useSessions', () => {
     vi.useFakeTimers()
     // 索引是模块级长驻 store：不清会跨用例串数据
     sessionListIndexStore.reset()
+    serverState.activeServerId = 'local'
     getSessionsMock.mockReset()
     createSessionMock.mockReset()
     deleteSessionMock.mockReset()
@@ -461,5 +462,101 @@ describe('useSessions', () => {
     })
 
     expect(result.current.sessions.map(session => session.id)).toEqual(['session-2'])
+  })
+
+  describe('multi-directory aggregation', () => {
+    const DIRS = ['/repo/root', '/repo/worktree-a', '/repo/worktree-b']
+
+    it('fetches every directory and merges results sorted by anchor', async () => {
+      getSessionsMock.mockImplementation((params: { directory?: string }) => {
+        if (params.directory === '/repo/root') {
+          return Promise.resolve([{ ...makeSession('root-1'), directory: '/repo/root', time: { created: 1, updated: 30 } }])
+        }
+        if (params.directory === '/repo/worktree-a') {
+          return Promise.resolve([{ ...makeSession('a-1'), directory: '/repo/worktree-a', time: { created: 2, updated: 20 } }])
+        }
+        return Promise.resolve([{ ...makeSession('b-1'), directory: '/repo/worktree-b', time: { created: 3, updated: 10 } }])
+      })
+
+      const { result } = renderHook(() => useSessions({ directories: DIRS }))
+
+      await act(async () => {
+        vi.runAllTimers()
+        await Promise.resolve()
+      })
+
+      expect(getSessionsMock).toHaveBeenCalledTimes(3)
+      // 每个目录各拉一次，均带多取一条的 limit
+      for (const dir of DIRS) {
+        expect(getSessionsMock).toHaveBeenCalledWith(
+          expect.objectContaining({ directory: dir, limit: 21 }),
+          undefined,
+        )
+      }
+      // 合并后按锚点时间倒序
+      expect(result.current.sessions.map(session => session.id)).toEqual(['root-1', 'a-1', 'b-1'])
+    })
+
+    it('deduplicates sessions that appear in more than one directory', async () => {
+      const shared = { ...makeSession('shared'), directory: '/repo/root' }
+      getSessionsMock.mockImplementation((params: { directory?: string }) =>
+        Promise.resolve(params.directory === '/repo/root' ? [shared] : [shared]),
+      )
+
+      const { result } = renderHook(() => useSessions({ directories: ['/repo/root', '/repo/worktree-a'] }))
+
+      await act(async () => {
+        vi.runAllTimers()
+        await Promise.resolve()
+      })
+
+      expect(result.current.sessions.map(session => session.id)).toEqual(['shared'])
+    })
+
+    it('reports hasMore when any directory has more than the page size', async () => {
+      getSessionsMock.mockImplementation((params: { directory?: string }) => {
+        if (params.directory === '/repo/root') {
+          return Promise.resolve([makeSession('r1'), makeSession('r2'), makeSession('r3')])
+        }
+        return Promise.resolve([makeSession('a1')])
+      })
+
+      const { result } = renderHook(() =>
+        useSessions({ directories: ['/repo/root', '/repo/worktree-a'], pageSize: 2 }),
+      )
+
+      await act(async () => {
+        vi.runAllTimers()
+        await Promise.resolve()
+      })
+
+      expect(result.current.hasMore).toBe(true)
+      // root 只保留 pageSize 条，多取的那条不进列表
+      expect(result.current.sessions.map(session => session.id).sort()).toEqual(['a1', 'r1', 'r2'])
+    })
+
+    it('routes realtime created sessions into the correct directory bucket', async () => {
+      getSessionsMock.mockResolvedValue([])
+
+      const { result } = renderHook(() => useSessions({ directories: DIRS }))
+
+      await act(async () => {
+        vi.runAllTimers()
+        await Promise.resolve()
+      })
+
+      await act(async () => {
+        sessionListIndexStore.applySessionChanged('local', {
+          ...makeSession('wt-a'),
+          directory: '/repo/worktree-a',
+        })
+        sessionListIndexStore.applySessionChanged('local', {
+          ...makeSession('outside'),
+          directory: '/repo/elsewhere',
+        })
+      })
+
+      expect(result.current.sessions.map(session => session.id)).toEqual(['wt-a'])
+    })
   })
 })
