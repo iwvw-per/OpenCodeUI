@@ -16,12 +16,24 @@ interface AndroidLiveBridge {
   canPromote?: () => boolean
 }
 
+export interface LiveUpdateSegment {
+  /** 该会话是否阻塞（等待权限/回答），原生用警告色渲染 */
+  blocked: boolean
+}
+
 export interface LiveUpdatePayload {
   id: number
   title: string
   body?: string
+  subText?: string
   shortText?: string
   progress?: number
+  /** 不确定进度（进行中但无具体百分比） */
+  indeterminate?: boolean
+  /** 多会话分段进度条：每段对应一个进行中的会话 */
+  segments?: LiveUpdateSegment[]
+  /** 本次 payload 的生成时间戳（毫秒），原生侧用于判断持久化状态是否过期 */
+  updatedAt?: number
   sessionId?: string
 }
 

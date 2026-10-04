@@ -521,6 +521,35 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
       void serverStore.checkHealth(serverId).catch(() => {})
     }
 
+    /**
+     * 回前台时对齐某台服务器的 session 状态。
+     *
+     * 应用在后台被冻结期间 SSE 事件可能未被处理，而连接靠心跳仍显示存活、
+     * 不会触发 onReconnected。这里拉取该服务器的全量状态（不带 directory，
+     * 服务端返回该实例所有 busy/retry 会话），整台替换其名下条目，清掉残留的
+     * 陈旧 busy，同时保留其它服务器状态。失败则静默，下次重连会再对齐。
+     */
+    const reconcileServerStatus = (serverId: string) => {
+      const currentVersion = (fetchVersions.get(serverId) ?? 0) + 1
+      fetchVersions.set(serverId, currentVersion)
+      activeFetchVersions.set(serverId, currentVersion)
+      void getSessionStatus(undefined, serverId)
+        .then(statusMap => {
+          if (disposed || currentVersion !== fetchVersions.get(serverId)) return
+          const scoped: SessionStatusMap = {}
+          for (const [sid, status] of Object.entries(statusMap)) {
+            scoped[makeSessionKey(serverId, sid)] = status
+          }
+          activeSessionStore.replaceServerStatus(serverId, scoped)
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (currentVersion === fetchVersions.get(serverId)) {
+            activeFetchVersions.set(serverId, 0)
+          }
+        })
+    }
+
     const markPermissionReplied = (sessionID: string, requestID: string) => {
       removePendingByRequestId(pendingPermissions, sessionID, requestID)
       latePendingRequests.delete(requestID)
@@ -583,6 +612,40 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
 
     const buildServerCallbacks = (serverId: string): EventCallbacks => {
       const scope = (sid: string) => makeSessionKey(serverId, sid)
+
+      /**
+       * 会话完成的统一落定：把 activeSessionStore 置 idle，并在「由忙转闲」时
+       * 触发一次完成提示（应用内未读点 / 提示音）。
+       *
+       * session.idle 与 session.status(idle) 都可能先到，两者都调用本函数；
+       * 只有第一个到达者会看到 wasBusy=true 并弹提示，后到者因已是 idle 自动跳过，
+       * 从而既保证数量下降、又不会重复提示。
+       */
+      const settleSessionIdle = (scopedId: string, rawSessionId: string) => {
+        const prevStatus = activeSessionStore.getSnapshot().statusMap[scopedId]
+        const wasBusy = prevStatus && (prevStatus.type === 'busy' || prevStatus.type === 'retry')
+        // updateStatus 返回 true 表示会话真正被清除；仍有未回复 pending 时返回
+        // false（条目保留），此时会话并未完成，不弹完成提示。
+        const cleared = activeSessionStore.updateStatus(scopedId, { type: 'idle' })
+        if (!wasBusy || !cleared) return
+
+        if (belongsToCurrentSession(scopedId)) {
+          // 正在看的会话：补一次标记已读。
+          // 推送条件读的 focusedSessionId 更新是异步的，点开会话瞬间若会话
+          // 刚好完成，会被误判为「不在看」而推一条通知，之后没人再触发标记，
+          // 小点就永久留在项目行上。这里在状态落定时兜底清一次。
+          notificationStore.markSessionNotificationsRead(scopedId, 'completed')
+          if (isSessionDirectlyOpen(scopedId) && soundStore.getSnapshot().currentSessionEnabled) {
+            playNotificationSoundDeduped('completed')
+          }
+        } else if (!isChildSession(scopedId)) {
+          // 子 agent 会话：不在侧栏出现（除非用户显式打开子会话开关），
+          // 推通知只会产生点不到也清不掉的孤儿未读点。跳过。
+          const meta = activeSessionStore.getSessionMeta(scopedId)
+          const sessionLabel = meta?.title || rawSessionId.slice(0, 8)
+          notificationStore.push('completed', sessionLabel, i18n.t('chat:notification.sessionCompleted'), scopedId, meta?.directory)
+        }
+      }
 
       return {
         // ============================================
@@ -669,6 +732,10 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
           const scopedId = scope(data.sessionID)
           messageStore.handleSessionIdle(scopedId)
           childSessionStore.markIdle(scopedId)
+          // session.idle 是会话完成的权威信号。activeSessionStore 此前只由
+          // session.status 驱动，服务端不保证每次都补推 status——只收到 idle 时
+          // 会残留 busy 条目，导致 Working 列表与实况通知数量不下降。
+          settleSessionIdle(scopedId, data.sessionID)
           // 子 agent 运行结束：自动关闭其分屏 pane
           paneLayoutStore.closeSubtaskSession(scopedId)
           dispatchToConsumers(scopedId, cb => cb.onSessionIdle?.(scopedId))
@@ -880,38 +947,16 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
 
         onSessionStatus: data => {
           const scopedId = scope(data.sessionID)
-          const prevStatus = activeSessionStore.getSnapshot().statusMap[scopedId]
-          const wasBusy = prevStatus && (prevStatus.type === 'busy' || prevStatus.type === 'retry')
+
+          // idle 与 session.idle 走同一落定逻辑，避免重复提示、保证数量下降
+          if (data.status.type === 'idle') {
+            settleSessionIdle(scopedId, data.sessionID)
+            childSessionStore.markIdle(scopedId)
+            return
+          }
 
           activeSessionStore.updateStatus(scopedId, data.status)
-
-          // 同步子 agent 状态：session.status 是服务端对每个会话（含子会话）的权威状态，
-          // 子代理结束时必须据此落定，否则子代理面板会一直显示「正在工作」。
-          if (data.status.type === 'idle') {
-            childSessionStore.markIdle(scopedId)
-          } else if (data.status.type === 'retry' || data.status.type === 'busy') {
-            childSessionStore.markRunning(scopedId)
-          }
-
-          // Toast — session 从 busy/retry 变成 idle 时弹 completed 通知
-          if (wasBusy && data.status.type === 'idle') {
-            if (belongsToCurrentSession(scopedId)) {
-              // 正在看的会话：补一次标记已读。
-              // 推送条件读的 focusedSessionId 更新是异步的，点开会话瞬间若会话
-              // 刚好完成，会被误判为「不在看」而推一条通知，之后没人再触发标记，
-              // 小点就永久留在项目行上。这里在状态落定时兜底清一次。
-              notificationStore.markSessionNotificationsRead(scopedId, 'completed')
-              if (isSessionDirectlyOpen(scopedId) && soundStore.getSnapshot().currentSessionEnabled) {
-                playNotificationSoundDeduped('completed')
-              }
-            } else if (!isChildSession(scopedId)) {
-              // 子 agent 会话：不在侧栏出现（除非用户显式打开子会话开关），
-              // 推通知只会产生点不到也清不掉的孤儿未读点。跳过。
-              const meta = activeSessionStore.getSessionMeta(scopedId)
-              const sessionLabel = meta?.title || data.sessionID.slice(0, 8)
-              notificationStore.push('completed', sessionLabel, i18n.t('chat:notification.sessionCompleted'), scopedId, meta?.directory)
-            }
-          }
+          childSessionStore.markRunning(scopedId)
         },
 
         // ============================================
@@ -972,10 +1017,22 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
       }
     }, 15000)
 
+    // 回前台时重新对齐 session 状态：应用在后台被冻结期间 SSE 事件可能未被处理，
+    // 而连接靠心跳仍显示存活、不会触发 onReconnected。此时主动拉一次全量状态，
+    // 清掉残留的 busy 条目，让 Working 列表与实况通知数量回到真实值。
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return
+      for (const serverId of activeServerIdsRef.current) {
+        reconcileServerStatus(serverId)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
     return () => {
       disposed = true
       refreshRef.current = null
       window.clearInterval(healthPollTimer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       unsubscribes.forEach(unsubscribe => unsubscribe())
       unsubscribeAutoApprove()
       unsubscribeServerChange()

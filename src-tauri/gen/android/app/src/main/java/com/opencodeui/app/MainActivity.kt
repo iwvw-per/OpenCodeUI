@@ -1,8 +1,6 @@
 package com.opencodeui.app
 
-import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -17,7 +15,6 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.activity.enableEdgeToEdge
-import androidx.core.app.NotificationCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -29,6 +26,14 @@ class MainActivity : TauriActivity() {
   private var cachedInsetsJs: String? = null
   private var themeSyncRunnable: Runnable? = null
   private var cachedWebView: WebView? = null
+
+  // 持有桥实例强引用，避免被 GC 回收后 WebView 报 "Unknown object"
+  private val systemBarBridge = SystemBarBridge()
+  private val liveUpdateBridge = LiveUpdateBridge()
+
+  // 会话进行中（实况通知/前台服务运行）标志，用于后台抵消 WebView 暂停
+  @Volatile
+  private var liveUpdateRunning = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -92,11 +97,25 @@ class MainActivity : TauriActivity() {
   override fun onResume() {
     super.onResume()
     startThemeSync()
+    // 进程被杀后重开、或服务被系统清理：若上次存在未结束的实况状态，恢复前台服务与通知，
+    // 不依赖前端 JS（切后台太快时 JS 可能来不及检测到 busy 就被冻结）。
+    if (!liveUpdateRunning && LiveUpdateService.hasPersisted(this)) {
+      liveUpdateRunning = true
+      LiveUpdateService.restore(this)
+    }
   }
 
   override fun onPause() {
     stopThemeSync()
     super.onPause()
+    // WryActivity.onPause 会暂停 WebView（冻结 JS）。会话进行中时前台服务已保活进程，
+    // 这里再抵消 WebView 的暂停，让 SSE 事件持续处理、实况通知持续更新。
+    if (liveUpdateRunning) {
+      cachedWebView?.let {
+        it.onResume()
+        it.resumeTimers()
+      }
+    }
   }
 
   private fun startThemeSync() {
@@ -220,23 +239,44 @@ class MainActivity : TauriActivity() {
   /**
    * 实况通知（Android 16 Live Updates / ColorOS 流体云）。
    * 通过 __opencode_android_live 暴露给前端，产出 promoted ongoing 通知。
-   * start/update 复用同一 id 原地更新；end 取消。
+   * start 以前台服务承载（进程保活 + 通知），update 原地更新，end 停止并取消。
    */
   private inner class LiveUpdateBridge {
     @android.webkit.JavascriptInterface
     fun start(json: String) {
-      postLiveUpdate(json)
+      liveUpdateRunning = true
+      LiveUpdateNotification.ensureChannel(this@MainActivity)
+      LiveUpdateService.start(this@MainActivity, json)
     }
 
     @android.webkit.JavascriptInterface
     fun update(json: String) {
-      postLiveUpdate(json)
+      val obj = try {
+        JSONObject(json)
+      } catch (_: Exception) {
+        return
+      }
+      liveUpdateRunning = true
+      LiveUpdateService.save(this@MainActivity, json)
+      val id = obj.optInt("id", LiveUpdateNotification.ID)
+      try {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(id, LiveUpdateNotification.build(this@MainActivity, obj))
+      } catch (_: Exception) {
+        // 通知失败不应影响主流程
+      }
     }
 
     @android.webkit.JavascriptInterface
     fun end(id: Int) {
-      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-      nm.cancel(if (id > 0) id else defaultLiveUpdateId)
+      liveUpdateRunning = false
+      LiveUpdateService.stop(this@MainActivity)
+      try {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.cancel(if (id > 0) id else LiveUpdateNotification.ID)
+      } catch (_: Exception) {
+        // ignore
+      }
     }
 
     /** 系统是否允许本应用发布 promoted 通知（用户可在设置里关闭）。仅 Android 16+ 有意义。 */
@@ -245,78 +285,6 @@ class MainActivity : TauriActivity() {
       if (Build.VERSION.SDK_INT < 36) return false
       val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
       return nm.canPostPromotedNotifications()
-    }
-  }
-
-  private fun ensureLiveUpdateChannel() {
-    if (Build.VERSION.SDK_INT < 26) return
-    val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    if (nm.getNotificationChannel(liveUpdateChannelId) == null) {
-      val channel = NotificationChannel(
-        liveUpdateChannelId,
-        "AI 任务进度",
-        NotificationManager.IMPORTANCE_LOW
-      ).apply {
-        description = "显示 AI 生成等任务的实时进度"
-        setShowBadge(false)
-      }
-      nm.createNotificationChannel(channel)
-    }
-  }
-
-  private fun postLiveUpdate(json: String) {
-    val obj = try {
-      JSONObject(json)
-    } catch (_: Exception) {
-      return
-    }
-    val id = obj.optInt("id", defaultLiveUpdateId)
-    val title = obj.optString("title", "OpenCode")
-    val body = obj.optString("body", "")
-    val shortText = obj.optString("shortText", "")
-    val sessionId = obj.optString("sessionId", "")
-    val hasProgress = obj.has("progress")
-    val progress = obj.optInt("progress", 0).coerceIn(0, 100)
-
-    ensureLiveUpdateChannel()
-
-    val intent = Intent(this, MainActivity::class.java).apply {
-      action = Intent.ACTION_VIEW
-      flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-      putExtra("opencode_session_id", sessionId)
-    }
-    val pendingIntent = PendingIntent.getActivity(
-      this,
-      id,
-      intent,
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-    )
-
-    val builder = NotificationCompat.Builder(this, liveUpdateChannelId)
-      .setSmallIcon(R.drawable.ic_stat_opencode)
-      .setContentTitle(title)
-      .setContentText(body)
-      .setContentIntent(pendingIntent)
-      .setOngoing(true)
-      .setOnlyAlertOnce(true)
-      .setShowWhen(false)
-    if (hasProgress) {
-      builder.setProgress(100, progress, false)
-    } else {
-      builder.setProgress(0, 0, true)
-    }
-    // 请求系统提升为实况通知（Android 16+）；低于该版本该 extra 被忽略，仅作普通常驻通知。
-    // 用 getExtras 写入而非 setRequestPromotedOngoing，避免依赖 androidx.core 1.17+（需 Kotlin 2.0）。
-    builder.getExtras().putBoolean("android.requestPromotedOngoing", true)
-    if (Build.VERSION.SDK_INT >= 36 && shortText.isNotEmpty()) {
-      builder.getExtras().putString("android.shortCriticalText", shortText)
-    }
-
-    try {
-      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-      nm.notify(id, builder.build())
-    } catch (_: Exception) {
-      // 通知失败不应影响主流程
     }
   }
 
@@ -439,12 +407,12 @@ class MainActivity : TauriActivity() {
 
   private fun ensureJsBridge(webView: WebView) {
     try {
-      webView.addJavascriptInterface(SystemBarBridge(), "__opencode_android")
+      webView.addJavascriptInterface(systemBarBridge, "__opencode_android")
     } catch (_: Exception) {
       // ignore - may be added already
     }
     try {
-      webView.addJavascriptInterface(LiveUpdateBridge(), "__opencode_android_live")
+      webView.addJavascriptInterface(liveUpdateBridge, "__opencode_android_live")
     } catch (_: Exception) {
       // ignore - may be added already
     }
@@ -458,10 +426,5 @@ class MainActivity : TauriActivity() {
       }
     }
     return null
-  }
-
-  companion object {
-    private const val liveUpdateChannelId = "opencode_live_update"
-    private const val defaultLiveUpdateId = 9001
   }
 }

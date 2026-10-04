@@ -81,7 +81,7 @@ const {
     getSessionMeta: vi.fn((sessionId?: string) => ({ title: sessionId || 'Child Session', directory: '/workspace' })),
     addPendingRequest: vi.fn(),
     resolvePendingRequest: vi.fn(),
-    updateStatus: vi.fn(),
+    updateStatus: vi.fn(() => true),
     getSnapshot: vi.fn(() => ({ statusMap: {} })),
   },
   autoApproveStoreMock: {
@@ -844,6 +844,40 @@ describe('useGlobalEvents', () => {
     callbacks!.onSessionStatus?.({ sessionID: 'child-session', status: { type: 'idle' } })
 
     expect(markIdleMock).toHaveBeenCalledWith('local::child-session')
+  })
+
+  it('settles an idle session from session.idle even without session.status', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    activeSessionStoreMock.getSnapshot.mockReturnValue({ statusMap: { 'local::bg': { type: 'busy' } } })
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+    callbacks!.onSessionIdle?.({ sessionID: 'bg' })
+
+    expect(activeSessionStoreMock.updateStatus).toHaveBeenCalledWith('local::bg', { type: 'idle' })
+  })
+
+  it('does not double-fire completed when session.idle precedes session.status idle', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    activeSessionStoreMock.getSnapshot.mockReturnValue({ statusMap: { 'local::bg': { type: 'busy' } } })
+    activeSessionStoreMock.updateStatus.mockImplementationOnce(() => true).mockImplementationOnce(() => false)
+
+    renderHook(() => useGlobalEvents())
+
+    await waitFor(() => expect(callbacks).toBeDefined())
+    callbacks!.onSessionIdle?.({ sessionID: 'bg' })
+    callbacks!.onSessionStatus?.({ sessionID: 'bg', status: { type: 'idle' } })
+
+    expect(notificationPushMock).toHaveBeenCalledTimes(1)
   })
 
   it('marks notifications read when the completed session is currently focused', async () => {

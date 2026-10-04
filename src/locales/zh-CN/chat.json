@@ -250,7 +250,8 @@
     "retrying": "重试中",
     "working": "工作中",
     "attempt": "第 {{count}} 次",
-    "waitingForInput": "等待输入"
+    "waitingForInput": "等待输入",
+    "tasksCount": "共 {{count}} 个任务"
   },
   "notification": {
     "completed": "已完成",
