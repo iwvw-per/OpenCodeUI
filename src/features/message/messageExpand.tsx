@@ -29,14 +29,17 @@ export function MessageExpandPanel({
   children,
   variant = 'height',
   animate = true,
-  panelClassName = MSG_EXPAND.panel,
+  panelClassName,
   contentRef,
   contentClassName,
   clip = false,
   className,
   innerClassName = 'min-h-0 min-w-0 overflow-hidden',
 }: MessageExpandPanelProps) {
-  const outerClass = variant === 'fade' ? expandFadeGridClass(open) : expandGridClass(open, animate, panelClassName)
+  const outerClass =
+    variant === 'fade'
+      ? expandFadeGridClass(open, animate, panelClassName)
+      : expandGridClass(open, animate, panelClassName)
   const style: CSSProperties | undefined = clip ? { clipPath: MSG_EXPAND.clipPath } : undefined
 
   return (

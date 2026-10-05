@@ -177,7 +177,16 @@ export function ProcessCollapseBlock({
   onExpand?: () => void
 }) {
   const [expanded, setExpanded] = useUiDisclosureState(stateKey, isActive)
-  const shouldRenderBody = useMessageExpandRender(expanded)
+  // Android expand: 展开时用 max-height 假高度，避免 WebView 在 grid-rows 动画中
+  // 把过程壳内容画成空白（滚动中展开/收起时表现为闪一下）。与 ContentBlock、
+  // 工具步骤壳同款处理；桌面仍是原 grid-rows 动画。
+  const {
+    contentRef: processExpandContentRef,
+    layoutOpen: processLayoutOpen,
+    keepMounted: processKeepMounted,
+    panelClassName: processPanelClassName,
+  } = useCompositorExpand(expanded)
+  const shouldRenderBody = useMessageExpandRender(processKeepMounted)
   const rootRef = useRef<HTMLDivElement>(null)
   const headerRef = useRef<HTMLButtonElement>(null)
   const unlockScrollRef = useRef<(() => void) | null>(null)
@@ -221,8 +230,10 @@ export function ProcessCollapseBlock({
         reasoningCount={reasoningCount}
       />
       <MessageExpandPanel
-        open={expanded}
+        open={processLayoutOpen}
         animate={animateGrid}
+        panelClassName={processPanelClassName}
+        contentRef={processExpandContentRef}
         clip
         innerClassName="min-h-0 min-w-0 overflow-hidden -mx-1.5 px-1.5"
       >

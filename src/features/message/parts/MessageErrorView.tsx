@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { MessageError } from '../../../types/message'
 import { AlertCircleIcon, ChevronDownIcon } from '../../../components/Icons'
-import { useDisclosureScrollLock } from '../../../hooks'
+import { useCompositorExpand, useDisclosureScrollLock } from '../../../hooks'
 import { CodeBlock } from '../../../components/CodeBlock'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 import { MessageExpandPanel } from '../messageExpand'
@@ -22,7 +22,14 @@ export const MessageErrorView = memo(function MessageErrorView({ error, stateKey
   const { title, description, details, severity } = getErrorInfo(error, t)
   const hasDetails = !!(details || description)
   const [expanded, setExpanded] = useUiDisclosureState(stateKey ?? `message-error:${title}`, false)
-  const shouldRenderBody = useMessageExpandRender(expanded)
+  // Android expand: 展开用 max-height 假高度，避免 WebView 在 grid-rows 动画中画空白。
+  const {
+    contentRef: errorExpandContentRef,
+    layoutOpen: errorLayoutOpen,
+    keepMounted: errorKeepMounted,
+    panelClassName: errorPanelClassName,
+  } = useCompositorExpand(expanded)
+  const shouldRenderBody = useMessageExpandRender(errorKeepMounted)
   const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
 
   const rawDiagnostics = error.name === 'APIError' ? error.data.metadata?.rawDiagnostics : undefined
@@ -30,7 +37,13 @@ export const MessageErrorView = memo(function MessageErrorView({ error, stateKey
     `${stateKey ?? `message-error:${title}`}:raw-diagnostics`,
     false,
   )
-  const shouldRenderRawDiagnostics = useMessageExpandRender(showRawDiagnostics)
+  const {
+    contentRef: rawDiagContentRef,
+    layoutOpen: rawDiagLayoutOpen,
+    keepMounted: rawDiagKeepMounted,
+    panelClassName: rawDiagPanelClassName,
+  } = useCompositorExpand(showRawDiagnostics)
+  const shouldRenderRawDiagnostics = useMessageExpandRender(rawDiagKeepMounted)
 
   const colorClass = severity === 'error' ? 'text-danger-100' : 'text-warning-100'
   const borderClass = severity === 'error' ? 'border-danger-100/20' : 'border-warning-100/20'
@@ -68,7 +81,13 @@ export const MessageErrorView = memo(function MessageErrorView({ error, stateKey
         {hasDetails && <ChevronDownIcon className={chevronClass(expanded)} />}
       </div>
 
-      <MessageExpandPanel open={expanded} variant="fade" innerClassName="overflow-hidden">
+      <MessageExpandPanel
+        open={errorLayoutOpen}
+        variant="fade"
+        panelClassName={errorPanelClassName}
+        contentRef={errorExpandContentRef}
+        innerClassName="overflow-hidden"
+      >
         {shouldRenderBody && (
           <div className={`mt-2 pt-2 space-y-1.5 border-t ${borderClass}`}>
             <p className="text-[length:var(--fs-sm)] text-text-300 break-words">{description}</p>
@@ -83,7 +102,13 @@ export const MessageErrorView = memo(function MessageErrorView({ error, stateKey
                   <ChevronDownIcon className={chevronClass(showRawDiagnostics)} />
                   <span>{t('errors.rawDiagnostics')}</span>
                 </button>
-                <MessageExpandPanel open={showRawDiagnostics} variant="fade" innerClassName="overflow-hidden">
+                <MessageExpandPanel
+                  open={rawDiagLayoutOpen}
+                  variant="fade"
+                  panelClassName={rawDiagPanelClassName}
+                  contentRef={rawDiagContentRef}
+                  innerClassName="overflow-hidden"
+                >
                   {shouldRenderRawDiagnostics && (
                     <CodeBlock code={rawDiagnostics} language="text" maxHeight={240} />
                   )}

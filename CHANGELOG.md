@@ -1,5 +1,23 @@
 # Changelog
 
+## [v0.6.115] - 2026-10-05
+
+- chore: 死代码清理 + 首屏性能优化 + a11y/SEO 修复（v0.6.114-canary.8） (50d9ac28)
+- fix(mobile): 实况通知数量实时下降 + 三行布局 + 去小飞机 (1c48882d)
+- chore: bump version to 0.6.114-canary.6 (ba4c18f4)
+- chore: ignore local screenshot scratch script (a550b47f)
+- feat(chat): 会话列表锚点排序 + 欢迎态输入框整数像素居中 + 项目标签样式 (da06586c)
+- feat(ui): 浮层开合动效统一（Popover/Select/DropdownMenu/Tooltip） (c3f0abc4)
+- feat(mobile): 触觉反馈分级 + Android 16 实况通知（ColorOS 流体云） (61a36a1e)
+- feat(ui): 移植 beui Animated Breadcrumb，用于文件预览路径 (7b3b8127)
+- fix(chat): 切换主机时抑制欢迎层/输入框自身过渡，避免与平移动画打架 (e64e37ea)
+- feat(chat): 主聊天区切换主机时同步平移 (e5a38b0d)
+- feat(sidebar): 切换主机时项目列表按方位平移 (5739a161)
+- feat(multi-server): 主机作为顶层工作区上下文，修复跨主机会话/项目泄漏 (dfaa66cf)
+- feat(message): DiffChips 触摸端手势——点击看预览、长按进右侧面板 (0081c13b)
+- refactor(store): 抽出工具落定与内存裁剪纯函数 + 29 个直接单测 (b77f3770)
+- refactor(store): 抽出流式 part 合并纯函数 + 补 4 个无测试 store 的单测 (5c8962e1)
+
 ## [v0.6.114-canary.8] - 2026-10-04 (Pre-release)
 
 - fix(mobile): 实况通知数量实时下降 + 三行布局 + 去小飞机 (1c48882d)

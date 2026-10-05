@@ -98,4 +98,44 @@ describe('useProjectLastUsedAt', () => {
 
     expect(result.current['C:/repo']).toBe(500)
   })
+
+  it('preserves a known timestamp when a later refetch of that directory fails', async () => {
+    // 首次：A 成功、B 失败 → A 有时间戳
+    getSessionsMock.mockImplementation((params: { directory: string }) =>
+      params.directory === 'C:/a' ? Promise.resolve([makeSession('C:/a', 100)]) : Promise.reject(new Error('net')),
+    )
+
+    const { result, rerender } = renderHook(({ w }) => useProjectLastUsedAt('srv-preserve', w), {
+      initialProps: { w: ['C:/a', 'C:/b'] },
+    })
+    await waitFor(() => expect(result.current['C:/a']).toBe(100))
+    expect(result.current['C:/b']).toBeUndefined()
+
+    // 重新触发一次加载（worktree 列表变化）时 A 也失败：不应把已知值抹掉
+    getSessionsMock.mockRejectedValue(new Error('net'))
+    rerender({ w: ['C:/a', 'C:/c'] })
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 30))
+    })
+
+    expect(result.current['C:/a']).toBe(100)
+  })
+
+  it('does not cache a failed lookup (allows retry instead of 60s blank)', async () => {
+    let calls = 0
+    getSessionsMock.mockImplementation(() => {
+      calls += 1
+      return calls === 1 ? Promise.reject(new Error('boom')) : Promise.resolve([makeSession('C:/a', 777)])
+    })
+
+    const { result, rerender } = renderHook(({ w }) => useProjectLastUsedAt('srv-retry', w), {
+      initialProps: { w: ['C:/a'] },
+    })
+    await waitFor(() => expect(getSessionsMock).toHaveBeenCalledTimes(1))
+
+    // 重新挂载/触发（同 key）应重新请求，而不是命中「失败缓存」跳过
+    rerender({ w: ['C:/b'] })
+    rerender({ w: ['C:/a'] })
+    await waitFor(() => expect(result.current['C:/a']).toBe(777))
+  })
 })

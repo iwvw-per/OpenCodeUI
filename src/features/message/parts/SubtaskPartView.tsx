@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { SubtaskPart } from '../../../types/message'
 import { useChildSessions, useSessionStatus, type ChildSessionInfo } from '../../../store'
 import { useSessionNavigation } from '../../../contexts/SessionNavigationContext'
-import { useDisclosureScrollLock } from '../../../hooks'
+import { useCompositorExpand, useDisclosureScrollLock } from '../../../hooks'
 import { UsersIcon, ChevronDownIcon, LayersIcon, TerminalIcon, ReturnIcon } from '../../../components/Icons'
 import { Chip } from '../../../components/ui/Chip'
 import { StatusDot } from '../../../components/ui/StatusDot'
@@ -27,7 +27,15 @@ interface SubtaskPartViewProps {
 export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPartViewProps) {
   const { t } = useTranslation('message')
   const [expanded, setExpanded] = useUiDisclosureState(`message:${part.messageID}:subtask:${part.id}`, false)
-  const shouldRenderBody = useMessageExpandRender(expanded)
+  // Android expand: 展开用 max-height 假高度，避免 WebView 在 grid-rows 动画中
+  // 把子任务内容画成空白（滚动中展开时闪一下）。
+  const {
+    contentRef: subtaskExpandContentRef,
+    layoutOpen: subtaskLayoutOpen,
+    keepMounted: subtaskKeepMounted,
+    panelClassName: subtaskPanelClassName,
+  } = useCompositorExpand(expanded)
+  const shouldRenderBody = useMessageExpandRender(subtaskKeepMounted)
   const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
   const { navigateToSession, openSessionInSplit } = useSessionNavigation()
 
@@ -107,7 +115,12 @@ export const SubtaskPartView = memo(function SubtaskPartView({ part }: SubtaskPa
       </div>
 
       {/* Expanded content */}
-      <MessageExpandPanel open={expanded} innerClassName="overflow-hidden">
+      <MessageExpandPanel
+        open={subtaskLayoutOpen}
+        panelClassName={subtaskPanelClassName}
+        contentRef={subtaskExpandContentRef}
+        innerClassName="overflow-hidden"
+      >
         {shouldRenderBody && (
           <div className="px-4 py-3 border-t border-border-200/40 space-y-3">
             {/* Prompt preview */}
