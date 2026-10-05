@@ -1692,11 +1692,12 @@ html[data-chat-width-dragging] .glass-alt {
   background-color: hsl(var(--bg-000));
 }
 
-/* 收起态几何：只收窄宽度、收紧圆角；高度由 JS 写成药丸像素值，参与同一条过渡。
- * 边框与背景保持同一元素、始终可见，只变色不消失。 */
+/* 收起态：宽度与圆角由 JS 在打开过渡（data-morphing）的同一帧写成内联样式
+ * （见 InputBox.tsx 的 COLLAPSED_BOX_WIDTH / COLLAPSED_BOX_RADIUS）。若写在这里，
+ * 属性在 render 阶段就挂上，而 data-morphing 在 layout effect 才挂；中间任何一次
+ * 布局读取触发样式重算时，宽度会在过渡尚未 armed 时被定型，表现为横向瞬间收窄、
+ * 纵向才走动画。这里只保留与几何无关的指针样式。 */
 [data-input-box][data-collapsed] {
-  width: 132px;
-  border-radius: 24px;
   cursor: pointer;
 }
 

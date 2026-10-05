@@ -147,6 +147,10 @@ describe('InputBox 收起动画', () => {
     // 收起态药丸高度与 ChatFab 收起态等高（--chat-fab-collapsed-size = 36px），
     // 两者并排时视觉上是一组；见 InputBox.tsx 的 COLLAPSED_BOX_HEIGHT。
     expect(inputBox.style.height).toBe('36px')
+    // 宽度/圆角与 data-morphing 同帧写入内联样式（不能放 CSS 属性选择器，
+    // 否则宽度会在过渡 armed 前被定型 → 横向瞬跳）。见 COLLAPSED_BOX_WIDTH。
+    expect(inputBox.style.width).toBe('132px')
+    expect(inputBox.style.borderRadius).toBe('24px')
   })
 
   it('FAB 在收起态是「回到底部」，展开态是「发送」，且是锚点的子节点', () => {

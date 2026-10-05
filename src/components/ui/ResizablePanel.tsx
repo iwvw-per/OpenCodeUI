@@ -3,6 +3,10 @@ import { useInputCapabilities } from '../../hooks/useInputCapabilities'
 
 const ANIMATION_EASE = 'ease-[cubic-bezier(0.25,1,0.5,1)]'
 const ANIMATION_DURATION = 'duration-300'
+/** 右侧 overlay 面板右滑关闭：轴锁定 / 横向偏置 / 触发阈值（与左侧栏手势一致） */
+const OVERLAY_SWIPE_LOCK_PX = 10
+const OVERLAY_SWIPE_HORIZONTAL_BIAS = 1.25
+const OVERLAY_SWIPE_CLOSE_PX = 80
 
 interface ResizablePanelProps {
   position: 'right' | 'bottom'
@@ -52,6 +56,13 @@ export const ResizablePanel = memo(function ResizablePanel({
     move: ((e: TouchEvent) => void) | null
     end: (() => void) | null
   }>({ move: null, end: null })
+
+  // 右侧 overlay 面板右滑关闭手势
+  const overlaySwipeStartX = useRef(0)
+  const overlaySwipeStartY = useRef(0)
+  const overlaySwipeDeltaX = useRef(0)
+  const overlaySwipeAxis = useRef<'pending' | 'horizontal' | 'vertical'>('pending')
+  const overlaySwiping = useRef(false)
 
   useEffect(() => {
     isResizingRef.current = isResizing
@@ -189,6 +200,47 @@ export const ResizablePanel = memo(function ResizablePanel({
 
   const containerClass = `flex flex-col bg-bg-100 overflow-hidden min-w-0 ${className}`
 
+  // 右侧 overlay 面板：右滑关闭。仅接管横向意图明显的手势，纵向滚动放行。
+  const handleOverlaySwipeStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return
+    overlaySwipeStartX.current = e.touches[0].clientX
+    overlaySwipeStartY.current = e.touches[0].clientY
+    overlaySwipeDeltaX.current = 0
+    overlaySwipeAxis.current = 'pending'
+    overlaySwiping.current = false
+  }, [])
+
+  const handleOverlaySwipeMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return
+    const deltaX = e.touches[0].clientX - overlaySwipeStartX.current
+    const deltaY = e.touches[0].clientY - overlaySwipeStartY.current
+    const absX = Math.abs(deltaX)
+    const absY = Math.abs(deltaY)
+
+    if (overlaySwipeAxis.current === 'pending') {
+      if (Math.max(absX, absY) < OVERLAY_SWIPE_LOCK_PX) return
+      overlaySwipeAxis.current = absX > absY * OVERLAY_SWIPE_HORIZONTAL_BIAS ? 'horizontal' : 'vertical'
+      if (overlaySwipeAxis.current === 'vertical') {
+        overlaySwipeDeltaX.current = 0
+        return
+      }
+    }
+
+    if (overlaySwipeAxis.current !== 'horizontal') return
+    // 只认向右拖（关闭方向）；向左回弹不接管，交给内部横向滚动
+    overlaySwipeDeltaX.current = Math.max(0, deltaX)
+    overlaySwiping.current = overlaySwipeDeltaX.current > 0
+  }, [])
+
+  const handleOverlaySwipeEnd = useCallback(() => {
+    if (overlaySwipeAxis.current === 'horizontal' && overlaySwiping.current && overlaySwipeDeltaX.current >= OVERLAY_SWIPE_CLOSE_PX) {
+      onClose()
+    }
+    overlaySwipeAxis.current = 'pending'
+    overlaySwiping.current = false
+    overlaySwipeDeltaX.current = 0
+  }, [onClose])
+
   if (overlay) {
     const transformClass =
       position === 'right'
@@ -234,6 +286,10 @@ export const ResizablePanel = memo(function ResizablePanel({
             ${transformClass}
           `}
           style={mobilePanelStyle}
+          onTouchStart={position === 'right' ? handleOverlaySwipeStart : undefined}
+          onTouchMove={position === 'right' ? handleOverlaySwipeMove : undefined}
+          onTouchEnd={position === 'right' ? handleOverlaySwipeEnd : undefined}
+          onTouchCancel={position === 'right' ? handleOverlaySwipeEnd : undefined}
         >
           {position === 'bottom' && (
             <div

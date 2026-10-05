@@ -84,6 +84,11 @@ const COMPOSER_COMPACT_MAX_HEIGHT = 320
 // 收起态药丸高度（px）：与 ChatFab 收起态等高（--chat-fab-collapsed-size = 36px），
 // 两者并排时视觉上是一组。内容 28px + 上下 padding 3px + 上下边框 1px。
 const COLLAPSED_BOX_HEIGHT = 36
+// 收起态药丸宽度与圆角。必须由 JS 在打开过渡（data-morphing）的同一帧写入，
+// 不能放 CSS [data-collapsed]：否则中间任何一次布局读取触发样式重算时，宽度会在
+// 过渡尚未 armed 时被定型，表现为横向瞬间收窄、纵向才走动画（快速滚动时明显）。
+const COLLAPSED_BOX_WIDTH = 132
+const COLLAPSED_BOX_RADIUS = 24
 
 const MAX_DROPPED_FILE_SIZE = 20 * 1024 * 1024
 const MAX_DROPPED_FILE_SIZE_LABEL = `${MAX_DROPPED_FILE_SIZE / (1024 * 1024)}MB`
@@ -1534,6 +1539,21 @@ function InputBoxComponent({
           setChatMorphing(false)
         }
       }, 520)
+    }
+
+    // 收起态几何（宽度 / 圆角）与 data-morphing 在同一帧写入：保证宽度过渡先
+    // armed 再改值。若交给 CSS [data-collapsed]，属性在 render 阶段就挂上、而
+    // data-morphing 到 layout effect 才挂，中间任何一次布局读取触发样式重算时，
+    // 宽度会在过渡尚未打开时被定型，表现为横向瞬间收窄、纵向才走动画。展开态清掉
+    // 内联值，回到 CSS 的 width:100%。
+    if (el) {
+      if (isCollapsed) {
+        el.style.width = `${COLLAPSED_BOX_WIDTH}px`
+        el.style.borderRadius = `${COLLAPSED_BOX_RADIUS}px`
+      } else {
+        el.style.width = ''
+        el.style.borderRadius = ''
+      }
     }
 
     syncBoxHeight()

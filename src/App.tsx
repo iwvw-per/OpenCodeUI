@@ -387,9 +387,10 @@ function App() {
     layoutStore.openRightPanel()
   }, [isMobilePanelLayout, rightPanelOpen, sidebarExpanded])
 
-  // ── 主界面左右滑动开抽屉 ──
-  // 从主界面向右滑开侧栏、向左滑开右栏。只处理横向手势（纵向滚动对话放行），
-  // 且仅在两个抽屉都未打开时生效（抽屉打开后由抽屉自身负责关闭手势）。
+  // ── 主界面滑动开侧栏 ──
+  // 从主界面向右滑开侧栏。只处理横向手势（纵向滚动对话放行），且仅在两个抽屉
+  // 都未打开时生效（抽屉打开后由抽屉自身负责关闭手势）。左滑不接管：移动端
+  // 对话区常有横向可滚动内容，左滑开右栏容易误触。
   const mainSwipeRef = useRef<{ startX: number; startY: number; axis: 'x' | 'y' | null } | null>(null)
   const MAIN_SWIPE_AXIS_PX = 12
   const MAIN_SWIPE_TRIGGER_PX = 60
@@ -432,13 +433,9 @@ function App() {
         // 右滑：开侧栏
         hapticTap('medium')
         handleOpenSidebar()
-      } else if (dx <= -MAIN_SWIPE_TRIGGER_PX) {
-        // 左滑：开右栏
-        hapticTap('medium')
-        handleToggleRightPanel()
       }
     },
-    [handleOpenSidebar, handleToggleRightPanel],
+    [handleOpenSidebar],
   )
 
   const focusedDirectory = focusedRouteDirectory || ''
