@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDownIcon, RetryIcon } from '../../components/Icons'
 import { useNow } from '../../hooks/useNow'
+import { useCompositorExpand } from '../../hooks/useCompositorExpand'
 import { MessageExpandPanel } from '../message/messageExpand'
 import { chevronClass, useMessageExpandRender } from '../message/messageExpandShared'
 
@@ -24,7 +25,14 @@ export const RetryStatusInline = memo(function RetryStatusInline({ status }: { s
   const { t } = useTranslation('chat')
   const now = useNow(250)
   const [expanded, setExpanded] = useState(false)
-  const shouldRenderBody = useMessageExpandRender(expanded)
+  // Android expand: 展开用 max-height 假高度，避免 WebView 在 grid-rows 动画中画空白。
+  const {
+    contentRef: retryInlineContentRef,
+    layoutOpen: retryInlineLayoutOpen,
+    keepMounted: retryInlineKeepMounted,
+    panelClassName: retryInlinePanelClassName,
+  } = useCompositorExpand(expanded)
+  const shouldRenderBody = useMessageExpandRender(retryInlineKeepMounted)
 
   const remainingMs = useMemo(() => {
     if (!Number.isFinite(status.next)) return null
@@ -68,7 +76,13 @@ export const RetryStatusInline = memo(function RetryStatusInline({ status }: { s
       )}
 
       {hasMessage && (
-        <MessageExpandPanel open={expanded} variant="fade" innerClassName="overflow-hidden">
+        <MessageExpandPanel
+          open={retryInlineLayoutOpen}
+          variant="fade"
+          panelClassName={retryInlinePanelClassName}
+          contentRef={retryInlineContentRef}
+          innerClassName="overflow-hidden"
+        >
           {shouldRenderBody && (
             <div className="mt-2 pt-2 border-t border-warning-100/20">
               <p className="text-[length:var(--fs-sm)] text-text-300 font-mono whitespace-pre-wrap break-words overflow-x-hidden">

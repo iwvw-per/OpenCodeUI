@@ -27,17 +27,21 @@ export const MSG_EXPAND = {
 export function expandGridClass(
   open: boolean,
   animate = true,
-  panelClassName: string = MSG_EXPAND.panel,
+  panelClassName: string | undefined = MSG_EXPAND.panel,
 ): string {
   const rows = open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
   if (!animate) return `grid ${rows}`
   return `grid ${panelClassName} ${rows}`
 }
 
-export function expandFadeGridClass(open: boolean): string {
-  return `grid ${MSG_EXPAND.panelFade} ${
-    open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
-  }`
+export function expandFadeGridClass(
+  open: boolean,
+  animate = true,
+  panelClassName: string | undefined = MSG_EXPAND.panelFade,
+): string {
+  const rows = open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+  if (!animate) return `grid ${rows}`
+  return `grid ${panelClassName} ${rows}`
 }
 
 const CHEVRON_SIZE = {

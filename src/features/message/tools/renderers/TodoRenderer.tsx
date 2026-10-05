@@ -3,7 +3,7 @@ import { CheckIcon, ClockIcon, CloseIcon, CircleIcon, ManageSessionsIcon } from 
 import { DisclosureRow } from '../../../../components/ui/DisclosureRow'
 import { ProgressBar } from '../../../../components/ui/ProgressBar'
 import type { ToolRendererProps } from '../types'
-import { useDisclosureScrollLock } from '../../../../hooks'
+import { useCompositorExpand, useDisclosureScrollLock } from '../../../../hooks'
 import { extractTodos } from './todoUtils'
 import { useUiDisclosureState } from '../../../../utils/uiDisclosureState'
 import { MessageExpandPanel } from '../../messageExpand'
@@ -47,7 +47,15 @@ export function TodoRenderer({ part }: ToolRendererProps) {
 function TodoList({ todos, stateKey }: { todos: TodoItem[]; stateKey: string }) {
   const { t } = useTranslation('message')
   const [collapsed, setCollapsed] = useUiDisclosureState(stateKey, false)
-  const shouldRenderBody = useMessageExpandRender(!collapsed)
+  // Android expand: 展开用 max-height 假高度，避免 WebView 在 grid-rows 动画中
+  // 把任务列表画成空白（滚动中展开时闪一下）。
+  const {
+    contentRef: todoExpandContentRef,
+    layoutOpen: todoLayoutOpen,
+    keepMounted: todoKeepMounted,
+    panelClassName: todoPanelClassName,
+  } = useCompositorExpand(!collapsed)
+  const shouldRenderBody = useMessageExpandRender(todoKeepMounted)
   const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
   const completed = todos.filter(t => t.status === 'completed').length
   const total = todos.length
@@ -84,7 +92,12 @@ function TodoList({ todos, stateKey }: { todos: TodoItem[]; stateKey: string }) 
       />
 
       {/* List */}
-      <MessageExpandPanel open={!collapsed} innerClassName="overflow-hidden">
+      <MessageExpandPanel
+        open={todoLayoutOpen}
+        panelClassName={todoPanelClassName}
+        contentRef={todoExpandContentRef}
+        innerClassName="overflow-hidden"
+      >
         {shouldRenderBody && (
           <div className="divide-y divide-border-200/30">
             {todos.map(todo => (

@@ -8,6 +8,7 @@ import { extractContentFromUnifiedDiff } from '../utils/diffUtils'
 import { ViewModeSwitch } from './FullscreenViewer'
 import { DiffViewer, useDiffViewerData, type ViewMode } from './DiffViewer'
 import { useFullscreenLayer } from '../contexts'
+import { useCompositorExpand } from '../hooks/useCompositorExpand'
 
 interface DiffViewProps {
   /** Unified diff format string */
@@ -52,6 +53,13 @@ export const DiffView = memo(function DiffView({
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
   const [fullscreenViewMode, setFullscreenViewMode] = useState<ViewMode>('split')
   const generatedFullscreenId = useId()
+
+  // Android expand: 展开用 max-height 假高度，避免 WebView 在 grid-rows 动画中画空白。
+  const {
+    contentRef: diffContentRef,
+    layoutOpen: diffLayoutOpen,
+    panelClassName: diffPanelClassName,
+  } = useCompositorExpand(!collapsed)
 
   // Determine content to diff
   const content = useMemo(() => {
@@ -169,14 +177,9 @@ export const DiffView = memo(function DiffView({
         </div>
       </div>
 
-      {/* Content - 使用 grid 实现平滑展开动画 */}
-      <div
-        className={clsx(
-          'grid transition-[grid-template-rows] duration-300 ease-in-out',
-          collapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
-        )}
-      >
-        <div className="overflow-hidden">
+      {/* Content - 使用 grid 实现平滑展开动画；Android 用 max-height 假高度避免空白 */}
+      <div className={clsx('grid', diffPanelClassName, diffLayoutOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+        <div className="overflow-hidden" ref={diffContentRef}>
           <DiffViewer
             before={content.before}
             after={content.after}

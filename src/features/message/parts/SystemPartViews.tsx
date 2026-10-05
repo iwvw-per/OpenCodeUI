@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RetryIcon, PatchIcon, ChevronDownIcon, FileIcon } from '../../../components/Icons'
-import { useDisclosureScrollLock } from '../../../hooks'
+import { useCompositorExpand, useDisclosureScrollLock } from '../../../hooks'
 import type { RetryPart, CompactionPart, PatchPart } from '../../../types/message'
 import { useUiDisclosureState } from '../../../utils/uiDisclosureState'
 import { MessageExpandPanel } from '../messageExpand'
@@ -18,7 +18,14 @@ interface RetryPartViewProps {
 export const RetryPartView = memo(function RetryPartView({ part }: RetryPartViewProps) {
   const { t } = useTranslation('message')
   const [expanded, setExpanded] = useUiDisclosureState(`message:${part.messageID}:retry:${part.id}`, false)
-  const shouldRenderBody = useMessageExpandRender(expanded)
+  // Android expand: 展开用 max-height 假高度，避免 WebView 在 grid-rows 动画中画空白。
+  const {
+    contentRef: retryExpandContentRef,
+    layoutOpen: retryLayoutOpen,
+    keepMounted: retryKeepMounted,
+    panelClassName: retryPanelClassName,
+  } = useCompositorExpand(expanded)
+  const shouldRenderBody = useMessageExpandRender(retryKeepMounted)
   const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
   const { attempt, error, time } = part
 
@@ -47,7 +54,13 @@ export const RetryPartView = memo(function RetryPartView({ part }: RetryPartView
         <ChevronDownIcon className={chevronClass(expanded)} />
       </button>
 
-      <MessageExpandPanel open={expanded} variant="fade" innerClassName="overflow-hidden">
+      <MessageExpandPanel
+        open={retryLayoutOpen}
+        variant="fade"
+        panelClassName={retryPanelClassName}
+        contentRef={retryExpandContentRef}
+        innerClassName="overflow-hidden"
+      >
         {shouldRenderBody && (
           <div className="mt-2 pt-2 border-t border-warning-100/20">
             <p className="text-[length:var(--fs-sm)] text-text-300 font-mono whitespace-pre-wrap break-words overflow-x-hidden">
@@ -97,7 +110,14 @@ interface PatchPartViewProps {
 export const PatchPartView = memo(function PatchPartView({ part }: PatchPartViewProps) {
   const { t } = useTranslation('message')
   const [expanded, setExpanded] = useUiDisclosureState(`message:${part.messageID}:patch:${part.id}`, false)
-  const shouldRenderBody = useMessageExpandRender(expanded)
+  // Android expand: 展开用 max-height 假高度，避免 WebView 在 grid-rows 动画中画空白。
+  const {
+    contentRef: patchExpandContentRef,
+    layoutOpen: patchLayoutOpen,
+    keepMounted: patchKeepMounted,
+    panelClassName: patchPanelClassName,
+  } = useCompositorExpand(expanded)
+  const shouldRenderBody = useMessageExpandRender(patchKeepMounted)
   const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
   const { hash, files } = part
   const fileCount = files.length
@@ -119,7 +139,13 @@ export const PatchPartView = memo(function PatchPartView({ part }: PatchPartView
         <ChevronDownIcon className={chevronClass(expanded)} />
       </button>
 
-      <MessageExpandPanel open={expanded} variant="fade" innerClassName="overflow-hidden">
+      <MessageExpandPanel
+        open={patchLayoutOpen}
+        variant="fade"
+        panelClassName={patchPanelClassName}
+        contentRef={patchExpandContentRef}
+        innerClassName="overflow-hidden"
+      >
         {shouldRenderBody && (
           <div className="px-3 py-2 border-t border-border-200/40 space-y-1">
             {files.map((file, idx) => (

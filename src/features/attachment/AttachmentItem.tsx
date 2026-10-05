@@ -6,6 +6,7 @@ import { interactive } from '../../utils/interaction'
 import { getAttachmentIcon, hasExpandableContent } from './utils'
 import { getMaterialIconUrl } from '../../utils/materialIcons'
 import { useDelayedRender } from '../../hooks/useDelayedRender'
+import { useCompositorExpand } from '../../hooks/useCompositorExpand'
 import { AttachmentDetailModal } from './AttachmentDetailModal'
 import { clipboardErrorHandler, copyTextToClipboard } from '../../utils'
 import { saveData } from '../../utils/downloadUtils'
@@ -31,6 +32,12 @@ function AttachmentItemComponent({
   const [imageError, setImageError] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const shouldRenderBody = useDelayedRender(isExpanded)
+  // Android expand: 展开用 max-height 假高度，避免 WebView 在 grid-rows 动画中画空白。
+  const {
+    contentRef: expandContentRef,
+    layoutOpen: expandLayoutOpen,
+    panelClassName: expandPanelClassName,
+  } = useCompositorExpand(isExpanded)
 
   const { Icon, colorClass } = getAttachmentIcon(attachment)
   const canExpand = expandable && hasExpandableContent(attachment)
@@ -110,14 +117,10 @@ function AttachmentItemComponent({
         )}
       </div>
 
-      {/* 展开的详情面板 - grid-rows 动画（和 think tag 同源） */}
+      {/* 展开的详情面板 - grid-rows 动画（和 think tag 同源）；Android 用 max-height 假高度 */}
       {canExpand && (
-        <div
-          className={`grid transition-[grid-template-rows] duration-300 ease-out ${
-            isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
-          }`}
-        >
-          <div className="min-w-0 overflow-hidden">
+        <div className={`grid ${expandPanelClassName} ${expandLayoutOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+          <div className="min-w-0 overflow-hidden" ref={expandContentRef}>
             {shouldRenderBody && (
               <ExpandedContent
                 attachment={attachment}

@@ -4,7 +4,7 @@ import { LightbulbIcon } from '../../../components/Icons'
 import { ScrollArea } from '../../../components/ui'
 import { DisclosureRow } from '../../../components/ui/DisclosureRow'
 import { Spinner } from '../../../components/ui/Spinner'
-import { useDisclosureScrollLock } from '../../../hooks'
+import { useCompositorExpand, useDisclosureScrollLock } from '../../../hooks'
 import { useDelayedRender } from '../../../hooks/useDelayedRender'
 import { useTheme } from '../../../hooks/useTheme'
 import { MarkdownRenderer } from '../../../components/MarkdownRenderer'
@@ -331,7 +331,15 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
 
   const displayText = rawText
   const [expanded, setExpanded] = useUiDisclosureState(`message:${part.messageID}:reasoning:${part.id}`, false)
-  const shouldRenderBody = useMessageExpandRender(expanded)
+  // Android expand: 展开用 max-height 假高度，避免 WebView 在 grid-rows 动画中
+  // 把思考内容画成空白（滚动中展开时闪一下）。与工具壳/过程壳同款处理。
+  const {
+    contentRef: reasoningExpandContentRef,
+    layoutOpen: reasoningLayoutOpen,
+    keepMounted: reasoningKeepMounted,
+    panelClassName: reasoningPanelClassName,
+  } = useCompositorExpand(expanded)
+  const shouldRenderBody = useMessageExpandRender(reasoningKeepMounted)
   const { rootRef, headerRef, withScrollLock } = useDisclosureScrollLock()
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const summaryContainerRef = useRef<HTMLDivElement>(null)
@@ -609,7 +617,12 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
           }
         />
 
-        <MessageExpandPanel open={expanded} clip>
+        <MessageExpandPanel
+          open={reasoningLayoutOpen}
+          panelClassName={reasoningPanelClassName}
+          contentRef={reasoningExpandContentRef}
+          clip
+        >
           {shouldRenderBody &&
             (isMarkdownMode ? (
               <div className={`${MSG_SPACING.body} text-[length:var(--fs-sm)]`}>
@@ -690,7 +703,12 @@ export const ReasoningPartView = memo(function ReasoningPartView({ part, isStrea
         }
       />
 
-      <MessageExpandPanel open={expanded} clip>
+      <MessageExpandPanel
+        open={reasoningLayoutOpen}
+        panelClassName={reasoningPanelClassName}
+        contentRef={reasoningExpandContentRef}
+        clip
+      >
         {shouldRenderBody && (
           <ScrollArea ref={scrollAreaRef} maxHeight={192} className="border-t border-border-300/20 bg-bg-200/30">
             <div className="px-2 py-2 text-text-400 text-[length:var(--fs-sm)] font-mono whitespace-pre-wrap break-words overflow-x-hidden">

@@ -12,6 +12,12 @@ vi.mock('../../../hooks', () => ({
     headerRef: () => undefined,
     withScrollLock: (action: () => void) => action(),
   }),
+  useCompositorExpand: (open: boolean) => ({
+    contentRef: () => undefined,
+    layoutOpen: open,
+    keepMounted: open,
+    panelClassName: '',
+  }),
 }))
 
 vi.mock('../../../hooks/useTheme', () => ({
