@@ -355,6 +355,17 @@ function App() {
   const mobileRightUnmountTimerRef = useRef<number | null>(null)
   const shouldRenderMobileRightPanelRef = useRef(false)
   const [shouldRenderMobileRightPanel, setShouldRenderMobileRightPanel] = useState(false)
+  // 移动端聊天面是否处于「手势翻页」状态。3D 深度变换（rotateY/scale）只在翻页
+  // 过程中需要；静止时若仍挂着 translate3d/preserve-3d/will-change，Android WebView
+  // 会长期持有一个包裹虚拟滚动列表的 3D 合成层，滚动对话时反复重栅格化 → 闪烁。
+  // 因此仅在翻页途中开启，回到页面静止后关闭。
+  const [mobileChatDepth, setMobileChatDepth] = useState(false)
+  const mobileChatDepthRef = useRef(false)
+  const setMobileChatDepthIfChanged = useCallback((active: boolean) => {
+    if (mobileChatDepthRef.current === active) return
+    mobileChatDepthRef.current = active
+    setMobileChatDepth(active)
+  }, [])
 
   const setMobileRightPanelRendered = useCallback((rendered: boolean) => {
     if (shouldRenderMobileRightPanelRef.current === rendered) return
@@ -388,14 +399,17 @@ function App() {
       const left = getMobilePageScrollLeft(page)
       if (Math.abs(pager.scrollLeft - left) < 1) {
         mobileProgrammaticTargetRef.current = null
+        setMobileChatDepthIfChanged(false)
         pager.scrollTo({ left, behavior: 'auto' })
         return
       }
 
+      // 平滑翻页前开启深度层；落位后由 scroll 结束回调关闭
+      setMobileChatDepthIfChanged(true)
       mobileProgrammaticTargetRef.current = behavior === 'smooth' ? page : null
       pager.scrollTo({ left, behavior })
     },
-    [getMobilePageScrollLeft],
+    [getMobilePageScrollLeft, setMobileChatDepthIfChanged],
   )
 
   const getNearestMobilePage = useCallback(
@@ -416,6 +430,10 @@ function App() {
     if (!pager) return
 
     const page = getNearestMobilePage(pager.scrollLeft)
+    // 落位静止后关闭 3D 深度层：只要 pager 停在某个页边界，chat 面就恢复普通布局，
+    // 不再挂着包裹滚动列表的合成层（滚动对话时不再闪烁）。
+    const atRest = Math.abs(pager.scrollLeft - getMobilePageScrollLeft(page)) < 1
+    setMobileChatDepthIfChanged(!atRest)
     // 移动端侧栏开合是手势翻页的临时状态，走 transient 不落盘、不参与同步
     if (page === 'left') {
       if (!sidebarExpanded) layoutStore.setSidebarExpandedTransient(true)
@@ -432,7 +450,14 @@ function App() {
 
     if (sidebarExpanded) layoutStore.setSidebarExpandedTransient(false)
     if (rightPanelOpen) layoutStore.closeRightPanel()
-  }, [ensureMobileRightPanelRendered, getNearestMobilePage, rightPanelOpen, sidebarExpanded])
+  }, [
+    ensureMobileRightPanelRendered,
+    getMobilePageScrollLeft,
+    getNearestMobilePage,
+    rightPanelOpen,
+    setMobileChatDepthIfChanged,
+    sidebarExpanded,
+  ])
 
   const handleMobilePagerScroll = useCallback(() => {
     const pager = mobilePagerRef.current
@@ -453,6 +478,9 @@ function App() {
     pager.style.setProperty('--mobile-chat-scale', `${1 - absProgress * 0.06}`)
     pager.style.setProperty('--mobile-chat-offset-x', `${easedRightProgress * -48}px`)
     pager.style.setProperty('--mobile-chat-transform-origin', `${originX}% 50%`)
+
+    // 翻页途中开启 3D 深度层；停到某页边界后由 scroll 结束回调关闭。
+    setMobileChatDepthIfChanged(absProgress > 0.001)
 
     if (scrollLeft > mobileChatScrollLeft + 24) {
       ensureMobileRightPanelRendered()
@@ -480,13 +508,17 @@ function App() {
     mobileChatScrollLeft,
     mobileLeftPanelWidth,
     mobilePageWidth,
+    setMobileChatDepthIfChanged,
     syncMobilePagerState,
   ])
 
   const handleMobilePagerInteractionStart = useCallback(() => {
     mobilePagerInteractingRef.current = true
     mobileProgrammaticTargetRef.current = null
-  }, [])
+    // 手势开始即开启深度层（早于任何 scroll 事件），避免首帧出现
+    // 「pager 已滚动、chat 面还没套变换」的一帧错位。
+    setMobileChatDepthIfChanged(true)
+  }, [setMobileChatDepthIfChanged])
 
   const handleMobilePagerInteractionEnd = useCallback(() => {
     mobilePagerInteractingRef.current = false
@@ -504,6 +536,8 @@ function App() {
   useLayoutEffect(() => {
     if (!isMobilePanelLayout) {
       mobilePagerInitializedRef.current = false
+      // 离开移动布局：确保深度层关闭，避免桌面端残留 3D 合成层
+      setMobileChatDepthIfChanged(false)
       return
     }
 
@@ -515,6 +549,8 @@ function App() {
       }
       mobileProgrammaticTargetRef.current = null
       mobilePagerInitializedRef.current = true
+      // 首帧直接落位到目标页：属于静止态，不启用 3D 深度层
+      setMobileChatDepthIfChanged(false)
       return
     }
 
@@ -522,7 +558,14 @@ function App() {
       scrollMobilePagerTo(page, 'smooth')
     })
     return () => window.cancelAnimationFrame(frameId)
-  }, [getMobilePageScrollLeft, isMobilePanelLayout, rightPanelOpen, scrollMobilePagerTo, sidebarExpanded])
+  }, [
+    getMobilePageScrollLeft,
+    isMobilePanelLayout,
+    rightPanelOpen,
+    scrollMobilePagerTo,
+    setMobileChatDepthIfChanged,
+    sidebarExpanded,
+  ])
 
   useEffect(() => {
     if (!isMobilePanelLayout) {
@@ -1145,8 +1188,10 @@ function App() {
                       overscrollBehaviorX: 'contain',
                       scrollbarWidth: 'none',
                       WebkitOverflowScrolling: 'touch',
-                      perspective: '1200px',
-                      perspectiveOrigin: '50% 50%',
+                      // perspective 仅在翻页途中启用：静止时挂 perspective 会让子层
+                      // 常驻 3D 合成上下文，滚动对话反复重栅格化 → 闪烁。
+                      perspective: mobileChatDepth ? '1200px' : undefined,
+                      perspectiveOrigin: mobileChatDepth ? '50% 50%' : undefined,
                     }}
                     onScroll={handleMobilePagerScroll}
                     onTouchStart={handleMobilePagerInteractionStart}
@@ -1194,12 +1239,16 @@ function App() {
                         aria-hidden={mobileActivePage !== 'chat'}
                         inert={mobileActivePage !== 'chat'}
                         style={{
-                          transform:
-                            'translate3d(var(--mobile-chat-offset-x, 0px), 0, 0) rotateY(var(--mobile-chat-rotate-y, 0deg)) scale(var(--mobile-chat-scale, 1))',
-                          transformOrigin: 'var(--mobile-chat-transform-origin, 50% 50%)',
-                          transformStyle: 'preserve-3d',
-                          backfaceVisibility: 'hidden',
-                          willChange: 'transform',
+                          // 3D 深度变换只在翻页途中应用。静止时完全去掉 transform/
+                          // preserve-3d/will-change，让包裹虚拟滚动列表的合成层消失，
+                          // 消除滚动对话时的重栅格化闪烁。
+                          transform: mobileChatDepth
+                            ? 'translate3d(var(--mobile-chat-offset-x, 0px), 0, 0) rotateY(var(--mobile-chat-rotate-y, 0deg)) scale(var(--mobile-chat-scale, 1))'
+                            : undefined,
+                          transformOrigin: mobileChatDepth ? 'var(--mobile-chat-transform-origin, 50% 50%)' : undefined,
+                          transformStyle: mobileChatDepth ? 'preserve-3d' : undefined,
+                          backfaceVisibility: mobileChatDepth ? 'hidden' : undefined,
+                          willChange: mobileChatDepth ? 'transform' : undefined,
                         }}
                       >
                         <div
