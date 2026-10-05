@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GitWorkspaceMeta } from '../../../hooks'
-import { getProjectGroupIdentity, sortProjects } from './projectGrouping'
+import { getProjectGroupIdentity, sortProjects, mergeProjectLastUsed } from './projectGrouping'
 
 const gitMeta: GitWorkspaceMeta = {
   isGit: true,
@@ -78,5 +78,38 @@ describe('sortProjects', () => {
     const input = [...projects]
     sortProjects(input, 'updated', { 'C:/alpha': 100 }, true)
     expect(input.map(p => p.name)).toEqual(['Beta', 'Alpha', 'Gamma'])
+  })
+})
+
+describe('mergeProjectLastUsed', () => {
+  it('lets the activity anchor override the server time.updated', () => {
+    // 服务端 time.updated 被 assistant 流式抬得比锚点高，但排序必须认锚点
+    const merged = mergeProjectLastUsed(
+      ['C:/alpha', 'C:/beta'],
+      {},
+      { 'C:/alpha': 999, 'C:/beta': 100 },
+      worktree => (worktree === 'C:/alpha' ? 500 : 800),
+    )
+    expect(merged['C:/alpha']).toBe(500)
+    expect(merged['C:/beta']).toBe(800)
+  })
+
+  it('falls back to the server time when no anchor exists', () => {
+    const merged = mergeProjectLastUsed(['C:/alpha'], {}, { 'C:/alpha': 100 }, () => undefined)
+    expect(merged['C:/alpha']).toBe(100)
+  })
+
+  it('keeps the anchor stable across streaming bumps of time.updated', () => {
+    const pair = [
+      { name: 'Alpha', worktree: 'C:/alpha' },
+      { name: 'Beta', worktree: 'C:/beta' },
+    ]
+    const getAnchor = (worktree: string) => (worktree === 'C:/alpha' ? 500 : 400)
+    const first = mergeProjectLastUsed(['C:/alpha', 'C:/beta'], {}, { 'C:/alpha': 600, 'C:/beta': 100 }, getAnchor)
+    const second = mergeProjectLastUsed(['C:/alpha', 'C:/beta'], {}, { 'C:/alpha': 600, 'C:/beta': 900 }, getAnchor)
+    // 即便 time.updated 来回超越，锚点稳定，项目顺序不变
+    expect(sortProjects(pair, 'updated', first, true).map(p => p.name)).toEqual(
+      sortProjects(pair, 'updated', second, true).map(p => p.name),
+    )
   })
 })

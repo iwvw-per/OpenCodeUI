@@ -56,3 +56,29 @@ export function sortProjects<T extends SortableProject>(
     return a.name.localeCompare(b.name)
   })
 }
+
+/**
+ * 合并项目行「最后对话时间」的三个来源，得到 worktree → 时间戳。
+ *
+ * 优先级：会话活动锚点（用户最后一条消息时间，单调只增）最高；锚点缺失时
+ * （冷启动尚未加载用户消息）回退到服务端按目录拉取的最大 time.updated，再兜底
+ * 本地点击记录 recentProjects。
+ *
+ * 关键：不能对锚点与服务端 time.updated 取 max。assistant 流式输出会持续抬高
+ * time.updated，多个项目并行运行时两边数值交替超越，项目顺序来回交换。锚点才是
+ * 抗抖动的稳定排序依据；time.updated 仅作冷启动的一次性基线。
+ */
+export function mergeProjectLastUsed(
+  worktrees: string[],
+  recentProjects: Record<string, number>,
+  fetchedLastUsed: Record<string, number>,
+  getAnchor: (worktree: string) => number | undefined,
+): Record<string, number> {
+  const map: Record<string, number> = { ...recentProjects }
+  for (const [directory, updated] of Object.entries(fetchedLastUsed)) map[directory] = updated
+  for (const worktree of worktrees) {
+    const anchor = getAnchor(worktree)
+    if (anchor !== undefined) map[worktree] = anchor
+  }
+  return map
+}

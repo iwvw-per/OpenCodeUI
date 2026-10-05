@@ -5,7 +5,7 @@ import { HostQuickSwitcher } from './HostQuickSwitcher'
 import { SessionSortMenu } from './SessionSortMenu'
 import { useMultiServerStore } from '../../../store/multiServerStore'
 import { useServerStore } from '../../../hooks/useServerStore'
-import { getProjectGroupIdentity, sortProjects } from './projectGrouping'
+import { getProjectGroupIdentity, sortProjects, mergeProjectLastUsed } from './projectGrouping'
 import { useHostSlideState } from './hostSwitchDirection'
 import { sessionActivityStore } from '../../../store/sessionActivityStore'
 import { mergeExpandedProjectNames } from './expandedProjects'
@@ -749,16 +749,9 @@ export function SidePanel({
   const fetchedProjectLastUsed = useProjectLastUsedAt(activeServerId, uncoveredProjectWorktrees, true)
 
   const projectLastUsedAt = useMemo(() => {
-    const map: Record<string, number> = { ...recentProjects }
-    for (const [directory, updated] of Object.entries(fetchedProjectLastUsed)) map[directory] = updated
-    // D12：锚点（用户最后一条消息时间）与服务端按目录拉取的最大 time.updated 取较大值，
-    // 而非让锚点无条件覆盖。assistant 流式会把 time.updated 抬得比锚点更新，若用较旧的
-    // 锚点覆盖，项目行时间会回退、排序跳变。
-    for (const worktree of uncoveredProjectWorktrees) {
-      const anchor = sessionActivityStore.getDirectoryAnchor(activeServerId, worktree)
-      if (anchor !== undefined && anchor > (map[worktree] ?? 0)) map[worktree] = anchor
-    }
-    return map
+    return mergeProjectLastUsed(uncoveredProjectWorktrees, recentProjects, fetchedProjectLastUsed, worktree =>
+      sessionActivityStore.getDirectoryAnchor(activeServerId, worktree),
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recentProjects, fetchedProjectLastUsed, uncoveredProjectWorktrees, activeServerId, activityVersion])
 
