@@ -33,9 +33,11 @@ import { serverStore } from '../../../store/serverStore'
 import { SessionListItem } from '../../sessions'
 import { getSelectionRoundClass } from '../../sessions/selectionRound'
 import { SessionChildrenSlot } from './SessionChildrenSlot'
+import { ProjectContextMenu } from './ProjectContextMenu'
 import { buildFolderStatus, type FolderStatus } from './folderStatus'
 import { cn } from '../../../utils/cn'
 import { interactive } from '../../../utils/interaction'
+import { hapticTap } from '../../../utils/haptics'
 
 const DIRECTORY_PAGE_SIZE = 5
 
@@ -909,6 +911,65 @@ function FolderRecentSection({
     setRemoveArmed(false)
   }, [])
 
+  // 项目行右键 / 长按菜单：桌面右键、移动端长按（位置取触点坐标）。
+  // 触摸端没有 hover，行内 hover 才出现的 + / 打开 / 移除按钮都够不到，
+  // 长按菜单是这些操作的唯一入口。
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const touchMovedRef = useRef(false)
+  // 长按弹出菜单后，抬手会补一个 click 命中行内按钮，需吞掉这一次点击，
+  // 否则菜单打开的同时项目被展开/收起。
+  const suppressClickRef = useRef(false)
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (isEditMode || !project.worktree) return
+      e.preventDefault()
+      e.stopPropagation()
+      setContextMenu({ x: e.clientX, y: e.clientY })
+    },
+    [isEditMode, project.worktree],
+  )
+
+  const handleProjectTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (!preferTouchUi || isEditMode || !project.worktree) return
+      const touch = e.touches[0]
+      const x = touch?.clientX ?? 0
+      const y = touch?.clientY ?? 0
+      touchMovedRef.current = false
+      suppressClickRef.current = false
+      longPressTimer.current = setTimeout(() => {
+        if (touchMovedRef.current) return
+        suppressClickRef.current = true
+        hapticTap('medium')
+        setContextMenu({ x, y })
+      }, 500)
+    },
+    [preferTouchUi, isEditMode, project.worktree],
+  )
+
+  const handleProjectTouchMove = useCallback(() => {
+    touchMovedRef.current = true
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }, [])
+
+  const handleProjectTouchEnd = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) clearTimeout(longPressTimer.current)
+    }
+  }, [])
+
   const canOpenDirectory = isTauri() && !isTauriMobile() && !!project.worktree
   const handleOpenDirectory = useCallback(async () => {
     const directory = project.worktree
@@ -924,6 +985,28 @@ function FolderRecentSection({
       uiErrorHandler('open project directory', e)
     }
   }, [project.worktree, serverId])
+
+  const contextMenuNode = contextMenu ? (
+    <ProjectContextMenu
+      position={contextMenu}
+      onClose={() => setContextMenu(null)}
+      directory={project.worktree}
+      onNewSession={
+        onNewSessionInDirectory && project.worktree
+          ? () => onNewSessionInDirectory(project.worktree)
+          : undefined
+      }
+      onOpenDirectory={canOpenDirectory ? () => void handleOpenDirectory() : undefined}
+      onRemove={
+        onRemoveProject && project.worktree
+          ? () => {
+              disarmRemove()
+              onRemoveProject(project)
+            }
+          : undefined
+      }
+    />
+  ) : null
 
   useEffect(() => {
     if (isExpanded && inView) {
@@ -1071,6 +1154,11 @@ function FolderRecentSection({
         {/* 文件夹行 — 选中用圆角底，连续选中拼成一条；整行可直接拖拽重排（点击仍是展开/收起） */}
         <div
           onPointerDown={canDrag ? onDragStart : undefined}
+          onContextMenu={handleContextMenu}
+          onTouchStart={handleProjectTouchStart}
+          onTouchMove={handleProjectTouchMove}
+          onTouchEnd={handleProjectTouchEnd}
+          onTouchCancel={handleProjectTouchEnd}
           className={cn(
             'group/folder relative flex w-full items-center transition-colors duration-150 select-none',
             getSelectionRoundClass(isEditMode && isProjectChecked, projectCheckedPrev, folderCheckedNext, 'md'),
@@ -1093,6 +1181,12 @@ function FolderRecentSection({
               window.getSelection()?.removeAllRanges()
             }}
             onClick={e => {
+              // 长按已弹出菜单：吞掉抬手补发的这次 click，避免菜单打开的同时展开/收起
+              if (suppressClickRef.current) {
+                suppressClickRef.current = false
+                e.preventDefault()
+                return
+              }
               if (isEditMode) {
                 // 管理模式：点文件夹 = 选中；Shift 点可范围选
                 onToggleProjectCheck?.({ shiftKey: e.shiftKey })
@@ -1102,7 +1196,10 @@ function FolderRecentSection({
               onToggle()
             }}
             className={cn(
-              'flex flex-1 min-w-0 items-center gap-1 pl-2 pr-2 py-1.5 text-left cursor-default select-none rounded-md',
+              // 触摸端加大上下内边距，行高从约 32px 提到约 44px，满足手指触控热区；
+              // 桌面保持 py-1.5 的紧凑排布。
+              'flex flex-1 min-w-0 items-center gap-1 pl-2 pr-2 text-left cursor-default select-none rounded-md',
+              preferTouchUi ? 'py-3' : 'py-1.5',
               // 点击/展开反馈走 transition-colors，与 interactive 词汇表一致；
               // 再叠一个 150ms 的箭头旋转（见下方 ChevronDownIcon），
               // 让"点了一下"有明确反馈而不是瞬变。
@@ -1254,6 +1351,7 @@ function FolderRecentSection({
             </span>
           ) : null}
         </div>
+        {contextMenuNode}
 
         {/* Session 列表 — mt-1 与项目行拉开：项目行自身 py-1.5(6px) + 这里 4px，
             合计约 10px，比会话之间的 4px 明显，层级更清楚。

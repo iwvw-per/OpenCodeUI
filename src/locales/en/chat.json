@@ -292,6 +292,8 @@
     "doneManaging": "Done",
     "removeProject": "Remove Project",
     "removeProjectConfirm": "Remove this project folder from the list? Files won't be deleted.",
+    "newTaskInDirectory": "New conversation here",
+    "copyProjectPath": "Copy path",
     "deleteSessionsWithCount": "Delete {{count}} session(s)",
     "removeProjectsWithCount": "Remove {{count}} project(s)",
     "batchDeleteSessions": "Delete {{count}} Session(s)",

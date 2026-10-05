@@ -5,7 +5,6 @@
 // ============================================
 
 import { memo, useCallback, useMemo, useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useFileExplorer, type FileTreeNode } from '../hooks'
 import { useVerticalSplitResize } from '../hooks/useVerticalSplitResize'
@@ -23,7 +22,7 @@ import {
 import { CodePreview } from './CodePreview'
 import { IconButton } from './ui/IconButton'
 import { Spinner } from './ui/Spinner'
-import { ContextMenuItem } from './ui/ContextMenuItem'
+import { FileContextMenu, type FileContextMenuTarget } from './FileContextMenu'
 import { HtmlFilePreviewFrame } from './HtmlFilePreviewFrame'
 import { PreviewTabsBar, type PreviewTabsBarItem } from './PreviewTabsBar'
 import {
@@ -48,12 +47,14 @@ import {
   type PreviewCategory,
 } from '../utils/mimeUtils'
 import { downloadFileContent } from '../utils/downloadUtils'
-import { searchText, searchFiles } from '../api/file'
+import { searchText, searchFiles, getFileContent } from '../api/file'
 import type { FileContent, TextSearchMatch } from '../api/types'
 import { startInternalDrag } from '../lib/internalDragCore'
 import { toAbsolutePath } from '../features/mention'
 import { getDesktopPlatform } from '../utils/tauri'
 import { canUseNativeFileIntegration } from '../utils/nativeFileIntegration'
+import { useInputCapabilities } from '../hooks/useInputCapabilities'
+import { hapticTap } from '../utils/haptics'
 import type { TargetLineRange } from './codeMirrorReadonlyExtensions'
 
 function getRevealInSystemExplorerLabel(t: (key: string) => string): string {
@@ -143,15 +144,19 @@ export const FileExplorer = memo(function FileExplorer({
   sessionId,
 }: FileExplorerProps) {
   const { t } = useTranslation(['components', 'common'])
+  const { preferTouchUi } = useInputCapabilities()
   const containerRef = useRef<HTMLDivElement>(null)
   const treeRef = useRef<HTMLDivElement>(null)
-  const fileContextMenuRef = useRef<HTMLDivElement>(null)
   const searchRequestIdRef = useRef(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<TextSearchMatch[]>([])
   const [fileResults, setFileResults] = useState<string[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
-  const [fileContextMenu, setFileContextMenu] = useState<{ x: number; y: number; absolutePath: string } | null>(null)
+  const [fileContextMenu, setFileContextMenu] = useState<FileContextMenuTarget & { x: number; y: number } | null>(null)
+  // 长按弹出菜单后，抬手会补一次 click，需吞掉，否则菜单打开的同时文件被打开/展开。
+  const suppressClickRef = useRef(false)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const touchMovedRef = useRef(false)
   // 系统文件管理器只能显示本机磁盘：远程服务器（经网关访问）的路径在本机不存在，
   // 「在资源管理器中显示」只会打开本机同名路径或报错，因此仅本机目标才提供该项。
   const canRevealFiles = canUseNativeFileIntegration(serverId)
@@ -227,43 +232,88 @@ export const FileExplorer = memo(function FileExplorer({
   )
 
   const handleFileContextMenu = useCallback(
-    (event: React.MouseEvent, path: string, absolute?: string) => {
-      if (!canRevealFiles) return
-      const absolutePath = resolveAbsolutePath(path, absolute)
-      if (!absolutePath) return
+    (event: React.MouseEvent, path: string, absolute?: string, isDirectory = false) => {
+      const resolvedAbsolute = resolveAbsolutePath(path, absolute)
+      // 至少要有「复制相对路径」可做，才值得弹菜单
+      if (!path) return
       event.preventDefault()
       event.stopPropagation()
-      setFileContextMenu({ x: event.clientX, y: event.clientY, absolutePath })
+      const name = path.split(/[/\\]/).pop() || path
+      setFileContextMenu({ x: event.clientX, y: event.clientY, path, absolute: resolvedAbsolute ?? undefined, name, isDirectory })
     },
-    [canRevealFiles, resolveAbsolutePath],
+    [resolveAbsolutePath],
   )
 
+  // 触摸端长按：打开节点操作菜单（位置取触点坐标）。
+  const handleFileTouchStart = useCallback(
+    (event: React.TouchEvent, path: string, absolute?: string, isDirectory = false) => {
+      if (!preferTouchUi || !path) return
+      const touch = event.touches[0]
+      const x = touch?.clientX ?? 0
+      const y = touch?.clientY ?? 0
+      const resolvedAbsolute = resolveAbsolutePath(path, absolute)
+      const name = path.split(/[/\\]/).pop() || path
+      touchMovedRef.current = false
+      suppressClickRef.current = false
+      longPressTimerRef.current = setTimeout(() => {
+        if (touchMovedRef.current) return
+        suppressClickRef.current = true
+        hapticTap('medium')
+        setFileContextMenu({ x, y, path, absolute: resolvedAbsolute ?? undefined, name, isDirectory })
+      }, 500)
+    },
+    [preferTouchUi, resolveAbsolutePath],
+  )
+
+  const handleFileTouchMove = useCallback(() => {
+    touchMovedRef.current = true
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+
+  const handleFileTouchEnd = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+
+  const consumeSuppressedClick = useCallback(() => {
+    if (!suppressClickRef.current) return false
+    suppressClickRef.current = false
+    return true
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current)
+    }
+  }, [])
+
   const handleRevealInSystemExplorer = useCallback(() => {
-    if (!fileContextMenu) return
-    const absolutePath = fileContextMenu.absolutePath
-    setFileContextMenu(null)
+    const absolutePath = fileContextMenu?.absolute
+    if (!absolutePath) return
     void revealPathInSystemExplorer(absolutePath).catch(() => {})
   }, [fileContextMenu])
 
-  useEffect(() => {
-    if (!fileContextMenu) return
+  // 从文件树直接下载：文件节点才可下载（目录跳过）。
+  const handleDownloadFile = useCallback(async () => {
+    if (!fileContextMenu || fileContextMenu.isDirectory || !directory) return
+    const content = await getFileContent(fileContextMenu.path, directory, serverId)
+    downloadFileContent(content, fileContextMenu.name)
+  }, [fileContextMenu, directory, serverId])
 
-    const handleClickOutside = (event: MouseEvent) => {
-      if (fileContextMenuRef.current && !fileContextMenuRef.current.contains(event.target as Node)) {
-        setFileContextMenu(null)
-      }
-    }
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setFileContextMenu(null)
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    document.addEventListener('keydown', handleEscape)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('keydown', handleEscape)
-    }
-  }, [fileContextMenu])
+  const fileContextMenuNode = fileContextMenu ? (
+    <FileContextMenu
+      state={fileContextMenu}
+      onClose={() => setFileContextMenu(null)}
+      onDownload={handleDownloadFile}
+      onReveal={canRevealFiles && fileContextMenu.absolute ? handleRevealInSystemExplorer : undefined}
+      revealLabel={revealInSystemExplorerLabel}
+    />
+  ) : null
 
   // 关闭预览
   const handleClosePreview = useCallback(() => {
@@ -471,7 +521,11 @@ export const FileExplorer = memo(function FileExplorer({
               error={searchError}
               onSelect={handleSearchResultClick}
               onSelectFile={handleFileResultClick}
-              onContextMenuFile={canRevealFiles ? handleFileContextMenu : undefined}
+              onContextMenuFile={handleFileContextMenu}
+              onTouchFile={handleFileTouchStart}
+              onTouchMove={handleFileTouchMove}
+              onTouchEnd={handleFileTouchEnd}
+              consumeSuppressedClick={consumeSuppressedClick}
               directory={directory}
             />
           ) : isLoading && tree.length === 0 ? (
@@ -497,7 +551,12 @@ export const FileExplorer = memo(function FileExplorer({
                   expandedPaths={expandedPaths}
                   fileStatus={fileStatus}
                   onClick={handleFileClick}
-                  onContextMenu={canRevealFiles ? handleFileContextMenu : undefined}
+                  onContextMenu={handleFileContextMenu}
+                  onTouchStart={handleFileTouchStart}
+                  onTouchMove={handleFileTouchMove}
+                  onTouchEnd={handleFileTouchEnd}
+                  consumeSuppressedClick={consumeSuppressedClick}
+                  touchFriendly={preferTouchUi}
                 />
               ))}
             </div>
@@ -505,19 +564,7 @@ export const FileExplorer = memo(function FileExplorer({
         </div>
       </div>
 
-      {fileContextMenu &&
-        createPortal(
-          <div
-            ref={fileContextMenuRef}
-            className="fixed z-[9999] bg-bg-100 border border-border-200 rounded-lg shadow-lg p-1 min-w-[160px]"
-            style={{ left: fileContextMenu.x, top: fileContextMenu.y }}
-          >
-            <ContextMenuItem onClick={handleRevealInSystemExplorer}>
-              {revealInSystemExplorerLabel}
-            </ContextMenuItem>
-          </div>,
-          document.body,
-        )}
+      {fileContextMenuNode}
 
       {/* Resize Handle - 与标签栏同色 */}
       {showPreview && (
@@ -564,7 +611,11 @@ interface TextSearchResultsProps {
   error: string | null
   onSelect: (match: TextSearchMatch) => void
   onSelectFile: (path: string) => void
-  onContextMenuFile?: (event: React.MouseEvent, path: string, absolute?: string) => void
+  onContextMenuFile?: (event: React.MouseEvent, path: string, absolute?: string, isDirectory?: boolean) => void
+  onTouchFile?: (event: React.TouchEvent, path: string, absolute?: string, isDirectory?: boolean) => void
+  onTouchMove?: () => void
+  onTouchEnd?: () => void
+  consumeSuppressedClick?: () => boolean
   directory?: string
 }
 
@@ -576,6 +627,10 @@ const TextSearchResults = memo(function TextSearchResults({
   onSelect,
   onSelectFile,
   onContextMenuFile,
+  onTouchFile,
+  onTouchMove,
+  onTouchEnd,
+  consumeSuppressedClick,
   directory,
 }: TextSearchResultsProps) {
   const { t } = useTranslation(['components', 'common'])
@@ -636,8 +691,15 @@ const TextSearchResults = memo(function TextSearchResults({
                 key={`file:${path}`}
                 type="button"
                 onPointerDown={e => handlePointerDragStart(e, path)}
-                onClick={() => onSelectFile(path)}
-                onContextMenu={event => onContextMenuFile?.(event, path)}
+                onClick={() => {
+                  if (consumeSuppressedClick?.()) return
+                  onSelectFile(path)
+                }}
+                onContextMenu={event => onContextMenuFile?.(event, path, undefined, false)}
+                onTouchStart={event => onTouchFile?.(event, path, undefined, false)}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+                onTouchCancel={onTouchEnd}
                 className="w-full px-2 py-1.5 text-left hover:bg-bg-200 transition-colors"
               >
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -679,8 +741,15 @@ const TextSearchResults = memo(function TextSearchResults({
                 key={`${path}:${match.line_number}:${match.absolute_offset}:${index}`}
                 type="button"
                 onPointerDown={e => handlePointerDragStart(e, path)}
-                onClick={() => onSelect(match)}
-                onContextMenu={event => onContextMenuFile?.(event, path)}
+                onClick={() => {
+                  if (consumeSuppressedClick?.()) return
+                  onSelect(match)
+                }}
+                onContextMenu={event => onContextMenuFile?.(event, path, undefined, false)}
+                onTouchStart={event => onTouchFile?.(event, path, undefined, false)}
+                onTouchMove={onTouchMove}
+                onTouchEnd={onTouchEnd}
+                onTouchCancel={onTouchEnd}
                 className="w-full px-2 py-1.5 text-left hover:bg-bg-200 transition-colors"
               >
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -724,7 +793,14 @@ interface FileTreeItemProps {
   expandedPaths: Set<string>
   fileStatus: Map<string, { status: string }>
   onClick: (node: FileTreeNode) => void
-  onContextMenu?: (event: React.MouseEvent, path: string, absolute?: string) => void
+  onContextMenu?: (event: React.MouseEvent, path: string, absolute?: string, isDirectory?: boolean) => void
+  onTouchStart?: (event: React.TouchEvent, path: string, absolute?: string, isDirectory?: boolean) => void
+  onTouchMove?: () => void
+  onTouchEnd?: () => void
+  /** 读取并清除「长按后吞掉补发 click」标记 */
+  consumeSuppressedClick?: () => boolean
+  /** 触摸优先设备：加大行高，满足手指触控热区 */
+  touchFriendly?: boolean
 }
 
 const FileTreeItem = memo(function FileTreeItem({
@@ -734,6 +810,11 @@ const FileTreeItem = memo(function FileTreeItem({
   fileStatus,
   onClick,
   onContextMenu,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd,
+  consumeSuppressedClick,
+  touchFriendly = false,
 }: FileTreeItemProps) {
   const isExpanded = expandedPaths.has(node.path)
   const isDirectory = node.type === 'directory'
@@ -774,12 +855,21 @@ const FileTreeItem = memo(function FileTreeItem({
       <button
         type="button"
         onPointerDown={handlePointerDragStart}
-        onClick={() => onClick(node)}
-        onContextMenu={event => onContextMenu?.(event, node.path, node.absolute)}
+        onClick={() => {
+          // 长按已弹出菜单：吞掉抬手补发的这次 click，避免菜单打开的同时打开/展开文件
+          if (consumeSuppressedClick?.()) return
+          onClick(node)
+        }}
+        onContextMenu={event => onContextMenu?.(event, node.path, node.absolute, isDirectory)}
+        onTouchStart={event => onTouchStart?.(event, node.path, node.absolute, isDirectory)}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
         className={`
-          w-full flex items-center gap-1 px-2 py-0.5 text-left cursor-default
+          w-full flex items-center gap-1 px-2 text-left cursor-default
           select-none hover:bg-bg-200 transition-colors text-[length:var(--fs-sm)]
           text-text-300
+          ${touchFriendly ? 'py-2' : 'py-0.5'}
           ${node.ignored ? 'opacity-50' : ''}
         `}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
@@ -827,6 +917,11 @@ const FileTreeItem = memo(function FileTreeItem({
               fileStatus={fileStatus}
               onClick={onClick}
               onContextMenu={onContextMenu}
+              onTouchStart={onTouchStart}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
+              consumeSuppressedClick={consumeSuppressedClick}
+              touchFriendly={touchFriendly}
             />
           ))}
         </div>

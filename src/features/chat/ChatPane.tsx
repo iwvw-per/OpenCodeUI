@@ -44,6 +44,7 @@ import { useTheme } from '../../hooks/useTheme'
 import { useWorkStatus } from '../../store/workStatusStore'
 import { WorkStatusPanel } from '../workStatus/WorkStatusPanel'
 import { useWorkStatusVisibility } from '../workStatus/useWorkStatusVisibility'
+import { setWorkStatusPanelVisible, clearWorkStatusPanelVisible } from '../workStatus/workStatusVisibilityStore'
 import type { Attachment } from '../../api'
 import type { MessageError } from '../../types/message'
 import { getInternalDragSnapshot, subscribeInternalDrag, subscribeInternalDrop } from '../../lib/internalDragCore'
@@ -931,6 +932,14 @@ export const ChatPane = memo(function ChatPane({
     disabled: showCompactShell,
     enabled: workStatus.enabled,
   })
+
+  // 把面板占位状态广播给顶栏：顶栏的上下文圆环在面板可见时隐藏，避免重复。
+  // 分屏 pane 的 PaneHeader 不渲染圆环，这里只在单视图 pane 发布。
+  const workStatusPanelVisible = workStatusVisible && !showCompactShell
+  useEffect(() => {
+    setWorkStatusPanelVisible(paneId, workStatusPanelVisible)
+    return () => clearWorkStatusPanelVisible(paneId)
+  }, [paneId, workStatusPanelVisible])
 
   const inlineToolRequestCtx = useMemo<InlineToolRequestContextValue>(
     () => ({

@@ -22,7 +22,9 @@
     "revealInFinder": "在 Finder 中显示",
     "revealInFileManager": "在文件管理器中显示",
     "showHiddenPaths": "显示被折叠的路径",
-    "untitled": "未命名"
+    "untitled": "未命名",
+    "copyRelativePath": "复制相对路径",
+    "copyAbsolutePath": "复制绝对路径"
   },
   "terminal": {
     "terminal": "终端",

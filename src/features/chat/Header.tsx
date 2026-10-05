@@ -17,8 +17,11 @@ import { Dialog, IconButton } from '../../components/ui'
 import { cn } from '../../utils/cn'
 import { interactive } from '../../utils/interaction'
 import { ShareDialog } from './ShareDialog'
-import { messageStore, useHeaderSessionMeta, notificationStore } from '../../store'
+import { messageStore, useHeaderSessionMeta, notificationStore, usePaneLayout, usePaneController } from '../../store'
 import { useLayoutStore, layoutStore } from '../../store/layoutStore'
+import { useWorkStatusPanelVisible } from '../workStatus/workStatusVisibilityStore'
+import { ContextUsageRing } from './ContextUsageRing'
+import { ContextDetailsDialog } from './sidebar/ContextDetailsDialog'
 import { serverStore } from '../../store/serverStore'
 import { workStatusStore, useWorkStatus } from '../../store/workStatusStore'
 import { useSessionContext } from '../../contexts/useSessionContext'
@@ -158,7 +161,16 @@ export function Header({
   const [mcpDialogOpen, setMcpDialogOpen] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [editTitle, setEditTitle] = useState('')
+  const [contextDialogOpen, setContextDialogOpen] = useState(false)
   const titleInputRef = useRef<HTMLInputElement>(null)
+
+  // 顶栏上下文圆环：仅单视图（聚焦 pane）渲染。桌面端工作状态面板可见时隐藏
+  // （面板内已有上下文信息）；移动端面板永不占位，圆环始终显示。
+  const paneLayout = usePaneLayout()
+  const focusedController = usePaneController(paneLayout.focusedPaneId)
+  const workStatusPanelVisible = useWorkStatusPanelVisible(paneLayout.focusedPaneId)
+  const showContextRing = !!sessionId && !workStatusPanelVisible
+  const contextRingLimit = focusedController?.contextLimit ?? 200000
 
   const sessionTitle = currentSessionTitle || t('header.newChat')
   const isCompact = presentation.isCompact
@@ -273,6 +285,13 @@ export function Header({
         <div data-tauri-drag-region className="h-full min-w-0 flex-1" />
 
         <div className="flex items-center gap-1 pointer-events-auto shrink-0 z-20">
+            {showContextRing && (
+              <ContextUsageRing
+                contextLimit={contextRingLimit}
+                onOpenDetails={() => setContextDialogOpen(true)}
+              />
+            )}
+
             {onTogglePaneFullscreen && (
               <IconButton
                 aria-label={isPaneFullscreen ? t('header.exitFullscreenPane') : t('header.enterFullscreenPane')}
@@ -365,6 +384,12 @@ export function Header({
 
         <ShareDialog isOpen={shareDialogOpen} onClose={() => setShareDialogOpen(false)} />
 
+        <ContextDetailsDialog
+          isOpen={contextDialogOpen}
+          onClose={() => setContextDialogOpen(false)}
+          contextLimit={contextRingLimit}
+        />
+
         <Dialog
           isOpen={mcpDialogOpen}
           onClose={() => setMcpDialogOpen(false)}
@@ -409,6 +434,13 @@ export function Header({
 
       <div className="flex items-center gap-1 pointer-events-auto shrink-0 z-20">
         <div className="flex items-center gap-0.5">
+          {showContextRing && (
+            <ContextUsageRing
+              contextLimit={contextRingLimit}
+              onOpenDetails={() => setContextDialogOpen(true)}
+            />
+          )}
+
           {onTogglePaneFullscreen && (
             <IconButton
               aria-label={isPaneFullscreen ? t('header.exitFullscreenPane') : t('header.enterFullscreenPane')}
@@ -507,6 +539,12 @@ export function Header({
       </div>
 
       <ShareDialog isOpen={shareDialogOpen} onClose={() => setShareDialogOpen(false)} />
+
+      <ContextDetailsDialog
+        isOpen={contextDialogOpen}
+        onClose={() => setContextDialogOpen(false)}
+        contextLimit={contextRingLimit}
+      />
 
       {/* MCP 服务器状态与开关。
           高度：McpPanel 根节点是 h-full，弹窗必须给出确定高度，否则内部列表的 overflow-auto 不生效；

@@ -22,7 +22,9 @@
     "revealInFinder": "Reveal in Finder",
     "revealInFileManager": "Reveal in File Manager",
     "showHiddenPaths": "Show hidden paths",
-    "untitled": "Untitled"
+    "untitled": "Untitled",
+    "copyRelativePath": "Copy relative path",
+    "copyAbsolutePath": "Copy absolute path"
   },
   "terminal": {
     "terminal": "Terminal",
