@@ -9,7 +9,7 @@
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverTrigger, PopoverContent } from '../../../components/ui'
 import { StatsIcon, GaugeIcon, DatabaseIcon } from '../../../components/Icons'
-import { formatDuration } from '../../../utils/formatUtils'
+import { formatDuration, formatTokenRate } from '../../../utils/formatUtils'
 import type { SessionTurnStats } from '../../../hooks/useSessionTurnStats'
 
 interface SessionStatsPopoverProps {
@@ -80,12 +80,6 @@ export function SessionStatsPopover({ stats, tokensPerSec }: SessionStatsPopover
       </PopoverContent>
     </Popover>
   )
-}
-
-/** 速率显示：<10 保留一位小数，其余取整 */
-export function formatTokenRate(rate: number): string {
-  if (rate < 0.05) return '0 tok/s'
-  return `${rate < 10 ? rate.toFixed(1) : Math.round(rate)} tok/s`
 }
 
 function formatTokenCount(value: number): string {

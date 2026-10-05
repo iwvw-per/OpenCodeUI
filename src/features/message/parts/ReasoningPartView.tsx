@@ -124,7 +124,7 @@ function useTickerReveal(target: string, active: boolean) {
 }
 
 /**
- * 块状模式：固定约 5 行的容器，内部纵向滚动，上下渐隐。
+ * 块状模式：固定约 5 行的容器，内部纵向平滑上推，上下渐隐。
  *
  * 采用 Reveal Streaming 的核心思路（committed-layout 冻结）：
  * - 已换行的整行「冻结」成独立 div（contain: content），此后永不修改，浏览器可
@@ -132,23 +132,26 @@ function useTickerReveal(target: string, active: boolean) {
  * - 只有一个「活跃尾行」随网络增长，重排范围被限制在这一行内。
  * - 容器 overflow-anchor: none：关闭浏览器滚动锚定，避免它在尾部插入时自作主张
  *   跳动 scrollTop（实测可达每帧数百 px）。
- * - 滚动位置用整数像素 transform 平滑逼近目标，且每帧只写 transform，不读布局；
- *   布局测量交给 ResizeObserver 异步完成。
+ * - 不再用 rAF 逐帧推进滚动游标：每帧 0.4px 的位移经整数取整后会出现台阶，且顶部
+ *   裁剪回补与 ResizeObserver 异步测量之间存在竞态，长思考（超过 BLOCK_MAX_BLOCKS 行）
+ *   时偶发回弹抖动。改为「事件驱动的平滑上推」：每次结构变化（新增冻结行 / 尾行变高）
+ *   后直接把目标位移交给 CSS transition，由合成器线程插值，位移连续、无亚像素台阶、
+ *   无帧竞态。
  */
 const BLOCK_HEIGHT_PX = 100
 /** 每行高度（leading-5 = 20px），也是冻结块与空白行的最小高度 */
 const BLOCK_LINE_PX = 20
 /** 预载：可视窗口下方额外多铺 2 行，作为缓冲 */
 const BLOCK_PRELOAD_PX = BLOCK_LINE_PX * 2
-/** 冻结块数量上限：超出从顶部移除，避免无限增长 */
-const BLOCK_MAX_BLOCKS = 80
+/** 冻结块数量上限：超出后批量裁剪到 BLOCK_TRIM_TO，避免逐行裁剪引发频繁补偿 */
+const BLOCK_MAX_BLOCKS = 300
+const BLOCK_TRIM_TO = 200
 /** 结束后折叠动画时长：块高度收拢 + 淡出，随后摘要淡入 */
 const BLOCK_COLLAPSE_MS = 200
+/** 每次上推的过渡时长与缓动 */
+const BLOCK_PUSH_MS = 200
+const BLOCK_PUSH_EASING = 'cubic-bezier(0.25, 1, 0.5, 1)'
 const BLOCK_FADE_MASK = 'linear-gradient(to bottom, transparent 0, #000 18%, #000 82%, transparent 100%)'
-/** 滚动速度（像素/秒）：缓冲内恒定，落后超过预载时按比例提速追赶 */
-const BLOCK_SCROLL_SPEED = 26
-const BLOCK_SCROLL_MAX_SPEED = 600
-const BLOCK_SCROLL_SMOOTH = 0.12
 
 /** 创建一个冻结行 / 尾行元素：固定行高、保留换行、长行可断行 */
 function createBlockLine(): HTMLDivElement {
@@ -160,25 +163,65 @@ function createBlockLine(): HTMLDivElement {
   return el
 }
 
+/**
+ * 读取元素当前实际渲染的 translateY 位移（含 transition 插值中的中间值）。
+ * transform 写作 translate3d(0, -y, 0)，矩阵 m42 = -y。无法解析时退回 0。
+ */
+function readCurrentTranslateY(el: HTMLElement): number {
+  const t = typeof getComputedStyle === 'function' ? getComputedStyle(el).transform : ''
+  if (!t || t === 'none') return 0
+  if (typeof DOMMatrixReadOnly === 'function') {
+    try {
+      return -new DOMMatrixReadOnly(t).m42
+    } catch {
+      return 0
+    }
+  }
+  const m = /matrix(?:3d)?\(([^)]+)\)/.exec(t)
+  if (!m) return 0
+  const parts = m[1].split(',').map(Number)
+  const ty = parts.length >= 6 ? parts[parts.length === 6 ? 5 : 13] : 0
+  return Number.isFinite(ty) ? -ty : 0
+}
+
 function useBlockReveal(target: string, active: boolean) {
   const containerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const tailRef = useRef<HTMLDivElement | null>(null)
   const blocksRef = useRef<HTMLDivElement[]>([])
   const committedEndRef = useRef(0)
+  /** 当前已上推的位移（正整数像素），与 DOM transform 一致 */
   const scrollYRef = useRef(0)
-  const scrollSpeedRef = useRef(0)
-  const scrollTargetRef = useRef(0)
-  const lastTsRef = useRef(0)
+  /** 上次内容位移缓存，用于识别「结构没变」并跳过写样式 */
   const lastTailRef = useRef('')
   const lastMaskOnRef = useRef<boolean | null>(null)
   const lastTransformRef = useRef<string>('')
-  const rafRef = useRef(0)
 
   const prefersReducedMotion = () =>
     typeof window !== 'undefined' &&
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  /**
+   * 把位移提交到 DOM：从当前 scrollY 平滑过渡到目标值。
+   * - 目标值始终由裁剪后的 scrollHeight 现算，因此顶部裁剪与位移天然同帧一致。
+   * - 整数像素目标，transition 由合成器线程插值，位移连续无台阶。
+   * - transition 时长内新提交会覆盖旧目标，浏览器从当前插值位置继续，天然平滑衔接。
+   */
+  const commitScroll = useCallback((targetY: number, animate: boolean) => {
+    const el = innerRef.current
+    if (!el) return
+    const y = Math.max(0, Math.round(targetY))
+    if (y === scrollYRef.current) return
+    scrollYRef.current = y
+    const transform = y > 0 ? `translate3d(0, ${-y}px, 0)` : ''
+    if (transform === lastTransformRef.current) return
+    lastTransformRef.current = transform
+    el.style.transition = animate
+      ? `transform ${BLOCK_PUSH_MS}ms ${BLOCK_PUSH_EASING}`
+      : 'none'
+    el.style.transform = transform
+  }, [])
 
   // 0) 进入流式时重建结构：清空 + 建一个活跃尾行
   useLayoutEffect(() => {
@@ -187,12 +230,11 @@ function useBlockReveal(target: string, active: boolean) {
     if (!inner) return
 
     inner.textContent = ''
+    inner.style.transition = 'none'
+    inner.style.transform = ''
     blocksRef.current = []
     committedEndRef.current = 0
     scrollYRef.current = 0
-    scrollSpeedRef.current = 0
-    scrollTargetRef.current = 0
-    lastTsRef.current = 0
     lastTailRef.current = ''
     lastMaskOnRef.current = null
     lastTransformRef.current = ''
@@ -206,8 +248,9 @@ function useBlockReveal(target: string, active: boolean) {
   useEffect(() => {
     if (!active) return
     const inner = innerRef.current
+    const container = containerRef.current
     const tail = tailRef.current
-    if (!inner || !tail) return
+    if (!inner || !container || !tail) return
 
     const text = target
     // 只把「最后一个换行之前」的整行冻结；最后一行仍在生成，留在尾行
@@ -227,15 +270,28 @@ function useBlockReveal(target: string, active: boolean) {
       }
       committedEnd = segStart
       committedEndRef.current = committedEnd
+    }
 
-      // 顶部裁剪：移除最旧的冻结块，并把 scrollY 等量回补，画面不跳
-      const blocks = blocksRef.current
-      while (blocks.length > BLOCK_MAX_BLOCKS) {
+    // 顶部裁剪：一次性裁到 BLOCK_TRIM_TO，避免逐行裁剪导致频繁补偿。
+    // 移除 DOM 会让剩余内容整体上移，必须同帧「瞬间」把 translateY 减小等量高度
+    // （transition: none），否则移除的瞬时跳变会和后续 transition 叠加成可见抖动。
+    const blocks = blocksRef.current
+    if (blocks.length > BLOCK_MAX_BLOCKS) {
+      let removedHeight = 0
+      while (blocks.length > BLOCK_TRIM_TO) {
         const removed = blocks.shift()
         if (!removed) break
-        const height = removed.offsetHeight
+        removedHeight += removed.offsetHeight
         removed.remove()
-        scrollYRef.current = Math.max(0, scrollYRef.current - height)
+      }
+      if (removedHeight > 0) {
+        // 读取当前实际插值位移（可能处于过渡中），在此基础上瞬间抵消裁剪高度
+        const currentY = readCurrentTranslateY(inner)
+        const nextY = Math.max(0, Math.round(currentY - removedHeight))
+        inner.style.transition = 'none'
+        inner.style.transform = nextY > 0 ? `translate3d(0, ${-nextY}px, 0)` : ''
+        lastTransformRef.current = inner.style.transform
+        scrollYRef.current = nextY
       }
     }
 
@@ -245,78 +301,36 @@ function useBlockReveal(target: string, active: boolean) {
       lastTailRef.current = tailText
       tail.textContent = tailText
     }
-  }, [target, active])
 
-  // 2) 滚动动画：每帧只推进游标 + 写整数像素 transform，绝不读布局
-  useEffect(() => {
-    if (!active) return
-    if (prefersReducedMotion()) return
+    // 布局测量 + 提交位移。读 scrollHeight 会触发布局，但只在内容变化时发生，
+    // 不再是每帧。裁剪后的 scrollHeight 已反映最终结构，目标值现算即可。
+    const maxScroll = Math.max(0, inner.scrollHeight - container.clientHeight)
+    const targetY = Math.max(0, maxScroll - BLOCK_PRELOAD_PX)
+    commitScroll(targetY, !prefersReducedMotion())
 
-    const tick = (ts: number) => {
-      const dt = lastTsRef.current === 0 ? 0 : Math.min(0.05, (ts - lastTsRef.current) / 1000)
-      lastTsRef.current = ts
-
-      const distance = scrollTargetRef.current - scrollYRef.current
-      let desiredSpeed = 0
-      if (distance > 0.5) {
-        desiredSpeed = Math.min(
-          BLOCK_SCROLL_MAX_SPEED,
-          BLOCK_SCROLL_SPEED * (1 + Math.max(0, distance - BLOCK_PRELOAD_PX) / BLOCK_PRELOAD_PX),
-        )
-      }
-      scrollSpeedRef.current += (desiredSpeed - scrollSpeedRef.current) * BLOCK_SCROLL_SMOOTH
-      scrollYRef.current = Math.min(scrollTargetRef.current, scrollYRef.current + scrollSpeedRef.current * dt)
-
-      const el = innerRef.current
-      if (el) {
-        // 整数像素，避免亚像素重复栅格化
-        const y = Math.round(scrollYRef.current)
-        const transform = y > 0 ? `translate3d(0, ${-y}px, 0)` : ''
-        if (transform !== lastTransformRef.current) {
-          lastTransformRef.current = transform
-          el.style.transform = transform
-        }
-      }
-      rafRef.current = requestAnimationFrame(tick)
+    const maskOn = maxScroll > 0
+    if (maskOn !== lastMaskOnRef.current) {
+      lastMaskOnRef.current = maskOn
+      container.style.maskImage = maskOn ? BLOCK_FADE_MASK : ''
+      container.style.webkitMaskImage = maskOn ? BLOCK_FADE_MASK : ''
     }
+  }, [target, active, commitScroll])
 
-    rafRef.current = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(rafRef.current)
-  }, [active])
-
-  // 3) 布局测量：ResizeObserver 异步更新滚动目标与渐隐开关
+  // 2) 容器尺寸变化（展开/窗口 resize/旋转）：重新对齐到最新目标，不重新触发动画
   useEffect(() => {
     if (!active) return
-    const el = innerRef.current
+    const inner = innerRef.current
     const container = containerRef.current
-    if (!el || !container) return
+    if (!inner || !container || typeof ResizeObserver === 'undefined') return
 
-    const measure = () => {
-      const maxScroll = Math.max(0, el.scrollHeight - container.clientHeight)
-      scrollTargetRef.current = Math.max(0, maxScroll - BLOCK_PRELOAD_PX)
-
-      const maskOn = maxScroll > 0
-      if (maskOn !== lastMaskOnRef.current) {
-        lastMaskOnRef.current = maskOn
-        container.style.maskImage = maskOn ? BLOCK_FADE_MASK : ''
-        container.style.webkitMaskImage = maskOn ? BLOCK_FADE_MASK : ''
-      }
-
-      if (prefersReducedMotion()) {
-        scrollYRef.current = scrollTargetRef.current
-        const y = Math.round(scrollYRef.current)
-        const transform = y > 0 ? `translate3d(0, ${-y}px, 0)` : ''
-        lastTransformRef.current = transform
-        el.style.transform = transform
-      }
-    }
-
-    measure()
-    if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
+    const ro = new ResizeObserver(() => {
+      const maxScroll = Math.max(0, inner.scrollHeight - container.clientHeight)
+      const targetY = Math.max(0, maxScroll - BLOCK_PRELOAD_PX)
+      commitScroll(targetY, false)
+    })
+    ro.observe(container)
     return () => ro.disconnect()
-  }, [active])
+  }, [active, commitScroll])
 
   return { containerRef, innerRef }
 }

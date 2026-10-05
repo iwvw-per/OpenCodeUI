@@ -83,6 +83,14 @@ interface Bucket {
    * 后续一次成功写入（整桶替换）会清空它。
    */
   tombstones: Set<string>
+  /**
+   * D15：该桶是否已成功拉取过。
+   *
+   * 此前用 `loadedLimit === 0` 判断「未加载」，但「已加载且确实为空」（如归档面板
+   * 当前无归档会话）也会得到 0，导致此后所有 SSE 增量被 continue 丢弃，列表不再
+   * 实时更新。用独立的 loaded 标志区分「从未加载」与「已加载但为空」。
+   */
+  loaded: boolean
   /** 最近一次访问时间，用于淘汰 */
   touchedAt: number
 }
@@ -169,6 +177,7 @@ class SessionListIndexStore {
         contentRevision: 0,
         membershipRevision: 0,
         tombstones: new Set(),
+        loaded: false,
         touchedAt: Date.now(),
       }
       this.buckets.set(id, bucket)
@@ -251,6 +260,8 @@ class SessionListIndexStore {
     bucket.loadedLimit = options.limit
     bucket.hasMore = options.hasMore
     bucket.fetchedAt = Date.now()
+    // D15：标记已加载。空列表也算「已加载但为空」，此后仍接受 SSE 增量。
+    bucket.loaded = true
     bucket.tombstones.clear()
     bucket.contentRevision++
     bucket.membershipRevision++
@@ -266,7 +277,8 @@ class SessionListIndexStore {
    */
   upsert(key: SessionListBucketKey, session: ApiSession): void {
     const bucket = this.buckets.get(bucketId(key))
-    if (!bucket || bucket.loadedLimit === 0) return
+    // D15：用 loaded 判定「是否已加载过」，而非 loadedLimit>0（空桶也应是已加载）
+    if (!bucket || !bucket.loaded) return
     if (bucket.tombstones.has(session.id)) return
     if (this.writeIntoBucket(bucket, session)) this.emit()
   }
@@ -347,7 +359,10 @@ class SessionListIndexStore {
 
       const shouldBePresent = bucket.key.view === view
       if (!shouldBePresent) {
-        // 归档态变了：从另一个视图的桶里摘掉
+        // 归档态变了：从另一个视图的桶里摘掉。
+        // D3：同时记墓碑，挡住此前针对该桶发出的、晚归的分页响应（响应里仍带着
+        // 旧视图的这条会话）。没有墓碑时它会被 replace 写回，归档会话在活跃列表复活。
+        bucket.tombstones.add(session.id)
         const index = bucket.items.findIndex(item => item.id === session.id)
         if (index !== -1) {
           bucket.items.splice(index, 1)
@@ -359,7 +374,11 @@ class SessionListIndexStore {
         continue
       }
 
-      if (bucket.loadedLimit === 0) continue
+      // 会话确实属于该视图：清除此前可能残留的墓碑（例如取消归档 / 归档后恢复），
+      // 否则晚归响应或后续写入会被墓碑挡掉，会话无法回到列表。
+      bucket.tombstones.delete(session.id)
+      // D15：用 loaded 判定「已加载过」；空桶也应接受增量
+      if (!bucket.loaded) continue
       if (this.writeIntoBucket(bucket, session)) changed = true
     }
 

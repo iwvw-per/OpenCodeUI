@@ -89,6 +89,7 @@ export function useMobileCollapse({
     prevHasContentRef.current = hasContent
     if (!previous || hasContent) return
     if (justClearedTimerRef.current) clearTimeout(justClearedTimerRef.current)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 响应 hasContent 由非空转空，进入缓冲期
     setJustCleared(true)
     justClearedTimerRef.current = setTimeout(() => {
       justClearedTimerRef.current = null

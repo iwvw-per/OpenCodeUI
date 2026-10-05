@@ -17,7 +17,7 @@
 // 会话锚点用「原始 sessionId」作 key：同一后端可能被多个 serverId 前缀连接
 // （local 与隧道指向同一实例），原始 id 才唯一。
 
-import { normalizeToForwardSlash } from '../utils/directoryUtils'
+import { normalizeToForwardSlash, normalizeForComparison } from '../utils/directoryUtils'
 import type { ApiSession } from '../api'
 
 const SEPARATOR = '\x00'
@@ -29,8 +29,14 @@ export interface ActivityChange {
   serverId?: string
 }
 
+/**
+ * D29：目录 key 用 normalizeForComparison（小写）而非 normalizeToForwardSlash。
+ * 项目 worktree 是用户保存的路径，服务端 session.directory 是后端返回的路径，
+ * 二者大小写可能不同（Windows）。若读写用不同归一化，getDirectoryAnchor 会失配，
+ * 项目行时间回退到服务端值、排序与列表依据不一致。
+ */
 function directoryKey(serverId: string, directory: string): string {
-  return `${serverId}${SEPARATOR}${normalizeToForwardSlash(directory)}`
+  return `${serverId}${SEPARATOR}${normalizeForComparison(directory)}`
 }
 
 class SessionActivityStore {

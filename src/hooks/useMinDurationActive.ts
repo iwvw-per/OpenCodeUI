@@ -44,6 +44,7 @@ export function useMinDurationActive(active: boolean, minDurationMs = 300): bool
     }
 
     // 进入保持期：active 已为 false，但视觉还要留 remaining 毫秒
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 进入最短展示保持期
     setHolding(true)
     timerRef.current = setTimeout(() => {
       startedAtRef.current = null

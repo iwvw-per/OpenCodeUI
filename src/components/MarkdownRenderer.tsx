@@ -1498,6 +1498,7 @@ function useSmoothMarkdownStream(content: string, enabled: boolean) {
       stop()
       if (displayedRef.current !== content) {
         displayedRef.current = content
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 关闭平滑流时需立即与目标内容同步
         setDisplayedContent(content)
       }
       return

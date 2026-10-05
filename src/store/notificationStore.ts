@@ -11,6 +11,7 @@
 import { useSyncExternalStore } from 'react'
 import { sessionKeyToServerId, sessionKeyToSessionId } from '../utils/sessionKey'
 import { isSameDirectory } from '../utils/directoryUtils'
+import { readWatermarkStore, watermarkNow } from './readWatermarkStore'
 
 // ============================================
 // Types
@@ -103,6 +104,35 @@ class NotificationStore {
   private toastTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private pushListeners = new Set<NotificationPushListener>()
 
+  constructor() {
+    // 水位变化（本地标记已读，或跨端同步 pull 到另一端的已读）后，把受影响的
+    // completed 通知的本地 read 缓存重算。read 是本地派生缓存，水位才是跨端权威：
+    // 通知时间戳 <= 水位即已读。这里只单向抬高（read: false -> true），
+    // 不回退，避免「已读又变未读」。
+    readWatermarkStore.subscribe(() => this.reconcileReadFromWatermarks())
+  }
+
+  /**
+   * 按已读水位重算 completed 通知的本地 read 标志。
+   * 只把未读变已读，不反向；permission/question/error 等主动类型不参与水位。
+   */
+  private reconcileReadFromWatermarks() {
+    let changed = false
+    const notifications = this.state.notifications.map(n => {
+      if (n.read) return n
+      if (n.type !== 'completed') return n
+      const bareId = sessionKeyToSessionId(n.sessionId)
+      if (!bareId) return n
+      if (!readWatermarkStore.isRead(bareId, n.timestamp)) return n
+      changed = true
+      return { ...n, read: true }
+    })
+    if (!changed) return
+    this.state = { ...this.state, notifications }
+    this.persist()
+    this.notify()
+  }
+
   /** toast 弹窗总开关 */
   toastEnabled: boolean = (() => {
     try {
@@ -157,7 +187,8 @@ class NotificationStore {
       sessionId,
       serverId: sessionKeyToServerId(sessionId) || undefined,
       directory,
-      timestamp: Date.now(),
+      // 用校准钟（与已读水位同一基准），否则跨端比较无意义
+      timestamp: watermarkNow(),
       read: false,
     }
 
@@ -197,15 +228,24 @@ class NotificationStore {
   // ============================================
 
   markRead(id: string) {
+    const target = this.state.notifications.find(n => n.id === id)
     const notifications = this.state.notifications.map(n => (n.id === id && !n.read ? { ...n, read: true } : n))
     this.state = { ...this.state, notifications }
+    // 抬高水位使其它端也视为已读（仅 completed 参与水位治理）
+    if (target && target.type === 'completed') readWatermarkStore.raise(target.sessionId, target.timestamp)
     this.persist()
     this.notify()
   }
 
   markAllRead() {
+    const now = watermarkNow()
     const notifications = this.state.notifications.map(n => (n.read ? n : { ...n, read: true }))
     this.state = { ...this.state, notifications }
+    // 仅 completed 参与水位治理，与 markRead/markMatching 口径一致
+    readWatermarkStore.raiseMany(
+      this.state.notifications.filter(n => n.type === 'completed').map(n => n.sessionId),
+      now,
+    )
     this.persist()
     this.notify()
   }
@@ -249,15 +289,27 @@ class NotificationStore {
 
   private markMatching(predicate: (entry: NotificationEntry) => boolean, type?: NotificationType) {
     let changed = false
+    // 记录被标记的会话及其时间戳，用于抬高水位（跨端同步已读）。
+    const watermarkBySession = new Map<string, number>()
     const notifications = this.state.notifications.map(n => {
       if (!predicate(n)) return n
       if (type && n.type !== type) return n
       if (n.read) return n
       changed = true
+      // 水位只治理 completed 未读点；其它主动类型（permission/question/error）
+      // 不参与，抬水位时一并跳过，避免误伤同会话更早的 completed 通知。
+      if (n.type === 'completed') {
+        const bareId = sessionKeyToSessionId(n.sessionId)
+        if (bareId) {
+          const prev = watermarkBySession.get(bareId) ?? 0
+          if (n.timestamp > prev) watermarkBySession.set(bareId, n.timestamp)
+        }
+      }
       return { ...n, read: true }
     })
     if (!changed) return
     this.state = { ...this.state, notifications }
+    for (const [bareId, at] of watermarkBySession) readWatermarkStore.raise(bareId, at)
     this.persist()
     this.notify()
   }

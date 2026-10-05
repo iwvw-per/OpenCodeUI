@@ -137,14 +137,19 @@ class ChildSessionStore {
    *
    * 由 session.status(busy/retry) 驱动。只复活「已注册」的子会话：未注册的会话
    * 可能只是父会话本身在跑，凭空建记录会在子代理面板里凭空多出一行。
+   *
+   * 返回是否接受了 running（true=已置 running；false=被已 error 的终态挡住）。
+   * 调用方据此同步 activeSessionStore，避免两处对「error 后迟到 busy」的判断
+   * 不一致（D11：子代理面板显示已完成，Working 列表却显示在跑）。
    */
-  markRunning(sessionId: string) {
-    if (!this.sessionInfo.has(sessionId)) return
+  markRunning(sessionId: string): boolean {
+    if (!this.sessionInfo.has(sessionId)) return true
     // 已终态不复活：run 结束后的迟到 busy 事件不应把「已完成」再打回运行态
     const status = this.sessionInfo.get(sessionId)!.status
-    if (status === 'error') return
+    if (status === 'error') return false
     this.pendingTerminalStatus.delete(sessionId)
     this.updateChildSession(sessionId, { status: 'running' })
+    return true
   }
 
   /**
@@ -193,33 +198,47 @@ class ChildSessionStore {
   getVersion = (): number => this.version
 
   /**
-   * 检查 sessionId 是否是 parentId 的子 session（或子孙 session）
+   * 检查 sessionId 是否是 parentId 的子 session（或子孙 session）。
+   * D26：带 visited 保护，避免服务端数据异常形成环时无限递归栈溢出。
    */
   isChildOf(sessionId: string, parentId: string, recursive = true): boolean {
+    return this.isChildOfInner(sessionId, parentId, recursive, new Set<string>())
+  }
+
+  private isChildOfInner(
+    sessionId: string,
+    parentId: string,
+    recursive: boolean,
+    visited: Set<string>,
+  ): boolean {
+    if (visited.has(sessionId)) return false
+    visited.add(sessionId)
     const info = this.sessionInfo.get(sessionId)
     if (!info) return false
 
     if (info.parentID === parentId) return true
 
     if (recursive) {
-      // 递归检查
-      return this.isChildOf(info.parentID, parentId, true)
+      return this.isChildOfInner(info.parentID, parentId, true, visited)
     }
 
     return false
   }
 
   /**
-   * 获取 session 及其所有子孙 session 的 ID 列表
+   * 获取 session 及其所有子孙 session 的 ID 列表。
+   * D26：带 visited 保护，避免环导致无限递归。
    */
   getSessionAndDescendants(sessionId: string): string[] {
-    const result = [sessionId]
-    const children = this.getChildSessionIds(sessionId)
-
-    for (const childId of children) {
-      result.push(...this.getSessionAndDescendants(childId))
+    const result: string[] = []
+    const visited = new Set<string>()
+    const walk = (id: string) => {
+      if (visited.has(id)) return
+      visited.add(id)
+      result.push(id)
+      for (const childId of this.getChildSessionIds(id)) walk(childId)
     }
-
+    walk(sessionId)
     return result
   }
 

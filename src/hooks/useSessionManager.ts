@@ -156,9 +156,14 @@ function mergeWithLocalStreamingMessages(
     }
   })
 
-  const localOnly = localState.isStreaming
-    ? localState.messages.filter(m => !apiIds.has(m.info.id)).map(toApiMessageWithParts)
-    : []
+  // D6：本地独有消息（服务端快照未包含）的保留判定，不再只依赖 isStreaming。
+  // setMessages 会按最后一条重算 isStreaming，completed→idle 之间可能已为 false，
+  // 此时若只按 isStreaming 判定，本地刚流式完成、快照页尚未包含的消息会被整体覆盖丢失。
+  // 放宽为「流式中 或 未定稿」：已定稿且不在快照里的，交给服务端；其余保留。
+  const localOnly = localState.messages
+    .filter(m => !apiIds.has(m.info.id))
+    .filter(m => localState.isStreaming || messageTimeIncomplete(m.info.time))
+    .map(toApiMessageWithParts)
 
   if (localOnly.length === 0) return mergedApi
 

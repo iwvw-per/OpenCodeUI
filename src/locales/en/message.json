@@ -6,6 +6,9 @@
   "undoFromHere": "Undo from here",
   "forkFromHere": "Fork from here",
   "forkingFromHere": "Forking...",
+  "exportImage": "Export as image",
+  "exportingImage": "Exporting...",
+  "exportImageFailed": "Failed to export image",
   "stepsCount": "{{done}}/{{total}} steps",
   "thinkingStepCount": "{{count}} steps",
   "diffChips": {

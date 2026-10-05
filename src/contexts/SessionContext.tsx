@@ -113,6 +113,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // 「刚好这么多」和「还有更多」——会话数正好等于 pageSize 时会多出一个
         // 点了没反应的「展开更多会话」按钮（取回同样条数后 hasMore 立刻变 false）。
         const requestedLimit = currentLimitRef.current
+        // D2：记录请求发出前的成员版本，回包时校验；期间 SSE 增删过则丢弃这份响应。
+        const expectedMembership = sessionListIndexStore.getMembershipRevision(bucket)
         const data = await getSessions({
           roots: true,
           limit: requestedLimit + 1,
@@ -135,6 +137,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           sessionListIndexStore.replace(bucket, data, {
             limit: requestedLimit,
             hasMore: data.length > requestedLimit,
+            expectedMembershipRevision: expectedMembership,
           })
         }
       } catch (e) {
@@ -308,9 +311,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         title,
         directory: directory ?? targetDir,
       })
+      // D30：创建后立即 upsert 进索引，与 useSessions.create 行为一致。此前完全依赖
+      // SSE session.created，SSE 未连/事件丢失时新会话不立即出现。
+      if (!searchRef.current) sessionListIndexStore.upsert(bucket, newSession)
       return newSession
     },
-    [targetDir],
+    // bucket 每帧新建，用稳定 id 代替
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [targetDir, bucketIdKey],
   )
 
   const deleteSession = useCallback(

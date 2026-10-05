@@ -99,6 +99,51 @@ describe('messageStore', () => {
     expect(state).toBeUndefined()
   })
 
+  it('replays a delta that arrives before its part is created (D5)', () => {
+    messageStore.handleMessageUpdated(createAssistantMessage('message-1'))
+    // delta 先于 part.updated 到达：暂存
+    messageStore.handlePartDelta({
+      sessionID: 'session-1',
+      messageID: 'message-1',
+      partID: 'part-1',
+      field: 'text',
+      delta: 'hello',
+    })
+    messageStore.handlePartDelta({
+      sessionID: 'session-1',
+      messageID: 'message-1',
+      partID: 'part-1',
+      field: 'text',
+      delta: ' world',
+    })
+
+    // part.updated 到达：应回放此前暂存的 delta
+    messageStore.handlePartUpdated(createTextPart('part-1', 'message-1', ''))
+
+    const state = messageStore.getSessionState('session-1')
+    expect(state?.messages[0].parts[0]).toMatchObject({ id: 'part-1', text: 'hello world' })
+  })
+
+  it('replays a delta that arrives before its message is created (D5)', () => {
+    messageStore.handleMessageUpdated(createAssistantMessage('message-1'))
+    messageStore.handlePartUpdated(createTextPart('part-1', 'message-1', 'base'))
+
+    // 消息已存在但 part 未建立时暂存的 delta，应在 part 建立后回放
+    messageStore.handlePartDelta({
+      sessionID: 'session-1',
+      messageID: 'message-2',
+      partID: 'part-2',
+      field: 'text',
+      delta: 'queued',
+    })
+    messageStore.handleMessageUpdated(createAssistantMessage('message-2'))
+    messageStore.handlePartUpdated(createTextPart('part-2', 'message-2', ''))
+
+    const state = messageStore.getSessionState('session-1')
+    const msg2 = state?.messages.find(m => m.info.id === 'message-2')
+    expect(msg2?.parts[0]).toMatchObject({ id: 'part-2', text: 'queued' })
+  })
+
   it('marks cached sessions stale after reconnect and clears the flag after a fresh load', () => {
     messageStore.setMessages('session-1', [createMessageWithParts('message-1', 'hello')])
 
@@ -595,6 +640,28 @@ describe('messageStore', () => {
     const state = messageStore.getSessionState('session-1')
     const toolPart = state?.messages[0].parts.find(p => p.type === 'tool') as { state: { status: string } }
     expect(toolPart.state.status).toBe('completed')
+  })
+
+  it('does not reopen streaming when the session idled before send returned (D7)', () => {
+    messageStore.handleMessageUpdated(createAssistantMessage('message-1'))
+    // 发送前记录结束世代
+    const idleGenerationBeforeSend = messageStore.getIdleGeneration('session-1')
+    // 请求返回前，会话已 idle
+    messageStore.handleSessionIdle('session-1')
+
+    // 发送路径带旧世代置 streaming：应被守卫拒绝
+    messageStore.setStreaming('session-1', true, idleGenerationBeforeSend)
+
+    expect(messageStore.getIsStreaming('session-1')).toBe(false)
+  })
+
+  it('still opens streaming when no idle happened before send returned (D7)', () => {
+    messageStore.handleMessageUpdated(createAssistantMessage('message-1'))
+    const idleGenerationBeforeSend = messageStore.getIdleGeneration('session-1')
+
+    messageStore.setStreaming('session-1', true, idleGenerationBeforeSend)
+
+    expect(messageStore.getIsStreaming('session-1')).toBe(true)
   })
 
   it('settles a running tool by callID from next.* events', () => {

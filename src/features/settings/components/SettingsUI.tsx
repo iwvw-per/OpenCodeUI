@@ -98,6 +98,7 @@ export function SegmentedControl<T extends string>({
       size={size}
       value={value}
       className={className}
+      data-segmented
       onValueChange={next => {
         const event = pointerEventRef.current
         pointerEventRef.current = undefined
@@ -156,6 +157,7 @@ export function SettingRow({
     <div
       data-setting-label={typeof label === 'string' ? label : undefined}
       data-setting-context={searchContext}
+      data-setting-row
       className={cn(
         // 卡片内的一行：内边距 + 上分隔线（首行不画）。
         // 行自带边框而非由容器 divide-y，是因为 SettingRow/SettingField 是
@@ -176,12 +178,16 @@ export function SettingRow({
           <div className="min-w-0">
             <div className="text-[length:var(--fs-md)] font-medium text-text-100 leading-snug">{label}</div>
             {description && (
-              <div className="text-[length:var(--fs-xs)] text-text-300 leading-relaxed mt-0.5">{description}</div>
+              <div data-setting-desc className="text-[length:var(--fs-xs)] text-text-300 leading-relaxed mt-0.5">
+                {description}
+              </div>
             )}
           </div>
         </div>
         <SettingLabelContext.Provider value={typeof label === 'string' ? label : undefined}>
-          <div className="shrink-0 flex items-center self-center">{children}</div>
+          <div data-setting-control className="shrink-0 flex items-center self-center">
+            {children}
+          </div>
         </SettingLabelContext.Provider>
       </div>
     </div>
@@ -208,13 +214,16 @@ export function SettingField({
   return (
     <div
       data-setting-label={typeof label === 'string' ? label : undefined}
+      data-setting-field
       className={cn('border-t border-border-200/40 px-4 py-3 first:border-t-0', className)}
     >
       <div className="flex items-start justify-between gap-3 min-h-[20px]">
         <div className="min-w-0">
           <div className="text-[length:var(--fs-md)] font-medium text-text-100 leading-snug">{label}</div>
           {description && (
-            <div className="text-[length:var(--fs-xs)] text-text-300 leading-relaxed mt-0.5">{description}</div>
+            <div data-setting-desc className="text-[length:var(--fs-xs)] text-text-300 leading-relaxed mt-0.5">
+              {description}
+            </div>
           )}
         </div>
         {/* actions 与「标题 + 描述」整块垂直居中，描述换行时不会停在偏上位置 */}
@@ -281,7 +290,7 @@ export function SettingsSection({
           {actions && <div className="shrink-0 flex items-center gap-1.5">{actions}</div>}
         </div>
         {description && (
-          <p className="text-[length:var(--fs-xs)] text-text-300 mt-1 leading-relaxed max-w-[52ch]">
+          <p data-setting-desc className="text-[length:var(--fs-xs)] text-text-300 mt-1 leading-relaxed max-w-[52ch]">
             {description}
           </p>
         )}
@@ -317,7 +326,11 @@ export function SettingsSubgroup({
       {title && (
         <div className="mb-2.5 px-0.5">
           <div className="text-[length:var(--fs-sm)] font-medium text-text-100">{title}</div>
-          {description && <div className="text-[length:var(--fs-xs)] text-text-400 mt-0.5 leading-relaxed">{description}</div>}
+          {description && (
+            <div data-setting-desc className="text-[length:var(--fs-xs)] text-text-400 mt-0.5 leading-relaxed">
+              {description}
+            </div>
+          )}
         </div>
       )}
       <div className="space-y-2.5">{children}</div>

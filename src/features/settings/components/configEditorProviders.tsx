@@ -102,7 +102,7 @@ function ProvidersHome({ config, setConfig, lang, providerCatalog }: ProviderVie
             {tx('Add', '添加', lang)}
           </button>
         </div>
-        <div className="mt-2 text-[length:var(--fs-xs)] leading-relaxed text-text-400">
+        <div data-setting-desc className="mt-2 text-[length:var(--fs-xs)] leading-relaxed text-text-400">
           {tx(
             'Provider keys cannot be reliably deleted through the official merge API. Use enabled_providers/disabled_providers when you need to control availability.',
             '官方 merge API 不能可靠删除已保存的 provider key。需要控制可用性时请使用 enabled_providers/disabled_providers。',
@@ -327,7 +327,7 @@ function ProviderModels({
           {tx('Add', '添加', lang)}
         </button>
       </div>
-      <div className="text-[length:var(--fs-xs)] leading-relaxed text-text-400">
+      <div data-setting-desc className="text-[length:var(--fs-xs)] leading-relaxed text-text-400">
         {tx('Model override keys cannot be reliably deleted through the official merge API. Edit fields instead, or Reset before saving newly added model ids.', '官方 merge API 不能可靠删除已保存的模型覆盖 key。请改字段，刚新增的模型 id 可在保存前 Reset。', lang)}
       </div>
     </div>

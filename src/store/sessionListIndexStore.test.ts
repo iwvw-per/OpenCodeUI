@@ -81,6 +81,24 @@ describe('sessionListIndexStore', () => {
     expect(sessionListIndexStore.get(archived)).toEqual([])
   })
 
+  it('does not resurrect an archived session via a stale active-bucket response (D3)', () => {
+    sessionListIndexStore.replace(active, [makeSession('a')], { limit: 5, hasMore: false })
+    // 记录归档前的成员版本，模拟一份「归档前发出、归档后返回」的列表响应
+    const staleMembership = sessionListIndexStore.getMembershipRevision(active)
+
+    // 会话归档：从 active 桶摘掉并记墓碑
+    sessionListIndexStore.applySessionChanged('srv-a', makeSession('a', { time: { created: 1, updated: 3, archived: 99 } }))
+    expect(sessionListIndexStore.get(active)).toEqual([])
+
+    // 晚归响应仍带着这条会话，但成员版本已变 → replace 直接丢弃
+    sessionListIndexStore.replace(active, [makeSession('a')], {
+      limit: 5,
+      hasMore: false,
+      expectedMembershipRevision: staleMembership,
+    })
+    expect(sessionListIndexStore.get(active)).toEqual([])
+  })
+
   it('ignores child sessions', () => {
     sessionListIndexStore.replace(active, [], { limit: 5, hasMore: false })
 
@@ -183,5 +201,22 @@ describe('sessionListIndexStore', () => {
     })
 
     expect(sessionListIndexStore.get({ serverId: 'srv-x', directory: '/big', view: 'active' })?.length).toBe(500)
+  })
+
+  it('accepts incremental events after an empty-but-loaded replace (D15)', () => {
+    // 空列表是合法的「已加载但为空」（如归档面板当前无归档会话）
+    sessionListIndexStore.replace(active, [], { limit: 0, hasMore: false })
+
+    // 此后的增量不应被丢弃
+    sessionListIndexStore.applySessionChanged('srv-a', makeSession('a'))
+
+    expect(sessionListIndexStore.get(active)?.map(s => s.id)).toEqual(['a'])
+  })
+
+  it('still ignores events for a bucket that was never loaded (D15)', () => {
+    // 未加载过：单条事件不建桶
+    sessionListIndexStore.applySessionChanged('srv-a', makeSession('a'))
+
+    expect(sessionListIndexStore.get(active)).toBeUndefined()
   })
 })

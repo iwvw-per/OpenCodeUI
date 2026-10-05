@@ -289,7 +289,7 @@ function EventSoundCard({
           <div className="text-[length:var(--fs-md)] font-medium text-text-100 leading-snug">
             {t(labelKey as `notifications.${string}`)}
           </div>
-          <div className="text-[length:var(--fs-xs)] text-text-300 mt-0.5">
+          <div data-setting-desc className="text-[length:var(--fs-xs)] text-text-300 mt-0.5">
             {t(descKey as `notifications.${string}`)}
           </div>
         </div>
@@ -478,7 +478,7 @@ export function NotificationSettings() {
                   <div className="text-[length:var(--fs-sm)] font-medium text-text-100">
                     {t('notifications.notificationTypes')}
                   </div>
-                  <div className="mt-0.5 text-[length:var(--fs-xs)] text-text-400 leading-relaxed">
+                  <div data-setting-desc className="mt-0.5 text-[length:var(--fs-xs)] text-text-400 leading-relaxed">
                     {t('notifications.notificationTypesDesc')}
                   </div>
                 </div>

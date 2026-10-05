@@ -116,6 +116,24 @@
 import { accountRequest, readAccount, type AiAgentAccount } from './aiagent'
 import { notifyPerServerStorageChanged } from '../utils/perServerStorage'
 import { layoutStore } from '../store/layoutStore'
+import { serverStore } from '../store/serverStore'
+import { readWatermarkStore } from '../store/readWatermarkStore'
+
+/**
+ * B 类缺陷 1：同步时间戳的时钟。
+ *
+ * 偏好同步带 `lastWriteWins=1`，服务端信任客户端传入的 updatedAt。若用本地钟，
+ * 设备 A 时钟快 5 分钟，A 写的每个键时间戳都永久大于 B，B 的改动永远被顶掉。
+ * 优先用服务端校准钟（server.connected 时间戳推导），不可用时退回本地钟并接受偏差。
+ */
+function syncNow(): number {
+  const calibrated = serverStore.getActiveCalibratedNow()
+  return calibrated ?? Date.now()
+}
+
+function syncNowIso(): string {
+  return new Date(syncNow()).toISOString()
+}
 
 const SYNC_ENABLED_KEY = 'opencode-preferences-sync-enabled'
 const SYNC_META_KEY = 'opencode-preferences-sync-meta'
@@ -400,6 +418,12 @@ function resolveStamps(
 type MergeRule =
   | { kind: 'array'; id: (entry: Record<string, unknown>) => string | null; order?: 'newest' }
   | { kind: 'map-number' }
+  /**
+   * B 类缺陷 3：对象型键的字段级三方合并。此前这类键走整键 last-write-wins，
+   * 设备 A 改字段 x、设备 B 改字段 y 时，后写者会把前者一起覆盖。字段级合并让
+   * 两侧不同字段的改动都能保留。fields 为 null 表示合并所有字段。
+   */
+  | { kind: 'object'; fields?: string[] }
 
 /**
  * 按「键名后缀」识别聚合键，这样裸键（opencode-pinned-sessions）与
@@ -424,6 +448,15 @@ const MERGE_RULES: Record<string, MergeRule> = {
     kind: 'array',
     id: entry => (typeof entry.sessionId === 'string' ? entry.sessionId : null),
     order: 'newest',
+  },
+  // 未读「已读水位」：{ [sessionId]: 校准时间戳 }，逐键取最大值（单调、收敛）。
+  // 使一端已读后，另一端不会回退成未读。详见数据同步层设计 §10.3 C3。
+  'opencode-read-watermarks': {
+    kind: 'map-number',
+  },
+  // B 类缺陷 3：对象型键字段级合并，避免整键 LWW 互相覆盖。
+  'opencode-keybindings': {
+    kind: 'object',
   },
 }
 
@@ -695,6 +728,44 @@ function mergeSyncValue(
   const serverMap = asRecord(serverValue)
   if (localMap === null || serverMap === null) return { value: undefined, changed: false }
 
+  // B 类缺陷 3：对象键字段级三方合并。逐字段按三方合并决定取舍，两侧改不同字段
+  // 时都能保留；同字段冲突才按「新者胜」。
+  if (rule.kind === 'object') {
+    const fieldNames = rule.fields ?? [
+      ...new Set([...Object.keys(baseMap ?? {}), ...Object.keys(localMap), ...Object.keys(serverMap)]),
+    ]
+    const merged: Record<string, unknown> = {}
+    for (const field of fieldNames) {
+      const inBase = baseMap ? field in baseMap : false
+      const inLocal = field in localMap
+      const inServer = field in serverMap
+      const baseVal = baseMap?.[field]
+      const localVal = localMap[field]
+      const serverVal = serverMap[field]
+      const localChanged = !inBase || JSON.stringify(localVal) !== JSON.stringify(baseVal)
+      const serverChanged = !inBase || JSON.stringify(serverVal) !== JSON.stringify(baseVal)
+
+      // 本地删除了该字段（基线有、本地无）
+      if (inBase && !inLocal) continue
+      // 远端删除了该字段（基线有、服务端无、本地未改）
+      if (inBase && !inServer && !localChanged) continue
+      // 本地改过：本地优先
+      if (inLocal && localChanged) {
+        merged[field] = localVal
+        continue
+      }
+      // 服务端改过：采用服务端
+      if (inServer && serverChanged) {
+        merged[field] = serverVal
+        continue
+      }
+      // 都没改：保留存在的一侧
+      if (inLocal) merged[field] = localVal
+      else if (inServer) merged[field] = serverVal
+    }
+    return { value: merged, changed: true }
+  }
+
   const keep = threeWayMergeIds(entryIds(baseMap, rule), entryIds(localMap, rule), entryIds(serverMap, rule), dead)
 
   const merged: Record<string, number> = {}
@@ -837,6 +908,9 @@ export async function pullPreferences(account?: AiAgentAccount | null): Promise<
     // per-server 存储，需要单独触发重读，否则表现为「另一台改了排序，这边要
     // 切换主机才生效」。
     layoutStore.reloadFromStorage()
+    // 已读水位是裸键（opencode-read-watermarks），同样不经 per-server 存储；
+    // 拉取到另一端的已读后必须让水位 store 重读，否则本端未读点不会消失。
+    readWatermarkStore.reload()
   }
   return written
 }
@@ -900,7 +974,7 @@ export async function pushPreferences(account?: AiAgentAccount | null, force = f
     }
   }
 
-  const nowIso = new Date().toISOString()
+  const nowIso = syncNowIso()
   const updatedAt = resolveStamps(values, stampState.known, stampState.stamps, nowIso)
 
   // 服务端拒绝空 values（返回 400 "values required"）。本地没有任何可同步键时

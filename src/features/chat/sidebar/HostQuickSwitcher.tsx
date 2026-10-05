@@ -14,7 +14,8 @@ import { useServerStore, type ServerHealth } from '../../../hooks/useServerStore
 import { subscribeToServerConnectionState, getServerConnectionInfo, type ConnectionState } from '../../../api/events'
 import { cn } from '../../../utils/cn'
 import { interactive } from '../../../utils/interaction'
-import { SyncStatusIcon, useSyncIndicatorAvailable } from './SyncStatusRow'
+import { SyncStatusIcon } from './SyncStatusRow'
+import { useSyncIndicatorAvailable } from './syncStatus'
 
 function useServerConnectionState(serverId: string): ConnectionState {
   const subscribe = useCallback(

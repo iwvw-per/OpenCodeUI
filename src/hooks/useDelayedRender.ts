@@ -28,6 +28,7 @@ export function useDelayedRender(
   useEffect(() => {
     if (show) {
       if (mountDelayMs <= 0) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- 无挂载延迟时立即渲染
         setShouldRender(true)
         return
       }

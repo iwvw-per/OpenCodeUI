@@ -219,14 +219,14 @@ function SkillsContent({ config, setConfig, lang }: Pick<SectionProps, 'config' 
         {!editingCurrent && !editingLegacy && <DrillFields fields={skillFields} isConfigured={key => hasNested(config, key.split('.'))} lang={lang} />}
         {!editingLegacy && <div>
           <GroupHeader text={tx('References (@alias)', '引用（@alias）', lang)} count={Object.keys(references).length} />
-          <p className="mb-2 text-[length:var(--fs-xs)] leading-relaxed text-text-400">
+          <p data-setting-desc className="mb-2 text-[length:var(--fs-xs)] leading-relaxed text-text-400">
             {tx('Named git or local directory references mentioned as @alias or @alias/path.', '命名的 git 或本地目录引用，可用 @alias 或 @alias/path 提及。', lang)}
           </p>
           <ReferenceEditor value={references} onChange={v => setConfig(setRoot(config, 'references', v))} lang={lang} drillPrefix="reference" />
         </div>}
         {hasRoot(config, 'reference') && !editingCurrent && <div>
           <GroupHeader text={tx('Legacy references (@alias)', '旧版引用（@alias）', lang)} count={Object.keys(legacyReferences).length} />
-          <p className="mb-2 text-[length:var(--fs-xs)] leading-relaxed text-text-400">
+          <p data-setting-desc className="mb-2 text-[length:var(--fs-xs)] leading-relaxed text-text-400">
             {tx("Deprecated 'reference' entries. New aliases should be added above.", "已废弃的 'reference' 条目，新 alias 请添加到上方。", lang)}
           </p>
           <ReferenceEditor value={legacyReferences} onChange={v => setConfig(setRoot(config, 'reference', v))} lang={lang} drillPrefix="legacy-reference" />
@@ -303,7 +303,7 @@ function ReferenceEditor({ value, onChange, lang, drillPrefix }: { value: JsonRe
           {tx('Add reference', '添加引用', lang)}
         </button>
       </div>
-      <div className="text-[length:var(--fs-xs)] leading-relaxed text-text-500">
+      <div data-setting-desc className="text-[length:var(--fs-xs)] leading-relaxed text-text-500">
         {tx('Deleting saved reference keys is not supported by the official merge API. Edit the value instead, or Reset before saving newly added references.', '官方 merge API 不支持可靠删除已保存的 reference key。请改值，刚新增的引用可在保存前 Reset。', lang)}
       </div>
     </div>

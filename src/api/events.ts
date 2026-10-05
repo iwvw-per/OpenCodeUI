@@ -10,8 +10,10 @@
 
 import { getApiBaseUrl, getAuthHeader } from './http'
 import { createSseTextParser } from './sse'
+import { parseAndCoalesce } from './sseEvents'
 import { normalizeTodoItems } from './todo'
 import { isTauri } from '../utils/tauri'
+import { createSseEventPump } from '../lib/sseWorkerClient'
 import { serverStore } from '../store/serverStore'
 import type {
   ApiMessage,
@@ -124,76 +126,8 @@ const DEFAULT_CONNECTION_INFO: ConnectionInfo = {
 }
 
 // ============================================
-// Delta coalescing — 参照官方 coalesceServerEvents
-// 同一批次内相同 (messageID, partID, field) 的 delta 合并为一个事件；
-// message.part.updated 到达后丢弃该 part 的在途 delta。
+// Delta coalescing / parsing 已抽到 ./sseEvents（主线程与 Worker 共用）
 // ============================================
-
-function coalesceEvents(events: GlobalEvent[]): GlobalEvent[] {
-  if (events.length <= 1) return events
-
-  const result: GlobalEvent[] = []
-  const deltaIndexByKey = new Map<string, number>()
-  const staleIndices = new Set<number>()
-
-  for (const event of events) {
-    const payload = event.payload
-
-    if (payload.type === EventTypes.MESSAGE_PART_DELTA) {
-      const p = payload.properties as {
-        sessionID: string
-        messageID: string
-        partID: string
-        field: string
-        delta: string
-      }
-      const key = `${p.sessionID}\0${p.messageID}\0${p.partID}\0${p.field}`
-      const idx = deltaIndexByKey.get(key)
-      if (idx !== undefined && !staleIndices.has(idx)) {
-        ;((result[idx].payload as { properties: { delta: string } }).properties).delta += p.delta
-        continue
-      }
-      result.push(event)
-      deltaIndexByKey.set(key, result.length - 1)
-      continue
-    }
-
-    if (payload.type === EventTypes.MESSAGE_PART_UPDATED) {
-      const props = payload.properties as {
-        sessionID?: string
-        part?: { id?: string; sessionID?: string; messageID?: string }
-      }
-      const sid = props.sessionID ?? props.part?.sessionID
-      const mid = props.part?.messageID
-      const pid = props.part?.id
-      if (sid && mid && pid) {
-        const prefix = `${sid}\0${mid}\0${pid}\0`
-        for (const [key, idx] of deltaIndexByKey) {
-          if (key.startsWith(prefix)) {
-            staleIndices.add(idx)
-            deltaIndexByKey.delete(key)
-          }
-        }
-      }
-    }
-
-    result.push(event)
-  }
-
-  if (staleIndices.size > 0) {
-    return result.filter((_, idx) => !staleIndices.has(idx))
-  }
-  return result
-}
-
-function parseAndCoalesce(rawEvents: string[]): GlobalEvent[] {
-  const parsed: GlobalEvent[] = []
-  for (const raw of rawEvents) {
-    const event = parseGlobalEvent(raw)
-    if (event) parsed.push(event)
-  }
-  return coalesceEvents(parsed)
-}
 
 function finalizeConnectionAttempt(conn: ServerConnection, generation: number): boolean {
   if (generation !== conn.generation) {
@@ -495,8 +429,14 @@ function connectViaBrowser(conn: ServerConnection) {
         throw new Error('No response body')
       }
 
-      const decoder = new TextDecoder()
-      const sseParser = createSseTextParser()
+      // 解码 + SSE 帧解析 + delta 合并在 Worker 里做，主线程只接收已合并的事件。
+      // Worker 不可用时 pump 内部回退到主线程解析，行为一致。
+      const pump = createSseEventPump(bridgeIdFor(serverId), events => {
+        if (myGeneration !== conn.generation) return
+        for (const globalEvent of events) {
+          broadcastEvent(conn, globalEvent)
+        }
+      })
 
       while (true) {
         // 代次不匹配，说明已经 reconnect 过了，停止读取旧流
@@ -515,17 +455,14 @@ function connectViaBrowser(conn: ServerConnection) {
           if (import.meta.env.DEV) {
             console.log(`[SSE] ${serverId} Stream ended, reconnecting...`)
           }
+          pump.reset()
           updateConnectionState(serverId, { state: 'disconnected' })
           scheduleReconnect(conn)
           break
         }
 
         resetHeartbeat(conn)
-
-        const coalesced = parseAndCoalesce(sseParser.push(decoder.decode(value, { stream: true })))
-        for (const globalEvent of coalesced) {
-          broadcastEvent(conn, globalEvent)
-        }
+        pump.feed(value)
       }
     })
     .catch(error => {
@@ -552,34 +489,14 @@ function connectViaBrowser(conn: ServerConnection) {
     })
 }
 
-function parseGlobalEvent(raw: string): GlobalEvent | null {
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    return isGlobalEvent(parsed) ? parsed : null
-  } catch (error) {
-    if (import.meta.env.DEV) {
-      console.warn('[SSE] Failed to parse event:', error, raw)
-    }
-    return null
-  }
-}
-
-function isGlobalEvent(value: unknown): value is GlobalEvent {
-  if (!isRecord(value)) return false
-  if (typeof value.directory !== 'string') return false
-  if (!isRecord(value.payload)) return false
-  if (typeof value.payload.type !== 'string') return false
-  return 'properties' in value.payload
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object'
-}
-
 function getMessageInfo(properties: unknown): ApiMessage | undefined {
   if (!isRecord(properties)) return undefined
   const message = properties.info ?? properties.message
   return isRecord(message) ? (message as ApiMessage) : undefined
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object'
 }
 
 // ============================================

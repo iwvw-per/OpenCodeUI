@@ -10,6 +10,7 @@
 // ============================================
 
 const inflight = new Map<string, Promise<unknown>>()
+const sharedInflight = new Map<string, Promise<unknown>>()
 
 /**
  * 复用同 key 的在途请求。
@@ -29,7 +30,52 @@ export function singleFlight<T>(key: string, factory: () => Promise<T>): Promise
   return request
 }
 
+/**
+ * 复用同 key 的在途请求，但**不把底层请求与任何调用方的 signal 绑定**。
+ *
+ * 与 singleFlight 的区别：调用方各自的 AbortSignal 只影响自己（abort 后自己抛
+ * AbortError），底层共享请求继续跑完并保留在登记表里，供其它在途调用方复用。
+ *
+ * 适用场景：StrictMode 双调用 / 多个组件同时请求同一份大响应（单次可达 MB 级），
+ * 若用 singleFlight 的共享 signal 语义，一个调用方 abort（如切换会话）会把另一个
+ * 仍在等待的调用方一起打断；若各自独立发请求，则同一响应被下载两次。
+ */
+export function sharedInflightRequest<T>(
+  key: string,
+  factory: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'))
+
+  let request = sharedInflight.get(key) as Promise<T> | undefined
+  if (!request) {
+    request = factory().finally(() => {
+      if (sharedInflight.get(key) === request) sharedInflight.delete(key)
+    })
+    sharedInflight.set(key, request)
+  }
+
+  const shared = request
+  if (!signal) return shared
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new DOMException('Aborted', 'AbortError'))
+    signal.addEventListener('abort', onAbort, { once: true })
+    shared.then(
+      value => {
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      error => {
+        signal.removeEventListener('abort', onAbort)
+        reject(error)
+      },
+    )
+  })
+}
+
 /** 测试用：清空在途登记 */
 export function resetSingleFlight(): void {
   inflight.clear()
+  sharedInflight.clear()
 }

@@ -226,6 +226,7 @@ export function useStreamingSyntaxHighlight(
   const [isLoading, setIsLoading] = useState(false)
   const workerKeyRef = useRef('')
   const codeRef = useRef(code)
+  // eslint-disable-next-line react-hooks/refs -- 保持最新 code，供 worker 回调读取
   codeRef.current = code
 
   const key = `${instanceId}:${normalizedLang}:${resolvedTheme.key}`

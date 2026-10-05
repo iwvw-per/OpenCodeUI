@@ -402,7 +402,7 @@ function CustomCSSEditor({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-[length:var(--fs-xs)] text-text-400 min-w-0">
+        <div data-setting-desc className="text-[length:var(--fs-xs)] text-text-400 min-w-0">
           <Trans
             i18nKey="settings:appearance.customCssSpecificityHelp"
             components={{

@@ -44,6 +44,7 @@ export function useFolderProjectDrop(
   const [isActive, setIsActive] = useState(false)
   const pathsRef = useRef<string[] | null>(null)
   const addDirectoryRef = useRef(addDirectory)
+  // eslint-disable-next-line react-hooks/refs -- 保持最新回调，供事件监听读取
   addDirectoryRef.current = addDirectory
   const lastTauriDropAtRef = useRef(0)
 

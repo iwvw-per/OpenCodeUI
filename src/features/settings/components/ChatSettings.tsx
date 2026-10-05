@@ -4,6 +4,7 @@ import { PathAutoIcon, PathUnixIcon, PathWindowsIcon } from '../../../components
 import { usePathMode, useTheme } from '../../../hooks'
 import { themeStore, type ReasoningDisplayMode, type CompletedAtFormat } from '../../../store/themeStore'
 import { useLayoutStore, layoutStore } from '../../../store/layoutStore'
+import { largeTextPasteStore, useLargeTextPasteSettings, type LargeTextPasteBehavior } from '../../../store/largeTextPasteStore'
 import { Toggle, SegmentedControl, SettingRow, SettingsSection, SettingsCardRow } from './SettingsUI'
 import type { PathMode } from '../../../utils/directoryUtils'
 
@@ -37,6 +38,7 @@ export function ChatSettings() {
     setRenderUserMarkdown,
   } = useTheme()
   const { sendOnEnter } = useLayoutStore()
+  const { behavior: largePasteBehavior } = useLargeTextPasteSettings()
   const [collapseUserMessages, setCollapseUserMessages] = useState(themeStore.collapseUserMessages)
   const [stepFinishDisplay, setStepFinishDisplay] = useState(themeStore.stepFinishDisplay)
   const [completedAtFormat, setCompletedAtFormat] = useState(themeStore.completedAtFormat)
@@ -72,7 +74,7 @@ export function ChatSettings() {
             />
           </div>
           {isAutoMode && (
-            <p className="text-[length:var(--fs-xs)] text-text-400 mt-2">
+            <p data-setting-desc className="text-[length:var(--fs-xs)] text-text-400 mt-2">
               {t('chat.usingStyle', { style: effectiveStyle === 'windows' ? '\\' : '/' })}
               {detectedStyle &&
                 ` · ${t('chat.detectedStyle', {
@@ -160,6 +162,18 @@ export function ChatSettings() {
                 { value: 'shiftEnter', label: t('chat.sendModeShiftEnter') },
               ]}
               onChange={v => layoutStore.setSendOnEnter(v === 'enter')}
+            />
+        </SettingRow>
+
+        <SettingRow label={t('chat.largePaste')} description={t('chat.largePasteDesc')}>
+            <SegmentedControl
+              value={largePasteBehavior}
+              options={[
+                { value: 'ask', label: t('chat.largePasteAsk') },
+                { value: 'attach', label: t('chat.largePasteAttach') },
+                { value: 'inline', label: t('chat.largePasteInline') },
+              ]}
+              onChange={v => largeTextPasteStore.setBehavior(v as LargeTextPasteBehavior)}
             />
         </SettingRow>
 

@@ -7,6 +7,8 @@
   "commandPaletteDesc": "Open command palette",
   "openShortcutsSettings": "Open Shortcuts Settings",
   "openShortcutsSettingsDesc": "Open settings to shortcuts tab",
+  "openScheduledTasks": "Scheduled Tasks",
+  "openScheduledTasksDesc": "Manage scheduled tasks",
   "toggleSidebar": "Toggle Sidebar",
   "toggleSidebarDesc": "Show or hide sidebar",
   "toggleRightPanel": "Toggle Right Panel",
@@ -85,7 +87,12 @@
     },
     "pin": "Pin",
     "unpin": "Unpin",
-    "unavailable": "Unavailable"
+    "unavailable": "Unavailable",
+    "aiRename": "Rename with AI",
+    "copyId": "Copy session ID",
+    "share": "Share",
+    "exportMarkdown": "Export Markdown",
+    "archive": "Archive"
   },
   "slashCommand": {
     "commands": "Commands",

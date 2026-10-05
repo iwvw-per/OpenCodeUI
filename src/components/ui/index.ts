@@ -11,6 +11,8 @@ export { IconButton } from './IconButton'
 export { CopyButton } from './CopyButton'
 export { MenuItem } from './MenuItem'
 export { ContextMenuItem } from './ContextMenuItem'
+export { ContextMenu } from './ContextMenu'
+export type { ContextMenuPosition } from './ContextMenu'
 
 // 表单
 export { Input, Textarea } from './Input'

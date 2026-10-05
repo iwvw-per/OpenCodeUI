@@ -13,6 +13,7 @@ import { autoApproveStore } from './store/autoApproveStore'
 import { serviceStore } from './store/serviceStore'
 import { reconnectSSE, ensureServerSSE } from './api/events'
 import { startPreferencesSync } from './api/preferencesSyncEngine'
+import { startScheduledTaskScheduler } from './store/scheduledTaskScheduler'
 import { getSDKClientAsync, invalidateSDKClient } from './api/sdk'
 import { resetPathModeCache } from './utils/directoryUtils'
 import { isTauri, isTauriMobile } from './utils/tauri'
@@ -196,6 +197,9 @@ function startApp() {
 
   // 多端设置同步：仅在已启用且已登录时启动；未登录时由设置页登录成功后触发。
   void startPreferencesSync().catch(err => apiErrorHandler('start preferences sync', err))
+
+  // 定时任务调度：应用打开期间轮询触发（opencode 无服务端调度接口）
+  startScheduledTaskScheduler()
 }
 
 startApp()

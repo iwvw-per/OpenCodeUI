@@ -11,6 +11,7 @@ export function useEmptyWorkingShellGate(isStreaming: boolean, extraDelayMs: num
   const readyRef = useRef(new Set<string>())
   const timersRef = useRef(new Map<string, number>())
   const streamingRef = useRef(isStreaming)
+  // eslint-disable-next-line react-hooks/refs -- 保持最新 streaming 值，供回调读取
   streamingRef.current = isStreaming
   const [version, setVersion] = useState(0)
 

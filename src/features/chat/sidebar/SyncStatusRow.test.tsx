@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { SyncStatusIcon, syncStatusView, formatSyncedAt } from './SyncStatusRow'
+import { SyncStatusIcon } from './SyncStatusRow'
+import { syncStatusView, formatSyncedAt } from './syncStatus'
 import type { SyncState } from '../../../api/preferencesSyncEngine'
 
 const STORAGE_KEY = 'opencode-aiagent-account'

@@ -39,6 +39,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
         ref={ref}
         type={type}
         disabled={disabled}
+        data-icon-button
         className={cn(
           'inline-flex shrink-0 items-center justify-center transition-colors duration-150',
           // 按下反馈用底色，不用 scale —— 点击不应改变元素边界

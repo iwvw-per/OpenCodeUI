@@ -232,11 +232,7 @@ function computeChatViewport(input: ComputedViewportInput): Omit<ChatViewportVal
         openWidth: dockedSidebarOpenWidth,
         dockedWidth: overlayPanels ? 0 : sidebarExpanded ? dockedSidebarOpenWidth : closedSidebarWidth,
         overlayWidth: overlayPanels
-          ? clamp(
-              viewportWidth - 72,
-              SIDEBAR_PREFERRED_MIN_WIDTH,
-              Math.max(SIDEBAR_PREFERRED_MIN_WIDTH, Math.min(360, viewportWidth - 48)),
-            )
+          ? viewportWidth
           : clamp(
               requestedSidebarOpenWidth,
               SIDEBAR_PREFERRED_MIN_WIDTH,

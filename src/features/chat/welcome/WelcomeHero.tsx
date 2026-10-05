@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDownIcon, CheckIcon, CloseIcon, FolderIcon, GlobeIcon, PlusIcon, SearchIcon } from '../../../components/Icons'
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui'
@@ -8,7 +8,7 @@ import type { SavedDirectory } from '../../../contexts/DirectoryContext.shared'
 import { getDirectoryName, isSameDirectory } from '../../../utils/directoryUtils'
 import { cn } from '../../../utils/cn'
 import { interactive } from '../../../utils/interaction'
-import { greetingSlotForHour, pickGreeting } from './welcomeGreetings'
+import { greetingSlotForHour } from './welcomeGreetings'
 
 interface WelcomeHeroProps {
   active: boolean
@@ -18,6 +18,10 @@ interface WelcomeHeroProps {
 
 // 退场动画 300ms，延迟卸载多留 60ms 余量，避免淡出未完成就被移除。
 const EXIT_DURATION_MS = 360
+
+// 问候语翻牌切换间隔与单次翻牌时长（含新句延迟入场）。
+const GREETING_ROTATE_MS = 5000
+const GREETING_ROLL_MS = 480
 
 /**
  * 欢迎问候语：绝对定位在输入框上方，随输入框容器一起移动。
@@ -29,18 +33,43 @@ export function WelcomeHero({ active, disableTransition = false }: WelcomeHeroPr
   const shouldRender = useDelayedRender(active, EXIT_DURATION_MS)
 
   const slot = greetingSlotForHour(new Date().getHours())
-  const greeting = useMemo(() => {
+  const pool = useMemo(() => {
     const raw = t(`emptyState.greetings.${slot}`, { returnObjects: true })
-    return pickGreeting(Array.isArray(raw) ? (raw as string[]) : [])
-    // t 的标识随语言切换而变化，足以驱动重新抽取问候语
+    return Array.isArray(raw) ? (raw as string[]) : []
+    // t 的标识随语言切换而变化，足以驱动问候语池重建
   }, [t, slot])
 
+  const [activeIndex, setActiveIndex] = useState(0)
+  const [pendingIndex, setPendingIndex] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (pool.length <= 1) return
+    const timer = window.setInterval(() => {
+      setPendingIndex(prev => (prev === null ? (activeIndex + 1) % pool.length : prev))
+    }, GREETING_ROTATE_MS)
+    return () => window.clearInterval(timer)
+  }, [pool, activeIndex])
+
+  useEffect(() => {
+    if (pendingIndex === null) return
+    const timer = window.setTimeout(() => {
+      setActiveIndex(pendingIndex)
+      setPendingIndex(null)
+    }, GREETING_ROLL_MS)
+    return () => window.clearTimeout(timer)
+  }, [pendingIndex])
+
   if (!shouldRender) return null
+
+  const safeActive = pool.length > 0 ? activeIndex % pool.length : 0
+  const greetingClass =
+    'px-4 text-center text-[26px] font-semibold leading-snug text-balance bg-gradient-to-r from-text-100 to-accent-main-100 bg-clip-text text-transparent sm:text-[32px]'
+  const glow = { filter: 'drop-shadow(0 0 22px hsl(var(--accent-main-100) / 0.18))' }
 
   return (
     <div
       data-welcome-layer
-      className={`absolute bottom-full left-0 right-0 z-40 pb-10 pointer-events-none ${
+      className={`absolute bottom-full left-0 right-0 z-40 pb-16 pointer-events-none ${
         disableTransition ? '' : 'transition-[opacity,transform] duration-300 ease-out'
       }`}
       style={{
@@ -49,12 +78,19 @@ export function WelcomeHero({ active, disableTransition = false }: WelcomeHeroPr
       }}
       aria-hidden={!active}
     >
-      <h1
-        className="px-4 text-center text-[26px] font-semibold leading-snug text-balance bg-gradient-to-r from-text-100 to-accent-main-100 bg-clip-text text-transparent sm:text-[32px]"
-        style={{ filter: 'drop-shadow(0 0 22px hsl(var(--accent-main-100) / 0.18))' }}
-      >
-        {greeting}
-      </h1>
+      <div className="greeting-flip-stage relative">
+        <h1
+          className={`${greetingClass} greeting-flip-card ${pendingIndex !== null ? 'greeting-flip-out' : ''}`}
+          style={glow}
+        >
+          {pool[safeActive]}
+        </h1>
+        {pendingIndex !== null && pool[pendingIndex] !== undefined && (
+          <h1 className={`${greetingClass} greeting-flip-card absolute inset-x-0 top-0 greeting-flip-in`} style={glow}>
+            {pool[pendingIndex]}
+          </h1>
+        )}
+      </div>
     </div>
   )
 }

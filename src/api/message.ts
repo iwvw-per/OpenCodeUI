@@ -6,7 +6,8 @@
 import { getSDKClient, unwrap } from './sdk'
 import { sanitizeMessageWithParts } from './sanitize'
 import { resolveSessionTarget } from '../utils/sessionKey'
-import { formatPathForApi } from '../utils/directoryUtils'
+import { formatPathForApi, directoryCacheKey } from '../utils/directoryUtils'
+import { sharedInflightRequest } from '../utils/singleFlight'
 import { serverStorage } from '../utils/perServerStorage'
 import { TURN_FETCH_MAX_PAGES, TURN_FETCH_MESSAGE_LIMIT } from '../constants/pagination'
 import type {
@@ -125,24 +126,29 @@ export async function getSessionMessagePage(
 ): Promise<SessionMessagePage> {
   const target = resolveSessionTarget(sessionId, serverId)
   const project = options?.project ?? true
-  return getWithTruncationRetry(async () => {
-    const sdk = getSDKClient(target.serverId)
-    const result = await sdk.session.messages(
-      {
-        sessionID: target.sessionId,
-        directory: formatPathForApi(directory, target.serverId),
-        limit,
-        before,
-      },
-      options?.signal ? { signal: options.signal } : undefined,
-    )
-    const messages = unwrap<ApiMessageWithParts[]>(result)
-    const nextCursor = result.response?.headers?.get('X-Next-Cursor') ?? undefined
-    return {
-      messages: project ? projectPageMessages(messages) : messages,
-      nextCursor: nextCursor || undefined,
-    }
-  })
+  // 用与传输格式无关的 canonical key 做在途合并：同一会话同一分页参数（目录
+  // 正/反斜杠、pathMode 抖动）只发一次网络。响应可达 MB 级，重复一次代价很高。
+  const key = `message-page:${target.serverId}:${target.sessionId}:${directoryCacheKey(directory)}:${limit ?? ''}:${before ?? ''}:${project ? 1 : 0}`
+  return sharedInflightRequest(
+    key,
+    () =>
+      getWithTruncationRetry(async () => {
+        const sdk = getSDKClient(target.serverId)
+        const result = await sdk.session.messages({
+          sessionID: target.sessionId,
+          directory: formatPathForApi(directory, target.serverId),
+          limit,
+          before,
+        })
+        const messages = unwrap<ApiMessageWithParts[]>(result)
+        const nextCursor = result.response?.headers?.get('X-Next-Cursor') ?? undefined
+        return {
+          messages: project ? projectPageMessages(messages) : messages,
+          nextCursor: nextCursor || undefined,
+        }
+      }),
+    options?.signal,
+  )
 }
 
 /**
@@ -267,15 +273,8 @@ export interface LightweightMessages {
  * 于是同一会话的轻量请求会被并发发出两次 —— 单次响应可达 MB 级，白白翻倍。
  * 这里按会话维度合并同 key 在途请求，只发一次网络。
  *
- * 注意与 utils/singleFlight 的区别：那套实现会让所有调用方共享同一个
- * AbortSignal，一个调用方 abort 会把其他调用方一起打断。轻量请求的调用方
- * （loadSession）在切换会话时会 abort，因此这里不把 signal 纳入共享，而是
- * 用「忽略 signal、只共享结果」的策略：
- * - 共享 Promise 不接收任何调用方的 signal；
- * - 单个调用方 abort 时，仅该调用方自己抛 AbortError（由 await 处的包装实现），
- *   底层请求继续跑完并写入共享登记，让另一个在途调用方仍能拿到数据。
- *
- * 请求结束后立即移除登记，保证后续调用能拿到新数据（只做合并，不做缓存）。
+ * 实现委托给 utils/singleFlight 的 sharedInflightRequest：底层共享请求不接收
+ * 任何调用方的 signal，单个调用方 abort 只影响自己，其余在途调用方仍能拿到数据。
  */
 const lightweightInflight = new Map<string, Promise<LightweightMessages>>()
 
@@ -300,57 +299,24 @@ export async function getSessionLightweightMessages(
   options?: { signal?: AbortSignal },
 ): Promise<LightweightMessages> {
   const target = resolveSessionTarget(sessionId, serverId)
-  const signal = options?.signal
-  // 进函数即检查：已 abort 的调用方不应再占用/新建在途请求
-  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
-
-  const key = `lightweight:${target.serverId}:${target.sessionId}:${formatPathForApi(directory, target.serverId) ?? ''}`
-
-  let request = lightweightInflight.get(key)
-  if (!request) {
-    request = (async () => {
+  const key = `lightweight:${target.serverId}:${target.sessionId}:${directoryCacheKey(directory)}`
+  return sharedInflightRequest(
+    key,
+    async () => {
       const sdk = getSDKClient(target.serverId)
-      const result = await sdk.session.messages(
-        {
-          sessionID: target.sessionId,
-          directory: formatPathForApi(directory, target.serverId),
-          limit: LIGHTWEIGHT_MESSAGE_LIMIT,
-        },
-        { headers: { [LIGHTWEIGHT_HEADER]: '1' } },
-      )
+      const result = await sdk.session.messages({
+        sessionID: target.sessionId,
+        directory: formatPathForApi(directory, target.serverId),
+        limit: LIGHTWEIGHT_MESSAGE_LIMIT,
+      }, { headers: { [LIGHTWEIGHT_HEADER]: '1' } })
       const messages = unwrap<ApiMessageWithParts[]>(result)
       return {
         messages,
         hasMore: messages.length >= LIGHTWEIGHT_MESSAGE_LIMIT,
       }
-    })().finally(() => {
-      if (lightweightInflight.get(key) === request) lightweightInflight.delete(key)
-    })
-    lightweightInflight.set(key, request)
-  }
-
-  const shared = request
-  if (!signal) return shared
-
-  // 调用方各自的 abort 只影响自己：底层共享请求继续跑完，供其他调用方复用。
-  return new Promise<LightweightMessages>((resolve, reject) => {
-    const onAbort = () => reject(new DOMException('Aborted', 'AbortError'))
-    if (signal.aborted) {
-      onAbort()
-      return
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-    shared.then(
-      value => {
-        signal.removeEventListener('abort', onAbort)
-        resolve(value)
-      },
-      error => {
-        signal.removeEventListener('abort', onAbort)
-        reject(error)
-      },
-    )
-  })
+    },
+    options?.signal,
+  )
 }
 
 /**

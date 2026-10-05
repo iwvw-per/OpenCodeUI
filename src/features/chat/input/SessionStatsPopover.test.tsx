@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { SessionStatsPopover, formatTokenRate } from './SessionStatsPopover'
+import { SessionStatsPopover } from './SessionStatsPopover'
+import { formatTokenRate } from '../../../utils/formatUtils'
 import type { SessionTurnStats } from '../../../hooks/useSessionTurnStats'
 import '../../../i18n'
 

@@ -47,6 +47,7 @@ const PUSH_DEBOUNCE_MS = 500
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let visibilityHandler: (() => void) | null = null
 let eventsSubscription: PreferenceEventsSubscription | null = null
 let storageUnsubscribe: (() => void) | null = null
 let lastFingerprint = ''
@@ -202,6 +203,16 @@ export async function startPreferencesSync(): Promise<void> {
   startEventSubscription()
   startStorageSubscription()
   pollTimer = setInterval(poll, POLL_INTERVAL_MS)
+  // B 类缺陷 5：回前台补跑一次同步。poll 在页面不可见时直接返回，后台期间的
+  // 本地改动无法上传；回到前台立即补一次，不必等下一个轮询周期。
+  if (typeof document !== 'undefined') {
+    visibilityHandler = () => {
+      if (document.visibilityState !== 'visible') return
+      if (!isSyncEnabled() || !readAccount()) return
+      scheduleSync()
+    }
+    document.addEventListener('visibilitychange', visibilityHandler)
+  }
 }
 
 export function stopPreferencesSync(): void {
@@ -212,6 +223,10 @@ export function stopPreferencesSync(): void {
   if (debounceTimer) {
     clearTimeout(debounceTimer)
     debounceTimer = null
+  }
+  if (visibilityHandler && typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', visibilityHandler)
+    visibilityHandler = null
   }
   pendingSync = false
   stopEventSubscription()

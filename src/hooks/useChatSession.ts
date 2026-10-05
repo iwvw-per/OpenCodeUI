@@ -654,9 +654,17 @@ export function useChatSession({
   // Load child sessions and pending permissions on session change
   // 页面刷新时 childSessionStore 是空的，需要先从 API 恢复子 session 关系
   // 然后再加载权限请求（包括子 session 的权限）
-  // 切换 session 时同样要清空旧 session 的 pending 权限/问题，否则 A 会话的请求会残留在 B 会话
+  //
+  // D10：清空 pending 的 effect 只依赖 routeSessionId，与「加载 family 权限」的
+  // effect 分开。此前 reset 与加载同在一个 effect 里、依赖含 effectiveDirectory，
+  // 而 effectiveDirectory = sessionDirectory || currentDirectory，会话刚打开时
+  // sessionDirectory 先空后回填，导致 effect 二次执行、把两次之间经 SSE 到达的
+  // 当前会话请求误清。
   useEffect(() => {
     resetPendingRequests()
+  }, [routeSessionId, resetPendingRequests])
+
+  useEffect(() => {
     if (!routeSessionId) {
       return
     }
@@ -733,7 +741,6 @@ export function useChatSession({
     routeSessionId,
     effectiveDirectory,
     paneServerId,
-    resetPendingRequests,
     setPendingPermissionRequests,
     setPendingQuestionRequests,
   ])
@@ -797,6 +804,9 @@ export function useChatSession({
         // 不要在 send 前 setStreaming：新 user 往往还没入列，过程折叠会把
         // 「上一轮已收工」误判成最新 Working 再展开，造成一闪。
         // streaming 在 send 成功后、或 SSE 推到 assistant 时再打开。
+        // D7：记录发送前的结束世代，await 返回后比对——若本轮在请求返回前已 idle，
+        // 不再置 streaming，避免永久 Working。
+        const idleGenerationBeforeSend = messageStore.getIdleGeneration(sessionId)
         await sendMessageAsync(
           {
             sessionId,
@@ -811,7 +821,7 @@ export function useChatSession({
           paneServerId,
         )
 
-        messageStore.setStreaming(sessionId, true)
+        messageStore.setStreaming(sessionId, true, idleGenerationBeforeSend)
 
         // 兜底：等待短暂时间后检查 SSE 是否已推送用户消息，
         // 若未收到则主动拉取补齐，避免 SSE 断流导致用户消息不显示

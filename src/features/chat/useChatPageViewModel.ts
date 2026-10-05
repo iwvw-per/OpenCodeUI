@@ -304,7 +304,9 @@ export function buildChatPageViewModel(messages: Message[], previous?: ChatPageV
 export function useChatPageViewModel(messages: Message[]): ChatPageViewModel {
   const previousRef = useRef<ChatPageViewModel | undefined>(undefined)
   return useMemo(() => {
+    // eslint-disable-next-line react-hooks/refs -- 上一帧 viewModel 用于跨帧复用引用，仅在 useMemo 内读写
     const viewModel = buildChatPageViewModel(messages, previousRef.current)
+    // eslint-disable-next-line react-hooks/refs -- 同上，缓存本帧结果供下一帧复用
     previousRef.current = viewModel
     return viewModel
   }, [messages])

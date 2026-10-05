@@ -20,6 +20,7 @@ import { ArrowUpIcon } from '../../components/Icons'
 import { useMobileCollapse } from './input/useMobileCollapse'
 import { useAttachmentRail } from './input/useAttachmentRail'
 import { useInputHistory } from './input/useInputHistory'
+import { LargeTextPasteDialog } from './input/LargeTextPasteDialog'
 import {
   TEXT_STYLE,
   bytesToDataUrl,
@@ -34,6 +35,7 @@ import { keybindingStore, matchesKeybinding } from '../../store/keybindingStore'
 import { inputDraftStore } from '../../store/inputDraftStore'
 import { themeStore } from '../../store/themeStore'
 import { notificationStore } from '../../store/notificationStore'
+import { largeTextPasteStore, useLargeTextPasteSettings } from '../../store/largeTextPasteStore'
 import { useLayoutStore } from '../../store/layoutStore'
 import { useChatViewport } from './chatViewport'
 import { setChatMorphing } from './chatMorph'
@@ -85,6 +87,10 @@ const COLLAPSED_BOX_HEIGHT = 36
 
 const MAX_DROPPED_FILE_SIZE = 20 * 1024 * 1024
 const MAX_DROPPED_FILE_SIZE_LABEL = `${MAX_DROPPED_FILE_SIZE / (1024 * 1024)}MB`
+
+// 大文本粘贴阈值：超过此字符数时按偏好询问/自动处理
+const LARGE_PASTE_CHAR_THRESHOLD = 2000
+const LARGE_PASTE_LINE_THRESHOLD = 25
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
@@ -243,6 +249,9 @@ function InputBoxComponent({
   // 附件状态（图片、文件、文件夹、agent）
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // 大文本粘贴：待处理的文本与弹窗开关
+  const [pendingLargePaste, setPendingLargePaste] = useState<string | null>(null)
+  const { behavior: largePasteBehavior } = useLargeTextPasteSettings()
 
   // @ Mention 状态
   const [mentionOpen, setMentionOpen] = useState(false)
@@ -1046,6 +1055,49 @@ function InputBoxComponent({
     [attachments, isSubmitting, text],
   )
 
+  // 判断粘贴文本是否达到「大文本」阈值（字符数或行数任一超限）
+  const isLargePaste = useCallback((value: string): boolean => {
+    if (value.length >= LARGE_PASTE_CHAR_THRESHOLD) return true
+    let lines = 1
+    for (let i = 0; i < value.length; i++) {
+      if (value.charCodeAt(i) === 10) {
+        lines += 1
+        if (lines >= LARGE_PASTE_LINE_THRESHOLD) return true
+      }
+    }
+    return false
+  }, [])
+
+  // 在光标处插入文本（不替换已有内容）
+  const insertInlineText = useCallback(
+    (value: string) => {
+      const textarea = textareaRef.current
+      if (!textarea) {
+        setText(prev => prev + value)
+        return
+      }
+      const start = textarea.selectionStart ?? text.length
+      const end = textarea.selectionEnd ?? text.length
+      setText(prev => prev.slice(0, start) + value + prev.slice(end))
+      requestAnimationFrame(() => {
+        const pos = start + value.length
+        textarea.focus()
+        textarea.setSelectionRange(pos, pos)
+      })
+    },
+    [text.length],
+  )
+
+  // 把大文本作为 .txt 附件加入
+  const applyLargePasteAsAttachment = useCallback(
+    async (value: string) => {
+      const blob = new Blob([value], { type: 'text/plain' })
+      const file = new File([blob], `pasted-${Date.now()}.txt`, { type: 'text/plain' })
+      await handleFilesSelected([file])
+    },
+    [handleFilesSelected],
+  )
+
   // 粘贴处理 — 根据模型能力过滤可粘贴的文件类型
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
@@ -1069,9 +1121,23 @@ function InputBoxComponent({
         }
       }
 
-      // 文本粘贴：让 textarea 默认处理（天然支持换行和 undo）
+      // 大文本粘贴：超过阈值时按偏好询问/自动处理，避免长内容撑爆输入框
+      const pasted = e.clipboardData?.getData('text/plain') ?? ''
+      if (isLargePaste(pasted)) {
+        e.preventDefault()
+        if (largePasteBehavior === 'attach') {
+          void applyLargePasteAsAttachment(pasted)
+        } else if (largePasteBehavior === 'inline') {
+          insertInlineText(pasted)
+        } else {
+          setPendingLargePaste(pasted)
+        }
+        return
+      }
+
+      // 普通文本粘贴：让 textarea 默认处理（天然支持换行和 undo）
     },
-    [supportsAnyFile, fileCaps, handleFilesSelected],
+    [supportsAnyFile, fileCaps, handleFilesSelected, largePasteBehavior, applyLargePasteAsAttachment, insertInlineText, isLargePaste],
   )
 
   // 拖拽文件到输入框
@@ -1565,6 +1631,25 @@ function InputBoxComponent({
               rootPath={rootPath}
               onSelect={handleSlashSelect}
               onClose={handleSlashClose}
+            />
+
+            {/* 大文本粘贴处理选择 */}
+            <LargeTextPasteDialog
+              isOpen={pendingLargePaste !== null}
+              charCount={pendingLargePaste?.length ?? 0}
+              onClose={() => setPendingLargePaste(null)}
+              onAttach={remember => {
+                const value = pendingLargePaste
+                setPendingLargePaste(null)
+                if (remember) largeTextPasteStore.setBehavior('attach')
+                if (value !== null) void applyLargePasteAsAttachment(value)
+              }}
+              onInline={remember => {
+                const value = pendingLargePaste
+                setPendingLargePaste(null)
+                if (remember) largeTextPasteStore.setBehavior('inline')
+                if (value !== null) insertInlineText(value)
+              }}
             />
 
             {/* Input Container + FAB：FAB 锚点宽度跟随输入框（132 ↔ 整列），

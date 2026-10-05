@@ -23,6 +23,7 @@ export function useTokenRate(sessionId: string | null): TokenRateState {
 
   useEffect(() => {
     if (!sessionId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 无会话时重置为初始值
       setState({ tokensPerSec: 0, hasData: false })
       return
     }

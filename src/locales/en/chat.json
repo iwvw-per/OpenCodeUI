@@ -45,13 +45,90 @@
     "newProject": "New project",
     "workOutsideProject": "Work without a project",
     "greetings": {
-      "lateNight": ["Night owl, what are we building?", "It's late, and inspiration is right on time.", "Code written at 3am hits different."],
-      "earlyMorning": ["Good morning, start with a build.", "Early hours, big ideas. What's up?", "The early bird fixes the bug."],
-      "morning": ["Good morning. What are we building?", "Peak focus. Tell me your idea.", "Let's get to work. What's on your mind?"],
-      "noon": ["Lunch break? Perfect time to code.", "Midday. What's on the afternoon list?", "Refueled. Let's build."],
-      "afternoon": ["Good afternoon, grab a coffee.", "Tea time. What are we building?", "You're in the zone. What's the plan?"],
-      "evening": ["Good evening. What are we building?", "After hours are for creating.", "Night mode on. Let's go."],
-      "night": ["Late night, did inspiration strike?", "Up late again? Tell me your idea.", "Quiet night, good for code."]
+      "lateNight": [
+        "Night owl, what are we building?",
+        "It's late, and inspiration is right on time.",
+        "Code written at 3am hits different.",
+        "The quietest hours hold the truest ideas.",
+        "The stars are up. So are you.",
+        "Late shift: creation mode on.",
+        "3am is a fine time to change the world.",
+        "Quiet enough. Let's begin.",
+        "Still awake? Then write something.",
+        "Dreams or code. Pick one."
+      ],
+      "earlyMorning": [
+        "Good morning, start with a build.",
+        "Early hours, big ideas. What's up?",
+        "The early bird fixes the bug.",
+        "First light, first line of code.",
+        "Coffee's still warm. So is the idea.",
+        "Morning. What are we making today?",
+        "New day, new page.",
+        "Sun's out. Let's get to work.",
+        "Your brain works best in the morning.",
+        "You woke up to create."
+      ],
+      "morning": [
+        "Good morning. What are we building?",
+        "Peak focus. Tell me your idea.",
+        "Let's get to work. What's on your mind?",
+        "Morning ideas land the hardest.",
+        "Fully charged. Let's start.",
+        "What's first on the list today?",
+        "Prime hours. Do something big.",
+        "Coffee's ready. Let's go.",
+        "Morning. Got something new?",
+        "Clear head, steady hands."
+      ],
+      "noon": [
+        "Lunch break? Perfect time to code.",
+        "Midday. What's on the afternoon list?",
+        "Refueled. Let's build.",
+        "One more idea before the break?",
+        "Fed and ready. Inspiration yet?",
+        "Noon. What are we up to?",
+        "Sneak in a build over lunch.",
+        "No fuel, no code.",
+        "Good noon. Create again soon.",
+        "Midday is for thinking big."
+      ],
+      "afternoon": [
+        "Good afternoon, grab a coffee.",
+        "Tea time. What are we building?",
+        "You're in the zone. What's the plan?",
+        "Good afternoon. Something new?",
+        "Sun's high, ideas flowing.",
+        "Second half. Keep going.",
+        "Afternoon. What's on deck?",
+        "Sleepy? Write some code.",
+        "Post-lunch hours love creation.",
+        "Afternoon. Ready to build?"
+      ],
+      "evening": [
+        "Good evening. What are we building?",
+        "After hours are for creating.",
+        "Night mode on. Let's go.",
+        "Good evening. Long day?",
+        "Dinner's done. What's on your mind?",
+        "Under the lamp is where code lives.",
+        "Good evening. What's the plan?",
+        "Daytime ideas, made real tonight.",
+        "Golden hour. Bring the spark.",
+        "Good evening. Tell me your idea."
+      ],
+      "night": [
+        "Late night, did inspiration strike?",
+        "Up late again? Tell me your idea.",
+        "Quiet night, good for code.",
+        "After ten, the creators own the night.",
+        "The deeper the night, the sweeter the code.",
+        "Still up? Then make something.",
+        "Deep night is inspiration's cradle.",
+        "Quiet night. Let's begin.",
+        "One last idea before sleep?",
+        "Good night. What are we making?"
+      ]
     }
   },
   "inputBox": {
@@ -59,7 +136,15 @@
     "replyToAgentMobile": "Reply to Agent...",
     "replyToAgent": "Reply to Agent (type @ to mention, / for commands)",
     "fileTooLarge": "File too large",
-    "fileTooLargeBody": "\"{{name}}\" exceeds the {{size}} attachment limit and was not added"
+    "fileTooLargeBody": "\"{{name}}\" exceeds the {{size}} attachment limit and was not added",
+    "largePasteTitle": "Paste large text",
+    "largePasteBody": "The pasted content has {{count}} characters. Choose how to handle it:",
+    "largePasteAsAttachment": "As attachment",
+    "largePasteAsAttachmentDesc": "Save as a text attachment, keep the input clean",
+    "largePasteInline": "Inline in input",
+    "largePasteInlineDesc": "Insert into the input as-is",
+    "largePasteAttachAlways": "Always attach",
+    "largePasteInlineAlways": "Always inline"
   },
   "modelSelector": {
     "selectModel": "Select model",
@@ -195,8 +280,8 @@
     "loadingChats": "Loading chats",
     "loadingChatsFailed": "Failed to load chats",
     "noChatsInFolder": "No chats in this folder",
-    "showMoreChats": "Show more chats",
-    "showFewerChats": "Show fewer chats",
+    "showMoreChats": "Show more",
+    "showFewerChats": "Show less",
     "selectedSessions": "{{count}} selected",
     "selectedProjects": "{{count}} projects",
     "selectedMixed": "{{sessions}} + {{projects}} selected",

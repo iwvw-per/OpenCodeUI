@@ -27,6 +27,7 @@ export function useCompositorExpand(open: boolean) {
 
   useLayoutEffect(() => {
     if (!enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 非 Android 时直接同步为受控状态
       setLayoutOpen(open)
       setUseGridTransition(true)
       setKeepAnimating(false)

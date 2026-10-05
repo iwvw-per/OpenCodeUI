@@ -58,6 +58,8 @@ const MAX_CACHED_SESSIONS_TOTAL = 48
  */
 const MAX_SESSION_MESSAGE_BYTES = 12 * 1024 * 1024
 const MAX_SESSION_MESSAGE_COUNT = 20_000
+/** D5：单会话乱序 delta 待回放键上限（超出丢最旧，防无界增长） */
+const MAX_PENDING_DELTAS = 256
 
 class MessageStore {
   private sessions = new Map<string, SessionState>()
@@ -70,6 +72,15 @@ class MessageStore {
    * 从而避免「UI 订阅的 bucket 收不到事件、事件写进了另一个 bucket」。
    */
   private rawSessionToKey = new Map<string, string>()
+  /**
+   * D8：raw sessionId → 曾以之出现过的事件前缀 serverId 集合。
+   *
+   * 同一后端被多前缀连接时（`local` 与 `aiagent:inst_x`），权威 bucket 只归属
+   * 首次出现的那个前缀。若按权威 key 的前缀做「标记 stale / 配额计数 / 淘汰」，
+   * 另一前缀的重连就不会命中该会话。这里记录所有关联前缀，供按 serverId 的操作
+   * 正确匹配（宁可多算一个 server，也不漏标）。
+   */
+  private rawSessionServers = new Map<string, Set<string>>()
   private subscribers = new Set<Subscriber>()
   private sessionSubscribers = new Map<string, Map<Subscriber, number>>()
   private sessionVersions = new Map<string, number>()
@@ -93,6 +104,32 @@ class MessageStore {
    */
   private messageIndexCache = new Map<string, { messages: Message[]; byId: Map<string, number> }>()
   private partIndexCache = new Map<string, Map<string, { parts: Part[]; byId: Map<string, number> }>>()
+  /**
+   * delta 乱序缓冲（D5）。
+   *
+   * part.delta 依赖 part 已由 part.updated 建立；SSE 乱序（delta 先于
+   * part.updated）时旧实现直接丢弃 token，且无自愈路径，表现为流式文本缺一段。
+   * 这里按 (权威 sessionKey, messageID, partID, field) 暂存尚无法应用的 delta，
+   * 待该 part 建立后由 flushPendingDeltas 回放。
+   *
+   * 有界：单会话缓冲上限，超出时丢最旧的，避免异常流量下无界增长。
+   */
+  private pendingDeltas = new Map<string, Map<string, string>>()
+  /**
+   * D7：每会话的「结束信号世代」。finalizeSession（idle/error）时递增。
+   * 发送路径在 await sendMessageAsync 返回后读取该世代，若与发起时不同，
+   * 说明本轮在请求返回前已结束，不再置 streaming（否则留下永久 Working 态）。
+   */
+  private idleGeneration = new Map<string, number>()
+  /**
+   * D19：乐观本地消息的 id 集合（乐观发送 / 排队追问的占位）。
+   *
+   * 此前靠 `id.startsWith('msg-local-')` 识别乐观消息，但真实乐观 id 是
+   * `msg_<uuid>`（服务端 canonical 消息也是 `msg_` 前缀），该判定永不命中，
+   * 相关清理分支是死代码。改用显式集合：乐观写入时登记，被 canonical 消息
+   * 精确命中（复用同一 id）或按文本替换时移除。
+   */
+  private optimisticMessageIds = new Set<string>()
 
   // ============================================
   // Subscription & Notification
@@ -382,11 +419,31 @@ class MessageStore {
    */
   private resolveKey(sessionId: string, create = false): string {
     const raw = rawSessionIdOfKey(sessionId)
+    const serverId = serverIdOfSessionKey(sessionId)
+    if (serverId) {
+      let servers = this.rawSessionServers.get(raw)
+      if (!servers) {
+        servers = new Set<string>()
+        this.rawSessionServers.set(raw, servers)
+      }
+      servers.add(serverId)
+    }
     const existing = this.rawSessionToKey.get(raw)
     if (existing) return existing
     if (!create) return sessionId
     this.rawSessionToKey.set(raw, sessionId)
     return sessionId
+  }
+
+  /**
+   * D8：该权威 key 是否与指定 serverId 关联（含多前缀归并的其它前缀）。
+   * 无 serverId 前缀的旧 key 视为任意 server 都匹配，避免漏标。
+   */
+  private sessionBelongsToServer(sessionKey: string, serverId: string): boolean {
+    if (serverIdOfSessionKey(sessionKey) === serverId) return true
+    const servers = this.rawSessionServers.get(rawSessionIdOfKey(sessionKey))
+    if (!servers) return serverIdOfSessionKey(sessionKey) === ''
+    return servers.has(serverId)
   }
 
   private ensureSession(sessionId: string): SessionState {
@@ -459,7 +516,8 @@ class MessageStore {
     const countFor = (serverId: string) => {
       let count = 0
       for (const id of this.sessions.keys()) {
-        if (serverIdOfSessionKey(id) === serverId) count += 1
+        // D8：按关联前缀计数，避免多前缀会话被漏算 / 误算到其它服务器
+        if (this.sessionBelongsToServer(id, serverId)) count += 1
       }
       return count
     }
@@ -467,6 +525,10 @@ class MessageStore {
     const evictable = (id: string): boolean => {
       if (this.protectedSessions.has(id)) return false
       if (this.sessions.get(id)?.isStreaming) return false
+      // D17：仍有 UI 订阅者的会话不淘汰。TaskRenderer / 子会话面板等通过
+      // useSessionState 订阅但不在 protectedSessions 里，淘汰会让查看中的内容突然清空。
+      const subscribers = this.sessionSubscribers.get(id)
+      if (subscribers && subscribers.size > 0) return false
       return true
     }
 
@@ -475,7 +537,7 @@ class MessageStore {
       let oldestId: string | null = null
       let oldestTime = Infinity
       for (const [id, time] of this.sessionAccessTime) {
-        if (serverId !== undefined && serverIdOfSessionKey(id) !== serverId) continue
+        if (serverId !== undefined && !this.sessionBelongsToServer(id, serverId)) continue
         if (!evictable(id)) continue
         if (time < oldestTime) {
           oldestTime = time
@@ -484,11 +546,16 @@ class MessageStore {
       }
       if (!oldestId) return false
       logger.log('[MessageStore] Evicting old session:', oldestId)
+      this.forgetOptimisticMessagesOf(oldestId)
       this.sessions.delete(oldestId)
       this.sessionAccessTime.delete(oldestId)
+      this.dirtyPartsBySession.delete(oldestId)
+      this.pendingDeltas.delete(oldestId)
+      this.idleGeneration.delete(oldestId)
       this.messageIndexCache.delete(oldestId)
       this.partIndexCache.delete(oldestId)
       this.rawSessionToKey.delete(rawSessionIdOfKey(oldestId))
+      this.rawSessionServers.delete(rawSessionIdOfKey(oldestId))
       return true
     }
 
@@ -610,6 +677,7 @@ class MessageStore {
     // 乐观发送的本地占位也是用户消息：立即抬高锚点，新会话即时置顶。
     // 新建会话的 state.directory 可能尚未回填，故显式传入目录。
     this.recordUserMessageAnchor(sessionKey, message.info, directory)
+    this.optimisticMessageIds.add(message.info.id)
     this.notify([sessionKey])
   }
 
@@ -620,6 +688,7 @@ class MessageStore {
     const nextMessages = state.messages.filter(message => message.info.id !== messageId)
     if (nextMessages.length === state.messages.length) return
     state.messages = nextMessages
+    this.optimisticMessageIds.delete(messageId)
     this.notify([sessionId])
   }
 
@@ -638,10 +707,10 @@ class MessageStore {
    * sessionId key 形如 `${serverId}::${sessionId}`。
    */
   markServerSessionsStale(serverId: string) {
-    const prefix = `${serverId}::`
     let updated = false
     for (const [sessionId, state] of this.sessions) {
-      if (!sessionId.startsWith(prefix)) continue
+      // D8：按关联前缀匹配，多前缀归并的会话也能被正确标记
+      if (!this.sessionBelongsToServer(sessionId, serverId)) continue
       if (state.loadState !== 'loaded' || state.isStale) continue
       state.isStale = true
       updated = true
@@ -705,6 +774,9 @@ class MessageStore {
     if (options?.title !== undefined) state.title = options.title
     state.shareUrl = options?.shareUrl
     state.isStale = false
+
+    // D5：HTTP 快照是权威全量，此前因乱序暂存的 delta 已被快照覆盖，丢弃以免重复回放
+    this.pendingDeltas.delete(sessionId)
 
     // 整段替换：先归零缺口，再由 capSessionMessages 按本次实际裁剪量重新记账。
     state.trimmedCount = 0
@@ -878,9 +950,13 @@ class MessageStore {
     this.sessions.clear()
     this.sessionAccessTime.clear()
     this.dirtyPartsBySession.clear()
+    this.pendingDeltas.clear()
+    this.idleGeneration.clear()
     this.messageIndexCache.clear()
     this.partIndexCache.clear()
     this.rawSessionToKey.clear()
+    this.rawSessionServers.clear()
+    this.optimisticMessageIds.clear()
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId)
       this.rafId = null
@@ -891,15 +967,30 @@ class MessageStore {
 
   clearSession(sessionId: string) {
     sessionId = this.resolveKey(sessionId)
+    this.forgetOptimisticMessagesOf(sessionId)
     this.sessions.delete(sessionId)
     this.sessionAccessTime.delete(sessionId)
     this.dirtyPartsBySession.delete(sessionId)
+    this.pendingDeltas.delete(sessionId)
+    this.idleGeneration.delete(sessionId)
     this.messageIndexCache.delete(sessionId)
     this.partIndexCache.delete(sessionId)
     // 只清掉映射到本 key 的 raw 项；其它前缀若仍持有权威 key 则不动
     const raw = rawSessionIdOfKey(sessionId)
-    if (this.rawSessionToKey.get(raw) === sessionId) this.rawSessionToKey.delete(raw)
+    if (this.rawSessionToKey.get(raw) === sessionId) {
+      this.rawSessionToKey.delete(raw)
+      this.rawSessionServers.delete(raw)
+    }
     this.notify([sessionId])
+  }
+
+  /** D19：移除某会话下所有乐观消息 id 标记（会话被清 / 淘汰时调用） */
+  private forgetOptimisticMessagesOf(sessionKey: string): void {
+    const state = this.sessions.get(sessionKey)
+    if (!state) return
+    for (const message of state.messages) {
+      this.optimisticMessageIds.delete(message.info.id)
+    }
   }
 
   setShareUrl(sessionId: string, url: string | undefined) {
@@ -930,16 +1021,22 @@ class MessageStore {
         : undefined
       if (incomingText !== undefined) {
         const optimisticIndex = state.messages.findIndex(message => {
-          if (!message.info.id.startsWith('msg-local-') || message.info.role !== 'user') return false
+          // D19：用显式乐观 id 集合识别，而非永不命中的 msg-local- 前缀
+          if (!this.optimisticMessageIds.has(message.info.id) || message.info.role !== 'user') return false
           return message.parts.some(part => part.type === 'text' && part.text === incomingText)
         })
-        if (optimisticIndex >= 0) state.messages = state.messages.filter((_, index) => index !== optimisticIndex)
+        if (optimisticIndex >= 0) {
+          this.optimisticMessageIds.delete(state.messages[optimisticIndex].info.id)
+          state.messages = state.messages.filter((_, index) => index !== optimisticIndex)
+        }
       }
     }
     const existingIndex = state.messages.findIndex(m => m.info.id === apiMsg.id)
 
     if (existingIndex >= 0) {
       const oldMessage = state.messages[existingIndex]
+      // D19：canonical 消息精确命中乐观占位（服务端复用了同一 id），清掉乐观标记
+      if (apiMsg.role === 'user') this.optimisticMessageIds.delete(apiMsg.id)
       const newMessage = { ...oldMessage, info: toUIMessageInfo(apiMsg) }
       state.messages = [
         ...state.messages.slice(0, existingIndex),
@@ -960,6 +1057,8 @@ class MessageStore {
     }
 
     this.notify([sessionKey])
+    // D5：消息建立后，回放此前因乱序而暂存的 delta
+    this.flushPendingDeltas(sessionKey)
   }
 
   handlePartUpdated(apiPart: ApiPart & { sessionID: string; messageID: string }) {
@@ -971,10 +1070,12 @@ class MessageStore {
     if (msgIndex === undefined && apiPart.type === 'text') {
       const text = (apiPart as ApiPart & { text?: string }).text
       const optimisticIndex = typeof text === 'string'
-        ? state.messages.findIndex(message => message.info.id.startsWith('msg-local-') && message.info.role === 'user' && message.parts.some(part => part.type === 'text' && part.text === text))
+        ? state.messages.findIndex(message => this.optimisticMessageIds.has(message.info.id) && message.info.role === 'user' && message.parts.some(part => part.type === 'text' && part.text === text))
         : -1
       if (optimisticIndex >= 0) {
         const optimistic = state.messages[optimisticIndex]
+        // D19：乐观占位被 canonical part 认领（id 改写为服务端 id），清掉乐观标记
+        this.optimisticMessageIds.delete(optimistic.info.id)
         state.messages = [...state.messages.slice(0, optimisticIndex), { ...optimistic, info: { ...optimistic.info, id: apiPart.messageID } }, ...state.messages.slice(optimisticIndex + 1)]
         this.messageIndexCache.delete(sessionKey)
         msgIndex = optimisticIndex
@@ -1006,6 +1107,8 @@ class MessageStore {
     const newMessage = { ...oldMessage, parts: newParts }
     state.messages = [...state.messages.slice(0, msgIndex), newMessage, ...state.messages.slice(msgIndex + 1)]
     this.notify([sessionKey])
+    // D5：part 建立后，回放此前因乱序而暂存的 delta
+    this.flushPendingDeltas(sessionKey)
   }
 
   handlePartDelta(data: { sessionID: string; messageID: string; partID: string; field: string; delta: string }) {
@@ -1014,11 +1117,19 @@ class MessageStore {
     if (!state) return
 
     const msgIndex = this.getMessageIndex(sessionKey, state).get(data.messageID)
-    if (msgIndex === undefined) return
+    if (msgIndex === undefined) {
+      // D5：消息尚未建立（delta 先于 message.updated 到达），暂存待回放
+      this.bufferPendingDelta(sessionKey, data)
+      return
+    }
     const msg = state.messages[msgIndex]
 
     const partIndex = this.getPartIndex(sessionKey, data.messageID, msg.parts).get(data.partID)
-    if (partIndex === undefined) return
+    if (partIndex === undefined) {
+      // D5：part 尚未建立（delta 先于 part.updated 到达），暂存待回放
+      this.bufferPendingDelta(sessionKey, data)
+      return
+    }
     const part = msg.parts[partIndex]
 
     if (!(data.field === 'text' && 'text' in part))
@@ -1039,6 +1150,78 @@ class MessageStore {
     }
     dirtyPartIds.add(data.partID)
     this.notify([sessionKey])
+  }
+
+  /** D5：把无法立即应用的 delta 暂存到该会话的待回放缓冲（有界） */
+  private bufferPendingDelta(
+    sessionKey: string,
+    data: { messageID: string; partID: string; field: string; delta: string },
+  ) {
+    if (data.field !== 'text') return
+    let bySession = this.pendingDeltas.get(sessionKey)
+    if (!bySession) {
+      bySession = new Map<string, string>()
+      this.pendingDeltas.set(sessionKey, bySession)
+    }
+    const key = `${data.messageID}\0${data.partID}\0${data.field}`
+    bySession.set(key, (bySession.get(key) ?? '') + data.delta)
+    // 有界：单会话最多保留 MAX_PENDING_DELTAS 条待回放键，超出丢最旧的
+    while (bySession.size > MAX_PENDING_DELTAS) {
+      const oldest = bySession.keys().next()
+      if (oldest.done) break
+      bySession.delete(oldest.value)
+    }
+  }
+
+  /**
+   * D5：part 建立后回放该会话此前暂存的 delta。
+   * 由 handlePartUpdated 在成功写入 part 后调用。只回放已能定位到 part 的条目，
+   * 其余继续保留（其依赖的 part 可能稍后到达）。
+   */
+  private flushPendingDeltas(sessionKey: string) {
+    const bySession = this.pendingDeltas.get(sessionKey)
+    if (!bySession || bySession.size === 0) return
+    const state = this.sessions.get(sessionKey)
+    if (!state) return
+
+    const messageIndex = this.getMessageIndex(sessionKey, state)
+    const remaining = new Map<string, string>()
+    let appliedAny = false
+
+    for (const [key, delta] of bySession) {
+      const [messageID, partID, field] = key.split('\0')
+      if (field !== 'text') continue
+      const msgIndex = messageIndex.get(messageID)
+      if (msgIndex === undefined) {
+        remaining.set(key, delta)
+        continue
+      }
+      const msg = state.messages[msgIndex]
+      const partIndex = this.getPartIndex(sessionKey, messageID, msg.parts).get(partID)
+      if (partIndex === undefined) {
+        remaining.set(key, delta)
+        continue
+      }
+      const part = msg.parts[partIndex]
+      if (!('text' in part)) continue
+      ;(part as { text: string }).text += delta
+      let dirtyPartsByMessage = this.dirtyPartsBySession.get(sessionKey)
+      if (!dirtyPartsByMessage) {
+        dirtyPartsByMessage = new Map<string, Set<string>>()
+        this.dirtyPartsBySession.set(sessionKey, dirtyPartsByMessage)
+      }
+      let dirtyPartIds = dirtyPartsByMessage.get(messageID)
+      if (!dirtyPartIds) {
+        dirtyPartIds = new Set<string>()
+        dirtyPartsByMessage.set(messageID, dirtyPartIds)
+      }
+      dirtyPartIds.add(partID)
+      appliedAny = true
+    }
+
+    if (remaining.size === 0) this.pendingDeltas.delete(sessionKey)
+    else this.pendingDeltas.set(sessionKey, remaining)
+    if (appliedAny) this.notify([sessionKey])
   }
 
   handlePartRemoved(data: { partID: string; messageID: string; sessionID: string }) {
@@ -1078,6 +1261,9 @@ class MessageStore {
   /** 会话结束的公共收尾：清 streaming、补 completed、对账悬空工具。 */
   private finalizeSession(sessionId: string) {
     sessionId = this.resolveKey(sessionId)
+    // D7：记录该会话收到结束信号的世代。发送路径在 await 返回后据此判断
+    // 「本轮是否已在请求返回前就结束」，避免把已结束的会话重新置为 streaming。
+    this.idleGeneration.set(sessionId, (this.idleGeneration.get(sessionId) ?? 0) + 1)
     const state = this.sessions.get(sessionId)
     if (!state) return
 
@@ -1227,12 +1413,26 @@ class MessageStore {
   // Streaming Control
   // ============================================
 
-  setStreaming(sessionId: string, isStreaming: boolean) {
+  setStreaming(sessionId: string, isStreaming: boolean, expectedIdleGeneration?: number) {
     sessionId = this.resolveKey(sessionId, true)
+    // D7：置 streaming 前校验结束世代。若本轮在请求返回前已 idle（世代已变），
+    // 不再置 true，避免已结束的会话永久显示 Working。
+    if (
+      isStreaming &&
+      expectedIdleGeneration !== undefined &&
+      (this.idleGeneration.get(sessionId) ?? 0) !== expectedIdleGeneration
+    ) {
+      return
+    }
     const state = isStreaming ? this.ensureSession(sessionId) : this.sessions.get(sessionId)
     if (!state) return
     state.isStreaming = isStreaming
     this.notify([sessionId])
+  }
+
+  /** D7：读取会话的结束世代（发送前记录，await 后比对） */
+  getIdleGeneration(sessionId: string): number {
+    return this.idleGeneration.get(this.resolveKey(sessionId)) ?? 0
   }
 
   // ============================================

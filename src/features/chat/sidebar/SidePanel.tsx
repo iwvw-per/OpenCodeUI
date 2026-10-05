@@ -751,10 +751,12 @@ export function SidePanel({
   const projectLastUsedAt = useMemo(() => {
     const map: Record<string, number> = { ...recentProjects }
     for (const [directory, updated] of Object.entries(fetchedProjectLastUsed)) map[directory] = updated
-    // 锚点优先级最高：本地最新活动覆盖服务端/本地点击记录的旧值
+    // D12：锚点（用户最后一条消息时间）与服务端按目录拉取的最大 time.updated 取较大值，
+    // 而非让锚点无条件覆盖。assistant 流式会把 time.updated 抬得比锚点更新，若用较旧的
+    // 锚点覆盖，项目行时间会回退、排序跳变。
     for (const worktree of uncoveredProjectWorktrees) {
       const anchor = sessionActivityStore.getDirectoryAnchor(activeServerId, worktree)
-      if (anchor !== undefined) map[worktree] = anchor
+      if (anchor !== undefined && anchor > (map[worktree] ?? 0)) map[worktree] = anchor
     }
     return map
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -943,6 +945,7 @@ export function SidePanel({
     onSelectSession: handleSelectActive,
     onRenameSession: handleRenameFolderSession,
     onDeleteSession: handleDeleteFolderSession,
+    onSessionChanged: () => void refresh(),
     onNewSessionInDirectory: handleNewSessionInDirectory,
     onRemoveProject: handleRemoveProjectClick,
     expandedChildSessionIds,
@@ -959,7 +962,7 @@ export function SidePanel({
 
   // 统一的结构，通过 CSS 控制显示/隐藏
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div data-sidebar className="flex flex-col h-full overflow-hidden">
       {/* ===== Header ===== */}
       {hideHeader ? null : (
         <div
@@ -1155,10 +1158,11 @@ export function SidePanel({
                         ? t('sidebar.selectedSessions', { count: selectedSessionIds.size })
                         : t('sidebar.selectedProjects', { count: selectedProjectIds.size })}
                 </span>
-                <div className="ml-auto flex items-center gap-1.5">
+                <div className="ml-auto flex items-center gap-2 md:gap-1.5">
                   {selectedSessionIds.size > 0 && (
                     <button
                       type="button"
+                      data-icon-button
                       onClick={() => setBatchDeleteSessionConfirm(true)}
                       className={cn('p-1.5 rounded-md text-text-500 hover:text-danger-100', interactive.danger)}
                       title={t('sidebar.deleteSessionsWithCount', { count: selectedSessionIds.size })}
@@ -1170,6 +1174,7 @@ export function SidePanel({
                   {selectedProjectIds.size > 0 && (
                     <button
                       type="button"
+                      data-icon-button
                       onClick={() => setBatchRemoveProjectConfirm(true)}
                       className={cn(
                         'p-1.5 rounded-md text-text-500 hover:text-warning-100',
@@ -1184,6 +1189,7 @@ export function SidePanel({
                   )}
                   <button
                     type="button"
+                    data-icon-button
                     onMouseDown={e => e.preventDefault()}
                     onClick={exitEditMode}
                     aria-label={t('sidebar.doneManaging')}
@@ -1205,7 +1211,7 @@ export function SidePanel({
                   {activeServer?.name}
                 </span>
                 {/* 全部收起/展开切换 + 排序 + 管理 */}
-                <div className="ml-auto shrink-0 flex items-center gap-0.5">
+                <div className="ml-auto shrink-0 flex items-center gap-1.5 md:gap-0.5">
                   <IconButton
                     size="sm"
                     onMouseDown={e => e.preventDefault()}

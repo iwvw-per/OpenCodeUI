@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>同步拓扑图 · OpenCodeUI</title>
+<style>
+  :root {
+    --bg: #1a1a19;
+    --panel: #242423;
+    --border: #3a3a37;
+    --text: #e8e6e3;
+    --muted: #9a968f;
+    --a: #7fa8d4;
+    --b: #9ec98f;
+    --c: #d4b06a;
+    --ok: #8fbf7f;
+    --danger: #d47f7f;
+    --accent: #d97757;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    line-height: 1.6; font-size: 14px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 90px; }
+  h1 { font-size: 26px; font-weight: 600; margin: 0 0 6px; letter-spacing: -.01em; }
+  h2 {
+    font-size: 19px; font-weight: 600; margin: 52px 0 8px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin: 16px 0 0; font-size: 12.5px; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .dot.a { background: var(--a); } .dot.b { background: var(--b); } .dot.c { background: var(--c); }
+
+  .diagram {
+    border: 1px solid var(--border); border-radius: 12px; background: var(--panel);
+    padding: 20px; margin-top: 14px; overflow-x: auto; text-align: center;
+  }
+  .diagram .mermaid { display: inline-block; min-width: 100%; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  td.mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .yes { color: var(--ok); font-weight: 600; }
+  .no { color: var(--danger); font-weight: 600; }
+  .part { color: var(--c); font-weight: 600; }
+
+  .foot { margin-top: 48px; color: var(--muted); font-size: 12px; }
+  .loaderr { color: var(--danger); font-size: 13px; margin-top: 12px; display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>同步拓扑图</h1>
+  <p class="sub">OpenCodeUI · 数据同步架构梳理 · 配套 docs/design/数据同步层设计.md</p>
+  <div class="legend">
+    <span><i class="dot a"></i>A 类 · 服务端权威（消息 / 状态 / 列表 / 权限）</span>
+    <span><i class="dot b"></i>B 类 · 账号偏好（主题 / 模型 / 置顶）</span>
+    <span><i class="dot c"></i>C 类 · 设备本地派生（未读 / 时间戳 / 排序）</span>
+  </div>
+
+  <h2>一、物理部署拓扑</h2>
+  <p class="sub">opencode 后端跑在每台主机上，前端只是客户端。A 类没有中央同步服务。</p>
+  <div class="diagram">
+    <script type="text/plain" class="mmd">
+flowchart TB
+  subgraph Acct["API Monitor 账号服务 · domain"]
+    direction LR
+    Login["/auth/login<br/>登录换令牌"]
+    Inst["/instances<br/>实例清单"]
+    Gw["/gw/instanceId<br/>网关转发"]
+    Pref["/preferences<br/>/preferences/events"]
+  end
+
+  DevA["设备 A<br/>桌面 / 网页 / 安卓"]
+  DevB["设备 B<br/>桌面 / 网页 / 安卓"]
+
+  LocalHost["主机 · 本机直连<br/>opencode serve<br/>serverId = local"]
+  RemoteHost["主机 · 远端<br/>opencode serve<br/>serverId = aiagent:inst_x"]
+
+  DevA -->|"opencode SSE + HTTP · A类"| LocalHost
+  DevB -->|"opencode SSE + HTTP · A类"| LocalHost
+  DevA -->|"网关转发 · A类"| Gw
+  DevB -->|"网关转发 · A类"| Gw
+  Gw --> RemoteHost
+  DevA -.->|"账号通道 · B/C类"| Pref
+  DevB -.->|"账号通道 · B/C类"| Pref
+  Inst -.->|"登记为服务器"| DevA
+
+  classDef a fill:#22303f,stroke:#7fa8d4,color:#dbe7f5;
+  classDef b fill:#26301f,stroke:#9ec98f,color:#e3f0db;
+  classDef cloud fill:#2c2c2a,stroke:#4a4a46,color:#e8e6e3;
+  class LocalHost,RemoteHost a;
+  class DevA,DevB b;
+  class Acct cloud;
+    </script>
+  </div>
+
+  <h2>二、设备内部逻辑拓扑</h2>
+  <p class="sub">一台设备内部同时维持多条连接，全部由 store 与 hook 管理。</p>
+  <div class="diagram">
+    <script type="text/plain" class="mmd">
+flowchart TB
+  subgraph App["应用层"]
+    UI["SessionList / FolderRecentList / ChatPane / liveUpdateSync"]
+  end
+  subgraph Store["Store 层"]
+    SA["A类 · messageStore / activeSessionStore / sessionListIndexStore / childSessionStore / todoStore"]
+    SB["B类 · themeStore / pinnedSessionsStore / DirectoryContext"]
+    SC["C类 · notificationStore / layoutStore / hostWorkspaceStore"]
+  end
+  subgraph Disp["分发器"]
+    D1["useGlobalEvents · A类事件分发"]
+    D2["preferencesSyncEngine · B/C类"]
+    D3["perServerStorage · 存储版本通知"]
+  end
+  subgraph Trans["传输层"]
+    T1["events.ts · 每 server 一条 SSE"]
+    T2["preferencesEvents.ts · 账号 SSE"]
+    T3["api/*.ts · HTTP 快照"]
+    T4["localStorage / IndexedDB"]
+    T5["Tauri: bridge_connect · Browser: fetch + ReadableStream"]
+  end
+  OutA["opencode 后端 · 每 server 一条"]
+  OutB["API Monitor 账号服务 · preferences SSE"]
+
+  App --> Store --> Disp --> Trans
+  Trans --> OutA
+  Trans --> OutB
+
+  classDef a fill:#22303f,stroke:#7fa8d4,color:#dbe7f5;
+  classDef b fill:#26301f,stroke:#9ec98f,color:#e3f0db;
+  classDef c fill:#302a1a,stroke:#d4b06a,color:#f5ead0;
+  class SA,D1,T1 a;
+  class SB,D2,T2 b;
+  class SC,D3,T4 c;
+  class OutA a;
+  class OutB b;
+    </script>
+  </div>
+
+  <h2>三、数据流</h2>
+
+  <p class="sub">A 类 · 服务端权威（每条 server 一条 SSE）</p>
+  <div class="diagram">
+    <script type="text/plain" class="mmd">
+sequenceDiagram
+  participant Host as opencode 后端
+  participant Ev as events.ts
+  participant GE as useGlobalEvents
+  participant Store as Stores
+  participant UI as 组件
+
+  Host->>Ev: SSE /global/event（原始事件 + sync(seq) 双发）
+  Ev->>Ev: parseAndCoalesce
+  Note over Ev: sync(seq) 当前被丢弃 · 缺口检测未实现<br/>seq 是 per-aggregate · 不可重放（实测）
+  Ev->>GE: broadcastEvent（原始事件）
+  GE->>Store: 按 serverId + sessionId 分发
+  Store->>UI: useSyncExternalStore 重渲染
+  Note over GE,Host: HTTP 快照兜底 · 首次连接 / 重连 / 回前台 / 目录变化 / 打开会话
+  Note over GE: getSessionStatus(directory) 按目录过滤 —— 本次 bug 根因
+  Note over GE: 改进：seq 检测缺口 → 只重拉有缺口的会话快照
+    </script>
+  </div>
+
+  <p class="sub">B 类 · 账号偏好（独立账号通道）</p>
+  <div class="diagram">
+    <script type="text/plain" class="mmd">
+sequenceDiagram
+  participant DevA as 设备 A
+  participant LS as localStorage
+  participant Eng as preferencesSyncEngine
+  participant Acct as 账号服务
+  participant DevB as 设备 B
+
+  DevA->>LS: 改偏好
+  LS->>Eng: 存储版本通知
+  Eng->>Eng: 500ms 防抖
+  Eng->>Acct: POST /preferences
+  Acct-->>DevB: SSE /preferences/events（只推 key 名）
+  DevB->>Acct: GET /preferences
+  Acct-->>DevB: 值
+  DevB->>DevB: 三方合并 + LWW + 墓碑 → 写回 localStorage → UI 重读
+    </script>
+  </div>
+
+  <p class="sub">C 类 · 设备本地派生（当前各端独立，拟改）</p>
+  <div class="diagram">
+    <script type="text/plain" class="mmd">
+flowchart LR
+  subgraph Now["现状 · 各端独立"]
+    N1["未读 · notificationStore（localStorage）"]
+    N2["已读 · 本地 markRead"]
+    N3["项目时间 · 各端各自查 /session?directory="]
+    N4["排序锚点 · sessionActivityStore（内存）"]
+    N5["侧栏开合 · layoutStore（有意不跨端）"]
+  end
+  subgraph Plan["拟改"]
+    P1["已读水位 sessionId 到校准时间戳<br/>走 B 类通道 · max 合并"]
+    P2["项目时间 · 改用 A 类服务端 time.updated"]
+    P3["侧栏开合 · 保持本地"]
+  end
+  N1 --> P1
+  N2 --> P1
+  N3 --> P2
+  N4 -.-> P2
+  N5 --> P3
+
+  classDef c fill:#302a1a,stroke:#d4b06a,color:#f5ead0;
+  classDef plan fill:#22303f,stroke:#7fa8d4,color:#dbe7f5;
+  class N1,N2,N3,N4,N5 c;
+  class P1,P2,P3 plan;
+    </script>
+  </div>
+
+  <h2>四、多端一致性：哪些一致、哪些不一致</h2>
+  <table>
+    <thead><tr><th>数据</th><th>通道</th><th>多端一致</th><th>原因</th></tr></thead>
+    <tbody>
+      <tr><td>消息正文</td><td class="mono">A / SSE</td><td class="yes">一致（同后端）</td><td>都从后端派生</td></tr>
+      <tr><td>busy / retry</td><td class="mono">A / SSE</td><td class="part">理论一致</td><td>都从后端派生，受目录切分 bug 影响</td></tr>
+      <tr><td>会话列表</td><td class="mono">A / SSE</td><td class="yes">一致（同后端）</td><td>sessionListIndexStore</td></tr>
+      <tr><td>权限 / 提问</td><td class="mono">A / SSE</td><td class="yes">一致</td><td>activeSessionStore</td></tr>
+      <tr><td>主题 / 模型 / 置顶</td><td class="mono">B / 账号</td><td class="yes">一致（需登录）</td><td>preferencesSync</td></tr>
+      <tr><td><b>未读 / 已读</b></td><td class="mono">C / 本地</td><td class="no">不一致</td><td>各端独立算（待改为水位同步）</td></tr>
+      <tr><td><b>项目时间戳</b></td><td class="mono">C / 本地</td><td class="no">不一致</td><td>各端各自查（待改用服务端时间）</td></tr>
+      <tr><td>列表排序</td><td class="mono">C / 本地锚点</td><td class="part">近似</td><td>锚点本地派生</td></tr>
+      <tr><td>侧栏开合</td><td class="mono">C / 本地</td><td class="part">有意不一致</td><td>属浏览状态</td></tr>
+    </tbody>
+  </table>
+
+  <h2>五、延迟来源</h2>
+  <div class="diagram">
+    <script type="text/plain" class="mmd">
+flowchart LR
+  D1["设备 A"] -->|"1 · 到后端"| Host["opencode 后端"]
+  Host -->|"2 · 到设备"| D2["设备 B"]
+  D1 -.->|"3 · 到账号服务"| Acct["账号服务"]
+  Acct -.->|"4 · 推/拉到设备"| D2
+  subgraph L["延迟量级"]
+    L1["A 类 · 本机直连毫秒级"]
+    L2["A 类 · 网关隧道约 1.1s 固定往返"]
+    L3["B/C 类 · 500ms 防抖 + SSE + GET · 数百 ms 到数秒"]
+  end
+    </script>
+  </div>
+  <table>
+    <thead><tr><th>合并</th><th>语义</th><th>延迟下行为</th></tr></thead>
+    <tbody>
+      <tr><td>会话状态</td><td class="mono">replace-scope + seq 缺口检测</td><td>滞后后收敛</td></tr>
+      <tr><td>已读水位</td><td class="mono">max 单调递增</td><td>多显示一会儿未读，永不回退</td></tr>
+      <tr><td>偏好</td><td class="mono">三方合并 + 时间戳</td><td>收敛</td></tr>
+    </tbody>
+  </table>
+
+  <h2>六、与成熟系统对比</h2>
+  <div class="diagram">
+    <script type="text/plain" class="mmd">
+flowchart LR
+  subgraph Ind["行业做法"]
+    direction TB
+    I1["Discord / Matrix / Gmail<br/>权威态用可续传游标<br/>（seq / since / historyId）"]
+    I2["Slack / Discord<br/>已读状态中心化存服务端<br/>per user + channel"]
+    I3["VS Code / Codespaces<br/>偏好走中心服务<br/>（非端到端）"]
+    I4["通用<br/>能派生的不跨端同步"]
+  end
+  subgraph Ours["本项目"]
+    direction TB
+    O1["A 类 · seq 检测缺口 + 快照重拉<br/>（opencode 不重放 · 上游约束）"]
+    O2["未读 · 账号服务存权威水位<br/>+ 离线 max 兜底"]
+    O3["B 类 · preferencesSync<br/>（已有中心服务）"]
+    O4["项目时间 · 从服务端 time.updated 派生"]
+  end
+  I1 -.->|"降级"| O1
+  I2 -.->|"对齐"| O2
+  I3 -.->|"对齐"| O3
+  I4 -.->|"对齐"| O4
+
+  classDef ind fill:#26301f,stroke:#9ec98f,color:#e3f0db;
+  classDef ours fill:#22303f,stroke:#7fa8d4,color:#dbe7f5;
+  class I1,I2,I3,I4 ind;
+  class O1,O2,O3,O4 ours;
+    </script>
+  </div>
+  <p class="sub">唯一结构性差距是 A 类增量续传：受 opencode 上游限制（不支持从游标重放），只能降级为「缺口检测 + 快照重拉」。其余均可对齐行业最佳实践。</p>
+
+  <h2>七、一图总结</h2>
+  <div class="diagram">
+    <script type="text/plain" class="mmd">
+flowchart TB
+  A["A 类 · 服务端权威<br/>opencode SSE + HTTP · 每 server 一条<br/>无中央服务 · 同后端才一致<br/>replace-scope + seq 缺口检测"]
+  B["B 类 · 账号偏好<br/>账号 SSE + HTTP · 需登录<br/>三方合并 + LWW + 墓碑"]
+  C["C 类 · 本地派生<br/>当前各端独立<br/>拟改 · 已读水位 / 服务端时间<br/>max 水位"]
+  Goal["收敛目标 · 延迟可容忍<br/>最终一致 · 永不回退 · 滞后收敛"]
+  A --> Goal
+  B --> Goal
+  C --> Goal
+
+  classDef a fill:#22303f,stroke:#7fa8d4,color:#dbe7f5;
+  classDef b fill:#26301f,stroke:#9ec98f,color:#e3f0db;
+  classDef c fill:#302a1a,stroke:#d4b06a,color:#f5ead0;
+  classDef goal fill:#3a2f28,stroke:#d97757,color:#f0d6cb;
+  class A a;
+  class B b;
+  class C c;
+  class Goal goal;
+    </script>
+  </div>
+
+  <p class="loaderr" id="loaderr">mermaid 加载失败（需要联网）。图定义仍保存在本文件内。</p>
+  <p class="foot">
+    生成自 docs/design/同步拓扑图.md · 配套 docs/design/数据同步层设计.md<br>
+    三个结构性问题：① A 类无中央服务，只能靠「每端都正确」；② B/C 类跨端依赖账号；③ 多前缀（local / aiagent:inst_x）可能指向同一后端，需稳定实例身份。
+  </p>
+
+</div>
+
+<script type="module">
+  try {
+    const mermaid = (await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs')).default
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'loose',
+      theme: 'base',
+      themeVariables: {
+        darkMode: true,
+        background: '#242423',
+        primaryColor: '#2c2c2a',
+        primaryTextColor: '#e8e6e3',
+        primaryBorderColor: '#3a3a37',
+        secondaryColor: '#242423',
+        tertiaryColor: '#242423',
+        lineColor: '#6f6b64',
+        fontFamily: '-apple-system, "Segoe UI", "Microsoft YaHei", sans-serif',
+        fontSize: '13px',
+        actorBkg: '#2c2c2a',
+        actorBorder: '#3a3a37',
+        actorTextColor: '#e8e6e3',
+        signalColor: '#8f8b84',
+        signalTextColor: '#c9c5be',
+        noteBkgColor: '#3a2f28',
+        noteTextColor: '#e6c9bd',
+        noteBorderColor: '#d97757',
+        clusterBkg: '#1f1f1e',
+        clusterBorder: '#3a3a37',
+        edgeLabelBackground: '#242423',
+      },
+    })
+
+    // script.mmd 的 textContent 保留 <br/> 字面量，转成 div.mermaid 交给 mermaid 渲染
+    for (const s of document.querySelectorAll('script.mmd')) {
+      const d = document.createElement('div')
+      d.className = 'mermaid'
+      d.textContent = s.textContent
+      s.replaceWith(d)
+    }
+    await mermaid.run({ nodes: document.querySelectorAll('.mermaid') })
+  } catch (err) {
+    document.getElementById('loaderr').style.display = 'block'
+    console.error(err)
+  }
+</script>
+</body>
+</html>

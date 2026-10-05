@@ -342,17 +342,17 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
         width="100%"
         className="h-full"
         showCloseButton={false}
+        fullscreenOnMobile
         rawContent
       >
         <div className="flex min-h-0 flex-1 flex-col">
           {/* Sticky Tabs — 无标题、无线条，与桌面端设计语言一致 */}
-          <div className="shrink-0 pt-2">
-            <div className="px-3 pb-2">{search}</div>
+          <div className="shrink-0 pt-3">
             <div
               role="tablist"
               aria-label={t('title')}
               onKeyDown={handleTabKeyDown}
-              className="flex items-center gap-1 px-3 pb-2 overflow-x-auto scrollbar-none"
+              className="flex items-center gap-1 px-4 pb-3 overflow-x-auto scrollbar-none"
             >
               {visibleTabs.map(vt => (
                 <button
@@ -364,7 +364,7 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
                   aria-controls={`settings-panel-${vt.id}`}
                   tabIndex={vt.id === tab ? 0 : -1}
                   onClick={() => switchTab(vt.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[length:var(--fs-md)] font-medium transition-colors whitespace-nowrap shrink-0 border
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-[length:var(--fs-md)] font-medium transition-colors whitespace-nowrap shrink-0 border
                     ${
                       vt.id === tab
                         ? 'bg-bg-200 text-text-100 border-border-200'
@@ -384,7 +384,7 @@ export function SettingsDialog({ isOpen, onClose, initialTab = 'servers' }: Sett
             role="tabpanel"
             aria-labelledby={`settings-tab-${tab}`}
             ref={scrollRef}
-            className="flex-1 min-h-0 py-3 px-4 overflow-y-auto custom-scrollbar overscroll-contain"
+            className="flex-1 min-h-0 py-3 px-4 pb-[calc(1rem+var(--safe-area-inset-bottom,0px))] overflow-y-auto custom-scrollbar overscroll-contain"
           >
             <TabContent tab={tab} />
           </div>

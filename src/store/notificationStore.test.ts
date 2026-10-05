@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { notificationStore, notificationServerId, useUnreadCompletedSessionIds } from './notificationStore'
+import { readWatermarkStore } from './readWatermarkStore'
 
 // 未读小点残留的回归保护。
 // 数据源是 notificationStore 里的 completed 通知；标记已读必须能按 sessionId 清掉，
@@ -187,6 +188,47 @@ describe('notificationStore serverId 归属', () => {
       read: false,
     }
     expect(notificationServerId(entry)).toBe('remote')
+  })
+})
+
+describe('notificationStore 已读水位跨端同步', () => {
+  beforeEach(() => {
+    notificationStore.clearAll()
+    localStorage.removeItem('opencode-read-watermarks')
+    readWatermarkStore.reload()
+  })
+
+  it('标记已读后写入水位（供其它端同步）', () => {
+    notificationStore.push('completed', 'Done', 'completed', 'local::ses_w', '/repo')
+    notificationStore.markSessionNotificationsRead('local::ses_w', 'completed')
+    expect(readWatermarkStore.get('ses_w')).toBeGreaterThan(0)
+  })
+
+  it('外部水位更新后本端未读点消失（模拟另一端已读）', () => {
+    notificationStore.push('completed', 'Done', 'completed', 'local::ses_w', '/repo')
+    const entry = notificationStore.getSnapshot().notifications[0]
+    // 模拟偏好同步 pull 到另一端的已读水位（高于该通知时间戳）
+    localStorage.setItem('opencode-read-watermarks', JSON.stringify({ ses_w: entry.timestamp + 1 }))
+    readWatermarkStore.reload()
+    expect(unreadIds().has('local::ses_w')).toBe(false)
+  })
+
+  it('水位不高于通知时间戳时仍为未读', () => {
+    notificationStore.push('completed', 'Done', 'completed', 'local::ses_w', '/repo')
+    const entry = notificationStore.getSnapshot().notifications[0]
+    localStorage.setItem('opencode-read-watermarks', JSON.stringify({ ses_w: entry.timestamp - 1 }))
+    readWatermarkStore.reload()
+    expect(unreadIds().has('local::ses_w')).toBe(true)
+  })
+
+  it('水位只治理 completed，不影响 permission 未读', () => {
+    notificationStore.push('permission', 'Perm', 'needs approval', 'local::ses_w', '/repo')
+    const entry = notificationStore.getSnapshot().notifications[0]
+    localStorage.setItem('opencode-read-watermarks', JSON.stringify({ ses_w: entry.timestamp + 1 }))
+    readWatermarkStore.reload()
+    const unread = notificationStore.getSnapshot().notifications.filter(n => !n.read)
+    expect(unread).toHaveLength(1)
+    expect(unread[0].type).toBe('permission')
   })
 })
 

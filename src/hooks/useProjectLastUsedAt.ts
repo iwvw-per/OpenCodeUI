@@ -89,6 +89,7 @@ export function useProjectLastUsedAt(
 
   useEffect(() => {
     if (!enabled || key === '') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 禁用或空 key 时清空缓存
       setLastUsedMap({})
       return
     }
@@ -154,8 +155,14 @@ export function useProjectLastUsedAt(
       if (!directory || !updatedAt) return
       const normalized = normalizeToForwardSlash(directory)
       if (!tracked.has(normalized)) return
-      // 同步更新模块缓存，避免重挂后又被 60s 内的旧缓存盖回
-      cache.set(cacheKey(serverId, normalized), { at: Date.now(), updated: updatedAt })
+      // 同步更新模块缓存，避免重挂后又被 60s 内的旧缓存盖回。
+      // D12：只抬高不降低，与 setLastUsedMap 的单调语义一致；否则迟到的小值会把
+      // 缓存写小，重挂后项目时间戳回退。
+      const cacheKeyValue = cacheKey(serverId, normalized)
+      const cached = cache.get(cacheKeyValue)
+      if (!cached || updatedAt > (cached.updated ?? 0)) {
+        cache.set(cacheKeyValue, { at: Date.now(), updated: updatedAt })
+      }
       setLastUsedMap(prev => {
         const current = prev[normalized] ?? 0
         if (updatedAt <= current) return prev

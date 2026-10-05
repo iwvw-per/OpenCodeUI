@@ -4,6 +4,7 @@ import { animate } from 'motion/mini'
 import {
   ChevronDownIcon,
   ChevronRightIcon,
+  ImageIcon,
   LayersIcon,
   LightbulbIcon,
   PinIcon,
@@ -21,6 +22,9 @@ import { useCompositorExpand, useDisclosureScrollLock } from '../../hooks'
 import { useInputCapabilities } from '../../hooks/useInputCapabilities'
 import { useNow } from '../../hooks/useNow'
 import { useTheme } from '../../hooks/useTheme'
+import { exportNodeAsImage } from '../../utils/imageExport'
+import { notificationStore } from '../../store/notificationStore'
+import { uiErrorHandler } from '../../utils/errorHandling'
 import {
   useInlineToolRequests,
   findPermissionRequestForTool,
@@ -131,12 +135,12 @@ const ProcessCollapseHeader = memo(function ProcessCollapseHeader({
       expanded={expanded}
       onClick={onToggle}
       size="sm"
-      labelTone={isActive ? 'active' : 'idle'}
+      labelTone={isActive ? 'accent' : 'idle'}
       label={label}
       growLabel={false}
       showChevron={false}
       reserveChevronSpace
-      icon={isActive ? <Spinner size="sm" tone="muted" variant="pixel" /> : <LayersIcon size={13} className="text-text-500" />}
+      icon={isActive ? <Spinner size="sm" tone="accent" variant="pixel" /> : <LayersIcon size={13} className="text-text-500" />}
       meta={
         hasBreakdown ? (
           <span className="flex items-center gap-2 text-[length:var(--fs-xxs)] tabular-nums text-text-500">
@@ -586,9 +590,54 @@ const PinActionButton = memo(function PinActionButton({ message, sessionId }: Pi
 })
 
 // ============================================
-// User Message View
+// Export Image Action — 把消息导出为 PNG
 // ============================================
 
+interface ExportImageActionButtonProps {
+  fileName: string
+  sessionId?: string | null
+}
+
+const ExportImageActionButton = memo(function ExportImageActionButton({
+  fileName,
+  sessionId,
+}: ExportImageActionButtonProps) {
+  const { t } = useTranslation('message')
+  const [isExporting, setIsExporting] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+
+  const handleExport = useCallback(async () => {
+    if (isExporting) return
+    const root = buttonRef.current?.closest('[data-message-root]')
+    if (!(root instanceof HTMLElement)) return
+    setIsExporting(true)
+    try {
+      await exportNodeAsImage(root, { fileName })
+    } catch (e) {
+      uiErrorHandler('export message image', e)
+      notificationStore.push('error', t('exportImageFailed'), '', sessionId ?? '')
+    } finally {
+      setIsExporting(false)
+    }
+  }, [fileName, isExporting, sessionId, t])
+
+  return (
+    <button
+      ref={buttonRef}
+      onClick={() => void handleExport()}
+      disabled={isExporting}
+      className="p-1.5 rounded-md transition-colors duration-150 text-text-400 hover:text-text-200 disabled:cursor-default disabled:text-text-500"
+      title={isExporting ? t('exportingImage') : t('exportImage')}
+      aria-label={isExporting ? t('exportingImage') : t('exportImage')}
+    >
+      {isExporting ? <SpinnerIcon className="animate-spin" /> : <ImageIcon />}
+    </button>
+  )
+})
+
+// ============================================
+// User Message View
+// ============================================
 interface UserMessageViewProps {
   message: Message
   onUndo?: (userMessageId: string) => void
@@ -647,6 +696,7 @@ const UserMessageView = memo(function UserMessageView({
   return (
     <div
       ref={wrapperRef}
+      data-message-root
       data-user-html-artifact={hasUserHtmlArtifact ? '' : undefined}
       className={`flex flex-col items-end group ${hasUserHtmlArtifact ? 'w-full' : ''}`}
     >
@@ -716,7 +766,7 @@ const UserMessageView = memo(function UserMessageView({
         )}
 
         {/* Action buttons — PC 悬浮消息显示；触控设备始终显示 */}
-        <div className={actionBarClass}>
+        <div className={actionBarClass} data-message-actions>
           {/* Undo button */}
           {canUndo && onUndo && (
             <button
@@ -731,6 +781,7 @@ const UserMessageView = memo(function UserMessageView({
           <PinActionButton message={message} sessionId={sessionId} />
           {/* Copy button */}
           {messageText && <CopyButton text={messageText} position="static" />}
+          <ExportImageActionButton fileName={`message-${info.id}`} sessionId={sessionId} />
         </div>
       </div>
     </div>
@@ -876,7 +927,7 @@ const AssistantMessageView = memo(function AssistantMessageView({
   }
 
   return (
-    <div ref={wrapperRef} className={`flex flex-col ${MSG_SPACING.stack} w-full group`}>
+    <div ref={wrapperRef} data-message-root className={`flex flex-col ${MSG_SPACING.stack} w-full group`}>
       {/* 流式增高走自然撑开 + 贴底 scroll，默认不做 height 补间，避免每帧 layout/remeasure */}
       <SmoothHeight isActive={!!isStreaming && allowStreamingLayoutAnimation && processContentScope === 'all'}>
         <div className={`flex flex-col ${MSG_SPACING.stack}`}>
@@ -973,10 +1024,11 @@ const AssistantMessageView = memo(function AssistantMessageView({
         )}
 
       {showMessageActions && hasCopyableText && (
-        <div className={actionBarClass}>
+        <div className={actionBarClass} data-message-actions>
           <ForkActionButton message={message} onFork={onFork} forkMessageId={forkMessageId} />
           <PinActionButton message={message} sessionId={sessionId} />
           <CopyButton text={fullText} position="static" />
+          <ExportImageActionButton fileName={`message-${info.id}`} sessionId={sessionId} />
         </div>
       )}
     </div>

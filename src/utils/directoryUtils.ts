@@ -178,11 +178,16 @@ export function formatPathForApi(dir: string | undefined | null, serverId?: stri
     trimmed = trimmed + '/'
   }
 
-  if (isWindowsPathMode(serverId)) {
+  const style = getEffectivePathStyle(serverId)
+  if (style === 'windows') {
+    // 已是 Windows 反斜杠形式时原样返回，避免「规范化→再反斜杠」的无谓往返，
+    // 也保证同一输入多次调用的输出稳定。
+    if (trimmed.includes('\\') && !trimmed.includes('/')) return trimmed
     return trimmed.replace(/\//g, '\\')
-  } else {
-    return trimmed.replace(/\\/g, '/')
   }
+  // unix：已是正斜杠形式时原样返回
+  if (!trimmed.includes('\\')) return trimmed
+  return trimmed.replace(/\\/g, '/')
 }
 
 /**

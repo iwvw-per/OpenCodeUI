@@ -230,7 +230,9 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
   // 但它们只影响过滤结果（在 setItems 时已处理），不应触发重新搜索和重置 selectedIndex。
   const agentsRef = useRef(agents)
   const excludeValuesRef = useRef(excludeValues)
+  // eslint-disable-next-line react-hooks/immutability -- 保持最新过滤入参，避免流式输出期间重启搜索
   agentsRef.current = agents
+  // eslint-disable-next-line react-hooks/immutability -- 同上
   excludeValuesRef.current = excludeValues
 
   useEffect(() => {

@@ -18,6 +18,7 @@ export function useAutoRefresh(
   enabled: boolean = true,
 ): void {
   const refreshRef = useRef(refresh)
+  // eslint-disable-next-line react-hooks/refs -- 保持最新 refresh 回调，供防抖定时器读取
   refreshRef.current = refresh
 
   const pendingRef = useRef<ReturnType<typeof setTimeout> | null>(null)

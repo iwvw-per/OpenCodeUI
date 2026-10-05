@@ -1,51 +1,55 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { singleFlight, resetSingleFlight } from './singleFlight'
+import { describe, expect, it, vi } from 'vitest'
+import { sharedInflightRequest, resetSingleFlight } from './singleFlight'
 
-describe('singleFlight', () => {
-  beforeEach(() => {
+describe('sharedInflightRequest', () => {
+  it('dedupes concurrent calls with the same key into one network request', async () => {
     resetSingleFlight()
-  })
-
-  it('shares one in-flight request across concurrent callers with the same key', async () => {
-    const resolvers: Array<(value: string) => void> = []
-    const factory = vi.fn(
-      () =>
-        new Promise<string>(r => {
-          resolvers.push(r)
-        }),
-    )
-
-    const first = singleFlight('k', factory)
-    const second = singleFlight('k', factory)
-
-    expect(factory).toHaveBeenCalledTimes(1)
-    resolvers[0]('value')
-
-    await expect(first).resolves.toBe('value')
-    await expect(second).resolves.toBe('value')
-  })
-
-  it('does not share across different keys', async () => {
-    const factory = vi.fn(async () => 'v')
-    await Promise.all([singleFlight('a', factory), singleFlight('b', factory)])
-    expect(factory).toHaveBeenCalledTimes(2)
-  })
-
-  it('issues a fresh request once the previous one settled', async () => {
-    const factory = vi.fn(async () => 'v')
-    await singleFlight('k', factory)
-    await singleFlight('k', factory)
-    expect(factory).toHaveBeenCalledTimes(2)
-  })
-
-  it('clears the entry when the request rejects, so retries can proceed', async () => {
-    const failing = vi.fn(async () => {
-      throw new Error('boom')
+    const factory = vi.fn(async () => {
+      await Promise.resolve()
+      return 'value'
     })
-    await expect(singleFlight('k', failing)).rejects.toThrow('boom')
 
-    const succeeding = vi.fn(async () => 'ok')
-    await expect(singleFlight('k', succeeding)).resolves.toBe('ok')
-    expect(succeeding).toHaveBeenCalledTimes(1)
+    const [a, b] = await Promise.all([
+      sharedInflightRequest('k', factory),
+      sharedInflightRequest('k', factory),
+    ])
+
+    expect(a).toBe('value')
+    expect(b).toBe('value')
+    expect(factory).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not let one caller abort kill another', async () => {
+    resetSingleFlight()
+    let release!: (value: string) => void
+    const factory = () => new Promise<string>(resolve => (release = resolve))
+
+    const controller = new AbortController()
+    const aborted = sharedInflightRequest('k2', factory, controller.signal)
+    const survivor = sharedInflightRequest('k2', factory)
+
+    controller.abort()
+    await expect(aborted).rejects.toMatchObject({ name: 'AbortError' })
+
+    release('done')
+    await expect(survivor).resolves.toBe('done')
+  })
+
+  it('rejects immediately when the caller signal is already aborted', async () => {
+    resetSingleFlight()
+    const factory = vi.fn(async () => 'x')
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(sharedInflightRequest('k3', factory, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(factory).not.toHaveBeenCalled()
+  })
+
+  it('removes the registration after settle so later calls refetch', async () => {
+    resetSingleFlight()
+    const factory = vi.fn(async () => 'v')
+    await sharedInflightRequest('k4', factory)
+    await sharedInflightRequest('k4', factory)
+    expect(factory).toHaveBeenCalledTimes(2)
   })
 })

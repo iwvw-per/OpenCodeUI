@@ -84,7 +84,14 @@ function dispatchToConsumers(sessionId: string, invoke: (cb: SessionEventCallbac
   let dispatched = false
   for (const consumer of sessionConsumers.values()) {
     if (!consumer.sessionId) continue
-    if (consumer.sessionId === sessionId || childSessionStore.belongsToSession(sessionId, consumer.sessionId)) {
+    // D21：同时认裸 id（isSameSessionKey），与 belongsToCurrentSession 口径一致。
+    // 此前只做精确匹配 + 父子关系，跨服务器同后端（local::x 与 remote::x 指向同一实例）
+    // 时 belongsToCurrentSession 判为「在看」，这里却无 consumer 命中，权限弹窗被静默丢弃。
+    if (
+      consumer.sessionId === sessionId ||
+      isSameSessionKey(sessionId, consumer.sessionId) ||
+      childSessionStore.belongsToSession(sessionId, consumer.sessionId)
+    ) {
       invoke(consumer.callbacks)
       dispatched = true
     }
@@ -97,6 +104,7 @@ function hasConsumerForSession(sessionId: string): boolean {
   for (const consumer of sessionConsumers.values()) {
     if (!consumer.sessionId) continue
     if (consumer.sessionId === sessionId) return true
+    if (isSameSessionKey(sessionId, consumer.sessionId)) return true
     if (childSessionStore.belongsToSession(sessionId, consumer.sessionId)) return true
   }
   return false
@@ -488,8 +496,9 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
             activeSessionStore.mergeStatusRefresh(statusMap)
             activeSessionStore.mergePendingRequests(permissions, questions)
           } else {
-            activeSessionStore.initialize(statusMap)
-            activeSessionStore.initializePendingRequests(permissions, questions)
+            // 传 serverId：按服务器作用域替换，多台服务器并发首次连接时不互相清空
+            activeSessionStore.initialize(statusMap, serverId)
+            activeSessionStore.initializePendingRequests(permissions, questions, serverId)
           }
           const currentDirectories = serverDirectories
           const currentScopeKey = getScopeKey(currentDirectories)
@@ -707,15 +716,18 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
           // 注册子 session 关系
           if (session.parentID) {
             childSessionStore.registerChildSession(session, serverId)
+          }
 
-            // 处理因时序问题缓存的权限请求（可能有多个）
-            if (belongsToCurrentSession(scopedId)) {
-              for (const req of drainPending(pendingPermissions, scopedId)) {
-                dispatchToConsumers(req.sessionID, cb => cb.onPermissionAsked?.(req))
-              }
-              for (const req of drainPending(pendingQuestions, scopedId)) {
-                dispatchToConsumers(req.sessionID, cb => cb.onQuestionAsked?.(req))
-              }
+          // 处理因时序问题缓存的权限/提问请求（可能有多个）。
+          // D22：不限于子会话——根会话的 permission.asked 先于 session.created 到达、
+          // 当时 belongsToCurrentSession 为 false 时也会进缓存，此前只在 parentID 分支
+          // 内 drain，根会话的缓存会 5s 后过期、请求不再弹出。
+          if (belongsToCurrentSession(scopedId)) {
+            for (const req of drainPending(pendingPermissions, scopedId)) {
+              dispatchToConsumers(req.sessionID, cb => cb.onPermissionAsked?.(req))
+            }
+            for (const req of drainPending(pendingQuestions, scopedId)) {
+              dispatchToConsumers(req.sessionID, cb => cb.onQuestionAsked?.(req))
             }
           }
 
@@ -955,8 +967,12 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
             return
           }
 
-          activeSessionStore.updateStatus(scopedId, data.status)
-          childSessionStore.markRunning(scopedId)
+          // D11：先让 childSessionStore 落定。若该会话是已注册子会话且被已 error
+          // 的终态挡住（markRunning 返回 false），activeSessionStore 也不应置 busy，
+          // 否则子代理面板显示已完成、Working 列表却显示在跑。
+          if (childSessionStore.markRunning(scopedId)) {
+            activeSessionStore.updateStatus(scopedId, data.status)
+          }
         },
 
         // ============================================

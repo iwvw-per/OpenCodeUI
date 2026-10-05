@@ -189,12 +189,31 @@ class ActiveSessionStore {
   // 初始化：从 API 拉取全量状态
   // ============================================
 
-  initialize(statusMap: SessionStatusMap) {
+  /**
+   * 全量初始化。
+   *
+   * 传入 serverId 时按「服务器作用域」替换：只清掉该服务器名下的条目，保留其它
+   * 服务器。多台服务器同时首次连接会各自调用本方法，若不带 serverId 则每次都以
+   * 空表为基线整表覆盖，后完成者会把其它服务器的 Working 条目清空（D1）。
+   * 不带 serverId 时为全局替换，仅用于单服务器 / 测试场景。
+   */
+  initialize(statusMap: SessionStatusMap, serverId?: string) {
+    const base = serverId ? this.statusMapExceptServer(serverId) : {}
     this.state = {
-      statusMap: this.applyStatusSnapshot(statusMap, {}),
+      statusMap: this.applyStatusSnapshot(statusMap, base),
       initialized: true,
     }
     this.notify()
+  }
+
+  /** 取出不属于指定服务器的 status 条目（保留其它服务器状态） */
+  private statusMapExceptServer(serverId: string): SessionStatusMap {
+    const prefix = `${serverId}::`
+    const base: SessionStatusMap = {}
+    for (const [key, status] of Object.entries(this.state.statusMap)) {
+      if (!key.startsWith(prefix)) base[key] = status
+    }
+    return base
   }
 
   // ============================================
@@ -246,8 +265,31 @@ class ActiveSessionStore {
   initializePendingRequests(
     permissions: Array<{ id: string; sessionID: string; permission: string; patterns?: string[] }>,
     questions: Array<{ id: string; sessionID: string; questions?: Array<{ header?: string }> }>,
+    serverId?: string,
   ) {
-    this.applyPendingSnapshot(permissions, questions, new Map<string, PendingRequest>(), new Set<string>())
+    // 带 serverId 时只保留其它服务器的 pending，避免多台服务器并发初始化时
+    // 后者清掉前者的待处理请求（D1）。不带时全局清空（单服务器 / 测试）。
+    const base = serverId ? this.pendingRequestsExceptServer(serverId) : new Map<string, PendingRequest>()
+    const deferred = serverId ? this.deferredIdleExceptServer(serverId) : new Set<string>()
+    this.applyPendingSnapshot(permissions, questions, base, deferred)
+  }
+
+  private pendingRequestsExceptServer(serverId: string): Map<string, PendingRequest> {
+    const prefix = `${serverId}::`
+    const base = new Map<string, PendingRequest>()
+    for (const [id, req] of this.pendingRequests) {
+      if (!req.sessionId.startsWith(prefix)) base.set(id, req)
+    }
+    return base
+  }
+
+  private deferredIdleExceptServer(serverId: string): Set<string> {
+    const prefix = `${serverId}::`
+    const base = new Set<string>()
+    for (const id of this.deferredIdleSessions) {
+      if (!id.startsWith(prefix)) base.add(id)
+    }
+    return base
   }
 
   // ============================================
@@ -339,6 +381,38 @@ class ActiveSessionStore {
       const newMap = { ...this.state.statusMap }
       delete newMap[req.sessionId]
       this.state = { ...this.state, statusMap: newMap }
+    }
+    this.notify()
+  }
+
+  /**
+   * 按权威快照对账指定 session 的 pending（D9）。
+   *
+   * 组件层（usePermissionHandler / useChatSession）的 refresh 只更新自己的
+   * 组件 state，从不回写本 store，导致服务端已不再返回的请求长期残留：Working
+   * 列表的 pendingAction 常亮、deferredIdleSessions 里的会话永远无法转 idle。
+   * 这里以「服务端全量快照」为准，清掉这些 session 名下不在权威集合里的 pending。
+   *
+   * sessionIds：要参与对账的会话（复合 key）；authoritativeIds：服务端当前仍存在的
+   * 请求 id 集合。只清属于 sessionIds 的条目，不误伤其它会话。
+   */
+  reconcilePendingRequests(sessionIds: ReadonlySet<string>, authoritativeIds: ReadonlySet<string>) {
+    let changed = false
+    for (const [requestId, req] of [...this.pendingRequests]) {
+      if (!sessionIds.has(req.sessionId)) continue
+      if (authoritativeIds.has(requestId)) continue
+      this.pendingRequests.delete(requestId)
+      changed = true
+    }
+    if (!changed) return
+    // 清理后：仍有未回复 pending 的 deferred 会话保留，其余若已 deferred 则移出 busy
+    for (const sessionId of [...this.deferredIdleSessions]) {
+      if (!this.hasPendingForSession(sessionId)) {
+        this.deferredIdleSessions.delete(sessionId)
+        const newMap = { ...this.state.statusMap }
+        delete newMap[sessionId]
+        this.state = { ...this.state, statusMap: newMap }
+      }
     }
     this.notify()
   }

@@ -160,4 +160,46 @@ describe('activeSessionStore scoped refresh handling', () => {
       })
     })
   })
+
+  describe('scoped initialize (D1 多服务器并发首连)', () => {
+    it('keeps other servers status when initializing with a serverId', () => {
+      activeSessionStore.initialize({ 'srv-a::a': { type: 'busy' } }, 'srv-a')
+      activeSessionStore.initialize({ 'srv-b::b': { type: 'busy' } }, 'srv-b')
+
+      expect(activeSessionStore.getBusySessions().map(entry => entry.sessionId).sort()).toEqual([
+        'srv-a::a',
+        'srv-b::b',
+      ])
+    })
+
+    it('replaces only the named server on re-initialize', () => {
+      activeSessionStore.initialize({ 'srv-a::old': { type: 'busy' } }, 'srv-a')
+      activeSessionStore.initialize({ 'srv-b::keep': { type: 'busy' } }, 'srv-b')
+      activeSessionStore.initialize({ 'srv-a::new': { type: 'busy' } }, 'srv-a')
+
+      expect(activeSessionStore.getBusySessions().map(entry => entry.sessionId).sort()).toEqual([
+        'srv-a::new',
+        'srv-b::keep',
+      ])
+    })
+
+    it('keeps other servers pending requests when initializing with a serverId', () => {
+      activeSessionStore.initializePendingRequests(
+        [{ id: 'p-a', sessionID: 'srv-a::a', permission: 'edit' }],
+        [],
+        'srv-a',
+      )
+      activeSessionStore.initializePendingRequests(
+        [{ id: 'p-b', sessionID: 'srv-b::b', permission: 'read' }],
+        [],
+        'srv-b',
+      )
+
+      const ids = activeSessionStore
+        .getBusySessions()
+        .map(entry => entry.sessionId)
+        .sort()
+      expect(ids).toEqual(['srv-a::a', 'srv-b::b'])
+    })
+  })
 })

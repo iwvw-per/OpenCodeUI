@@ -6,6 +6,9 @@
   "undoFromHere": "从此处撤销",
   "forkFromHere": "从此处分叉",
   "forkingFromHere": "正在分叉...",
+  "exportImage": "导出为图片",
+  "exportingImage": "正在导出...",
+  "exportImageFailed": "导出图片失败",
   "stepsCount": "{{done}}/{{total}} 步",
   "thinkingStepCount": "{{count}} 步",
   "diffChips": {
@@ -127,8 +130,8 @@
     "reasoningTokens": "推理: {{reasoning}}",
     "cacheRead": "缓存读取: {{read}}",
     "cacheWrite": "缓存写入: {{write}}",
-    "cached": "{{count}} 已缓存",
-    "totalDuration": "{{duration}} 总计"
+    "cached": "已缓存 {{count}}",
+    "totalDuration": "总计 {{duration}}"
   },
   "errors": {
     "authError": "认证错误",

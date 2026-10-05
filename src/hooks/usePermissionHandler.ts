@@ -146,9 +146,10 @@ export function usePermissionHandler(serverId: string): UsePermissionHandlerResu
         activeSessionStore.resolvePendingRequest(requestId)
         return true
       } catch (error) {
+        // D24：回复失败时不清本地与 store。此前无条件清除，但服务端请求仍 pending，
+        // 用户看到弹窗消失却无法真正回复，且没有重试入口（权限路径有
+        // isPermissionStillPending 兜底，问题路径没有）。保留弹窗让用户可重试。
         permissionErrorHandler('question reply after retries', error)
-        setPendingQuestionRequests(prev => prev.filter(r => r.id !== requestId))
-        activeSessionStore.resolvePendingRequest(requestId)
         return false
       } finally {
         replyingIdsRef.current.delete(requestId)
@@ -172,9 +173,8 @@ export function usePermissionHandler(serverId: string): UsePermissionHandlerResu
       activeSessionStore.resolvePendingRequest(requestId)
       return true
     } catch (error) {
+      // D24：拒绝失败同样保留弹窗，让用户可重试（理由同 handleQuestionReply）
       permissionErrorHandler('question reject after retries', error)
-      setPendingQuestionRequests(prev => prev.filter(r => r.id !== requestId))
-      activeSessionStore.resolvePendingRequest(requestId)
       return false
     } finally {
       replyingIdsRef.current.delete(requestId)
@@ -229,6 +229,20 @@ export function usePermissionHandler(serverId: string): UsePermissionHandlerResu
         }
         return Array.from(merged.values())
       })
+
+      // D9：同步对账 activeSessionStore（A 层）。组件 state 只反映 UI 已知的请求，
+      // 而 store 的 pendingRequests 若不随刷新清理，服务端已不再返回的请求会长期
+      // 残留（Working 列表 pendingAction 常亮、会话无法转 idle）。这里以服务端
+      // 本次全量为准，清掉属于该 family、但服务端已不存在的 store pending。
+      if (familySet.size > 0) {
+        const authoritativeIds = new Set<string>([
+          ...allPermissions.map(p => p.id),
+          ...allQuestions.map(q => q.id),
+        ])
+        // store 的 sessionId 是复合 key；把 family 的原始 id 也纳入，兼容两种形式
+        const scopedSessionIds = new Set<string>(familySet)
+        activeSessionStore.reconcilePendingRequests(scopedSessionIds, authoritativeIds)
+      }
     } catch (error) {
       permissionErrorHandler('refresh pending requests', error)
     }

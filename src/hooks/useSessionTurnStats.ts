@@ -40,6 +40,7 @@ export function useSessionTurnStats(sessionId: string | null): SessionTurnStats 
 
   useEffect(() => {
     if (!sessionId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 无会话时重置为空统计
       setStats(EMPTY_SESSION_TURN_STATS)
       return
     }

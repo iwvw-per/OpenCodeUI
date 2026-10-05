@@ -487,7 +487,7 @@ function AddServerForm({
             </div>
           )}
 
-          <div className="text-[length:var(--fs-xs)] text-text-400 leading-relaxed">{t('servers.credentialsStorage')}</div>
+          <div data-setting-desc className="text-[length:var(--fs-xs)] text-text-400 leading-relaxed">{t('servers.credentialsStorage')}</div>
         </>
       )}
 

@@ -56,4 +56,26 @@ describe('todoStore defensive copying', () => {
     todoStore.setTodos('s1', [makeTodo('a')])
     expect(todoStore.getTodos('missing')).toBe(empty)
   })
+
+  it('discards a stale HTTP snapshot when SSE wrote in between (D4)', () => {
+    todoStore.setTodos('s1', [makeTodo('old')])
+    // HTTP 快照请求发出前记录世代
+    const revisionAtRequest = todoStore.getRevision('s1')
+    // 期间 SSE 推来更新的 todo
+    todoStore.setTodos('s1', [makeTodo('newer')])
+
+    // 过时的 HTTP 快照回包：世代已变，应被丢弃
+    todoStore.setTodos('s1', [makeTodo('old')], revisionAtRequest)
+
+    expect(todoStore.getTodos('s1').map(t => t.id)).toEqual(['newer'])
+  })
+
+  it('applies an HTTP snapshot when nothing changed in between (D4)', () => {
+    todoStore.setTodos('s1', [makeTodo('old')])
+    const revisionAtRequest = todoStore.getRevision('s1')
+
+    todoStore.setTodos('s1', [makeTodo('fresh')], revisionAtRequest)
+
+    expect(todoStore.getTodos('s1').map(t => t.id)).toEqual(['fresh'])
+  })
 })

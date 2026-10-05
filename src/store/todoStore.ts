@@ -40,6 +40,12 @@ class TodoStore {
   private statsCache = new Map<string, TodoStats>()
   private subscribers = new Set<Subscriber>()
   private version = 0
+  /**
+   * 每个 session 的写入世代。SSE 是实时权威源，HTTP 是快照。
+   * HTTP 请求发出前记录世代，回包时若世代已变（期间 SSE 写过更新数据），
+   * 则丢弃这份过时快照，避免旧值覆盖新值（D4）。
+   */
+  private revisions = new Map<string, number>()
 
   // ============================================
   // Public API
@@ -54,12 +60,24 @@ class TodoStore {
     return this.sessions.get(sessionId)?.todos || EMPTY_TODOS
   }
 
+  /** 当前写入世代（发 HTTP 快照请求前取，回包时校验） */
+  getRevision(sessionId: string): number {
+    return this.revisions.get(sessionId) ?? 0
+  }
+
   /**
    * 设置 session 的 todos（通常由 SSE 事件触发）。
    * 存入前做防御性拷贝（数组 + 每个 todo 的浅拷贝），
    * 避免外部数组或元素对象后续被就地修改而污染 store 状态。
+   *
+   * expectedRevision：HTTP 快照路径传入请求前记录的世代。若期间 SSE 已写入
+   * 更新的数据（世代变化），则丢弃本次快照，防止旧值覆盖新值（D4）。SSE 路径
+   * 不传，始终写入。
    */
-  setTodos(sessionId: string, todos: TodoItem[]) {
+  setTodos(sessionId: string, todos: TodoItem[], expectedRevision?: number) {
+    if (expectedRevision !== undefined && this.getRevision(sessionId) !== expectedRevision) {
+      return
+    }
     const snapshot = todos.map(todo => ({ ...todo }))
     this.sessions.set(sessionId, {
       todos: snapshot,
@@ -71,6 +89,7 @@ class TodoStore {
       completed: snapshot.filter(t => t.status === 'completed').length,
       inProgress: snapshot.filter(t => t.status === 'in_progress').length,
     })
+    this.revisions.set(sessionId, this.getRevision(sessionId) + 1)
     this.version++
     this.notify()
   }
@@ -82,6 +101,7 @@ class TodoStore {
     if (this.sessions.has(sessionId)) {
       this.sessions.delete(sessionId)
       this.statsCache.delete(sessionId)
+      this.revisions.delete(sessionId)
       this.version++
       this.notify()
     }
@@ -93,6 +113,7 @@ class TodoStore {
   clearAll() {
     this.sessions.clear()
     this.statsCache.clear()
+    this.revisions.clear()
     this.version++
     this.notify()
   }

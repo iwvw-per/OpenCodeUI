@@ -47,7 +47,7 @@ export function FieldRow({
             </span>
           )}
         </div>
-        {desc && <p className="mt-0.5 text-[length:var(--fs-xs)] leading-relaxed text-text-300">{desc}</p>}
+        {desc && <p data-setting-desc className="mt-0.5 text-[length:var(--fs-xs)] leading-relaxed text-text-300">{desc}</p>}
         <div className="mt-2 min-w-0 max-w-lg">{control}</div>
       </div>
     )
@@ -64,7 +64,7 @@ export function FieldRow({
             </span>
           )}
         </div>
-        {desc && <p className="mt-0.5 text-[length:var(--fs-xs)] leading-relaxed text-text-300">{desc}</p>}
+        {desc && <p data-setting-desc className="mt-0.5 text-[length:var(--fs-xs)] leading-relaxed text-text-300">{desc}</p>}
       </div>
       <div className="min-w-0 sm:justify-self-end sm:w-full">{control}</div>
     </div>
@@ -276,7 +276,7 @@ function SectionHeading({ title, description }: { title: string; description: st
   return (
     <div className="mb-4">
       <h2 className="text-[length:var(--fs-md)] font-semibold text-text-100">{title}</h2>
-      <p className="mt-1 max-w-[52ch] text-[length:var(--fs-xs)] leading-relaxed text-text-300">{description}</p>
+      <p data-setting-desc className="mt-1 max-w-[52ch] text-[length:var(--fs-xs)] leading-relaxed text-text-300">{description}</p>
     </div>
   )
 }

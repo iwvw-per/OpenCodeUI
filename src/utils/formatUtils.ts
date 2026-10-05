@@ -48,6 +48,12 @@ export function formatProcessDuration(ms: number): string {
   return [`${m}m`, remS > 0 ? `${remS}s` : ''].filter(Boolean).join(' ')
 }
 
+/** 速率显示：<10 保留一位小数，其余取整 */
+export function formatTokenRate(rate: number): string {
+  if (rate < 0.05) return '0 tok/s'
+  return `${rate < 10 ? rate.toFixed(1) : Math.round(rate)} tok/s`
+}
+
 /** Format a cost in dollars */
 export function formatCost(cost: number): string {
   if (cost === 0) return '$0'

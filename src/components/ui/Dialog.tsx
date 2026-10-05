@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { CloseIcon } from '../Icons'
 import { useDelayedRender } from '../../hooks/useDelayedRender'
 import { useBackClose } from '../../hooks/useBackClose'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 interface DialogProps {
   isOpen: boolean
@@ -16,6 +17,8 @@ interface DialogProps {
   showCloseButton?: boolean
   /** 跳过默认的 header 和 content 包裹，children 直接作为面板内容 */
   rawContent?: boolean
+  /** 移动端铺满整个视口（全屏体验），桌面端不受影响 */
+  fullscreenOnMobile?: boolean
   /** 允许触摸设备点击遮罩关闭，默认关闭以避免误触 */
   allowTouchBackdropClose?: boolean
 }
@@ -30,9 +33,12 @@ export function Dialog({
   className = '',
   showCloseButton = true,
   rawContent = false,
+  fullscreenOnMobile = false,
   allowTouchBackdropClose = false,
 }: DialogProps) {
   const { t } = useTranslation(['common'])
+  const isMobile = useIsMobile()
+  const isFullscreen = fullscreenOnMobile && isMobile
   // Animation state
   const [isVisible, setIsVisible] = useState(false)
   const shouldRender = useDelayedRender(isOpen, 200)
@@ -302,7 +308,9 @@ export function Dialog({
       onClick={handleBackdropClick}
     >
       <div
-        className="dialog-safe-region absolute inset-x-0 bottom-0 flex items-center justify-center p-4"
+        className={`absolute inset-x-0 bottom-0 flex items-center justify-center ${
+          isFullscreen ? 'dialog-safe-region-fullscreen' : 'dialog-safe-region p-4'
+        }`}
         onPointerDown={e => {
           handleBackdropPointerDown(e)
           e.stopPropagation()
@@ -321,11 +329,12 @@ export function Dialog({
           className={`
             relative glass border border-border-200/60 rounded-xl shadow-lg 
             flex flex-col overflow-hidden
+            ${isFullscreen ? '!rounded-none border-0' : ''}
             ${isDraggingActive ? '' : 'transition-all duration-200 ease-out'}
             ${className}
           `}
           style={{
-            width: typeof width === 'number' ? `${width}px` : width,
+            width: isFullscreen ? '100%' : typeof width === 'number' ? `${width}px` : width,
             maxWidth: '100%',
             maxHeight: '100%',
             opacity: isVisible ? (dragY > 0 ? Math.max(0.3, 1 - dragY / 300) : 1) : 0,

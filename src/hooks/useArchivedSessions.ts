@@ -87,9 +87,14 @@ export function useArchivedSessions(options: UseArchivedSessionsOptions = {}): U
         setError(null)
       }
       try {
+        const expectedMembership = sessionListIndexStore.getMembershipRevision(bucket)
         const data = await getArchivedSessions({ roots: false, limit }, serverId)
         if (requestId !== requestIdRef.current) return
-        sessionListIndexStore.replace(bucket, data, { limit: data.length, hasMore: data.length >= limit })
+        sessionListIndexStore.replace(bucket, data, {
+          limit: data.length,
+          hasMore: data.length >= limit,
+          expectedMembershipRevision: expectedMembership,
+        })
       } catch (e) {
         if (requestId !== requestIdRef.current) return
         setError(e instanceof Error ? e : new Error(i18n.t('chat:errors.fetchArchivedSessions')))

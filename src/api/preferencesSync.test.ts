@@ -102,6 +102,8 @@ describe('preferences sync', () => {
     expect(isSyncableKey('opencode-right-panel-width')).toBe(true)
     expect(isSyncableKey('opencode-pinned-sessions')).toBe(true)
     expect(isSyncableKey('opencode-pinned-messages')).toBe(true)
+    // 已读水位：裸键，跨端同步「未读」依赖它
+    expect(isSyncableKey('opencode-read-watermarks')).toBe(true)
   })
 
   it('rejects UI open/collapse state so panels do not fight across devices', async () => {
@@ -358,6 +360,33 @@ describe('preferences sync', () => {
     expect(merged.map((entry: { sessionId: string }) => entry.sessionId)).toEqual(['local-1', 'server-1'])
     // 同 id 重复时保留本地那条（本地顺序优先），不被服务端的旧副本覆盖标题。
     expect(merged[0].title).toBe('Local')
+  })
+
+  it('merges read watermarks by taking the max per session', async () => {
+    const account = await seedAccount()
+    // 本地：ses_a 水位 1000，ses_local 仅本地有
+    localStorage.setItem(
+      'opencode-read-watermarks',
+      JSON.stringify({ ses_a: 1000, ses_local: 500 }),
+    )
+
+    stubPreferencesFetch([
+      {
+        key: 'opencode-read-watermarks',
+        // 服务端：ses_a 更高（另一端读得更晚）、ses_server 仅服务端有
+        value: { ses_a: 2000, ses_server: 3000 },
+        updatedAt: '2030-01-01T00:00:00Z',
+      },
+    ])
+
+    const { pullPreferences } = await import('./preferencesSync')
+    await pullPreferences(account)
+
+    const merged = JSON.parse(localStorage.getItem('opencode-read-watermarks') || '{}')
+    // 逐键取最大：ses_a 取 2000；并集保留 ses_local / ses_server
+    expect(merged.ses_a).toBe(2000)
+    expect(merged.ses_local).toBe(500)
+    expect(merged.ses_server).toBe(3000)
   })
 
   it('merges per-server pinned sessions and saved directories as a union', async () => {

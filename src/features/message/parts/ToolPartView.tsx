@@ -107,6 +107,7 @@ export const ToolPartView = memo(function ToolPartView({
   const [lastProgress, setLastProgress] = useState(() => ({ output: progressOutput ?? '', at: Date.now() }))
   useEffect(() => {
     if ((progressOutput ?? '') !== lastProgress.output) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 输出变化时刷新停更计时基准
       setLastProgress({ output: progressOutput ?? '', at: Date.now() })
     }
   }, [progressOutput, lastProgress.output])

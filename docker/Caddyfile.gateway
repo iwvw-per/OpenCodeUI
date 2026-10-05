@@ -22,9 +22,10 @@
 		reverse_proxy opencode-frontend:3000
 	}
 
-	# 历史消息等 JSON 响应体积大（单页可达数 MB），开启压缩；
-	# SSE（text/event-stream）不在 Caddy 的压缩类型内，不受影响。
-	encode gzip
+	# 历史消息等 JSON 响应体积大（单页可达数 MB），开启压缩；zstd 比 gzip 再省
+	# 约 20-30% 传输量，浏览器不支持时自动回退 gzip。
+	# SSE（text/event-stream）不在 Caddy 的默认压缩类型内，不受影响。
+	encode zstd gzip
 }
 
 # ---- 开发服务入口 :6659 — 绑独立域名 ----

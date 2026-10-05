@@ -19,7 +19,7 @@
 import { memo, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import type { CSSProperties } from 'react'
 import type { Message } from '../types/message'
-import { useChatViewport } from '../features/chat/chatViewport'
+import { useChatViewport, CHAT_VIEWPORT_MOBILE_BREAKPOINT } from '../features/chat/chatViewport'
 import { hapticTap } from '../utils/haptics'
 import { buildOutlineSourceEntries, truncateOutlineLabel, type OutlineSourceEntry } from './outlineIndexModel'
 
@@ -102,7 +102,7 @@ const COMPACT_FISHEYE: FisheyeConfig = {
 // ─── Visual Presets ─────────────────────────
 
 const DESKTOP_VISUAL: VisualConfig = {
-  rightOffset: 5,
+  rightOffset: 13,
   hitPadLeft: 0,
   pointerHitWidth: 8,
   zonePadLeft: 200,
@@ -115,7 +115,7 @@ const DESKTOP_VISUAL: VisualConfig = {
 }
 
 const COMPACT_VISUAL: VisualConfig = {
-  rightOffset: 4,
+  rightOffset: 12,
   hitPadLeft: 0,
   pointerHitWidth: 6,
   zonePadLeft: 140,
@@ -356,7 +356,7 @@ export const OutlineIndex = memo(function OutlineIndex({
   currentHighlightEnabled = true,
   onScrollToMessageId,
 }: OutlineIndexProps) {
-  const { interaction, presentation } = useChatViewport()
+  const { interaction, presentation, layout } = useChatViewport()
   const visual = presentation.isCompact ? COMPACT_VISUAL : DESKTOP_VISUAL
   const outlineSourceEntries = useMemo(() => sourceEntries ?? buildOutlineSourceEntries(messages), [messages, sourceEntries])
   const allEntries = useMemo(() => formatEntries(outlineSourceEntries, visual), [outlineSourceEntries, visual])
@@ -390,6 +390,8 @@ export const OutlineIndex = memo(function OutlineIndex({
   const ownerVisibleIndex = useMemo(() => findBiasedVisibleIndex(entries, ownerVisibleIds), [entries, ownerVisibleIds])
 
   if (entries.length < 2) return null
+
+  if (layout.viewportWidth < CHAT_VIEWPORT_MOBILE_BREAKPOINT) return null
 
   return interaction.outlineInteraction === 'touch' ? (
     <TouchFisheye entries={entries} onSelect={onScrollToMessageId} visual={visual} ownerVisibleIndex={ownerVisibleIndex} />

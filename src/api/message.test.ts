@@ -20,6 +20,7 @@ vi.mock('../utils/sessionKey', () => ({
 
 vi.mock('../utils/directoryUtils', () => ({
   formatPathForApi: (dir?: string) => dir,
+  directoryCacheKey: (dir?: string | null) => dir ?? '',
 }))
 
 const { storageMock } = vi.hoisted(() => {
@@ -152,7 +153,6 @@ describe('getSessionMessagePage projection', () => {
     expect(page.nextCursor).toBe('cursor-abc')
     expect(messagesMock).toHaveBeenCalledWith(
       expect.objectContaining({ sessionID: 'ses-1', limit: 50, before: 'cursor-prev' }),
-      undefined,
     )
   })
 
@@ -272,12 +272,10 @@ describe('getSessionTurnPage', () => {
     expect(messagesMock).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ sessionID: 'ses-1', limit: 30, before: undefined }),
-      undefined,
     )
     expect(messagesMock).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ sessionID: 'ses-1', limit: 30, before: 'cursor-1' }),
-      undefined,
     )
     // 按时间升序拼接：page2 在 page1 之前
     expect(result.messages.map(m => m.info.id)).toEqual(['user-1', 'asst-2', 'asst-3', 'asst-1', 'asst-2', 'user-3'])

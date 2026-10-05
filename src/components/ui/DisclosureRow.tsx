@@ -21,6 +21,7 @@ const sizeStyles: Record<DisclosureRowSize, string> = {
 const labelToneStyles = {
   idle: 'text-text-400 group-hover/disclosure:text-text-200',
   active: 'reasoning-shimmer-text',
+  accent: 'accent-shimmer-text',
   error: 'text-danger-100',
   warning: 'text-warning-100',
 } as const

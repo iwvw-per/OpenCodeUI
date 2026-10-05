@@ -186,7 +186,7 @@ export function ServiceSettings() {
   if (!isTauriDesktop) {
     return (
       <SettingsSection plain title={t('service.localService')} description={t('service.desktopOnlyDesc')}>
-        <div className="text-[length:var(--fs-xs)] text-text-300 leading-relaxed">{t('service.webModeDesc')}</div>
+        <div data-setting-desc className="text-[length:var(--fs-xs)] text-text-300 leading-relaxed">{t('service.webModeDesc')}</div>
       </SettingsSection>
     )
   }

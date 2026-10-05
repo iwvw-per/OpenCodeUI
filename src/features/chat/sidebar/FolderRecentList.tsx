@@ -91,6 +91,8 @@ interface FolderRecentListProps {
   onSelectSession: (session: ApiSession) => void
   onRenameSession: (session: ApiSession, newTitle: string) => Promise<void>
   onDeleteSession: (session: ApiSession) => Promise<void>
+  /** 会话标题等元数据在右键菜单中被外部修改后触发刷新 */
+  onSessionChanged?: () => void
   onReorderProject: (draggedPath: string, targetPath: string) => void
   /** 项目行 hover 的 + 按钮：在该项目目录下新建会话（无目录的项目（全局）不显示） */
   onNewSessionInDirectory?: (directory: string) => void
@@ -377,6 +379,7 @@ export function FolderRecentList({
   onSelectSession,
   onRenameSession,
   onDeleteSession,
+  onSessionChanged,
   onReorderProject,
   onNewSessionInDirectory,
   onRemoveProject,
@@ -530,6 +533,7 @@ export function FolderRecentList({
                 onSelectSession={onSelectSession}
                 onRenameSession={onRenameSession}
                 onRequestDeleteSession={setPendingDelete}
+                onSessionChanged={onSessionChanged}
                 expandedChildSessionIds={expandedChildSessionIds}
                 inlineChildSessions={inlineChildSessions}
                 onSelectChildSession={onSelectChildSession}
@@ -650,6 +654,7 @@ interface PinnedFolderSectionProps {
   onSelectSession: (session: ApiSession) => void
   onRenameSession: (session: ApiSession, newTitle: string) => Promise<void>
   onRequestDeleteSession: (pending: PendingDeleteSession) => void
+  onSessionChanged?: () => void
   expandedChildSessionIds?: Set<string>
   inlineChildSessions?: Map<string, ApiSession[]>
   onSelectChildSession?: (session: ApiSession) => void
@@ -667,6 +672,7 @@ function PinnedFolderSection({
   onSelectSession,
   onRenameSession,
   onRequestDeleteSession,
+  onSessionChanged,
   expandedChildSessionIds,
   inlineChildSessions,
   onSelectChildSession,
@@ -712,6 +718,7 @@ function PinnedFolderSection({
                 onSelect={() => onSelectSession(session)}
                 onRename={newTitle => onRenameSession(session, newTitle)}
                 onDelete={() => onRequestDeleteSession({ session, removeLocal: () => {} })}
+                onChanged={onSessionChanged}
                 preferTouchUi={preferTouchUi}
                 density="minimal"
                 showStats={showSessionDiffStats}
@@ -1342,65 +1349,57 @@ function FolderRecentSection({
                     )
                   })}
 
-                  {hasMore && (
-                    <button
-                      onClick={() => void loadMore()}
-                      disabled={isLoadingMore}
-                      aria-busy={isLoadingMore}
-                      aria-label={isLoadingMore ? t('common:loadingMore') : t('sidebar.showMoreChats')}
-                      className={cn(
-                        'group w-full rounded-md px-2 py-1.5 text-[length:var(--fs-xs)] text-text-400/85',
-                        interactive.subtle,
-                        'disabled:cursor-default disabled:opacity-70',
-                      )}
-                    >
-                      <span className="flex items-center justify-center">
-                        <span className="relative inline-flex shrink-0 items-center gap-1.5 font-medium">
-                          <span
-                            aria-hidden="true"
-                            className="pointer-events-none absolute right-full top-1/2 mr-2 h-px w-6 -translate-y-1/2 bg-text-600/35 transition-colors group-hover:bg-text-500/55"
-                          />
+                  {(hasMore || visibleSessions.length > DIRECTORY_PAGE_SIZE) && (
+                    <div className="flex items-center gap-1.5">
+                      {hasMore && (
+                        <button
+                          onClick={() => void loadMore()}
+                          disabled={isLoadingMore}
+                          aria-busy={isLoadingMore}
+                          aria-label={isLoadingMore ? t('common:loadingMore') : t('sidebar.showMoreChats')}
+                          className={cn(
+                            'group inline-flex items-center gap-1.5 rounded-md py-1.5 pr-2 text-[length:var(--fs-xs)] font-medium text-accent-main-100',
+                            visibleSessions.length > DIRECTORY_PAGE_SIZE
+                              ? 'flex-1 justify-center pl-2'
+                              : 'flex-1 justify-start pl-[30px]',
+                            interactive.subtle,
+                            'disabled:cursor-default disabled:opacity-70',
+                          )}
+                        >
                           <span>{t('sidebar.showMoreChats')}</span>
                           {isLoadingMore ? (
                             <Spinner size="xs" tone="accent" variant="pixel" />
                           ) : (
                             <ChevronDownIcon
                               size={12}
-                              className="text-text-400/90 transition-colors group-hover:text-text-200"
+                              className="text-accent-main-100 transition-colors"
                             />
                           )}
-                        </span>
-                      </span>
-                    </button>
-                  )}
-
-                  {visibleSessions.length > DIRECTORY_PAGE_SIZE && (
-                    <button
-                      onClick={() => void collapse()}
-                      disabled={isLoadingMore}
-                      aria-busy={isLoadingMore}
-                      aria-label={t('sidebar.showFewerChats')}
-                      title={t('sidebar.showFewerChats')}
-                      className={cn(
-                        'group w-full rounded-md px-2 py-1.5 text-[length:var(--fs-xs)] text-text-400/85',
-                        interactive.subtle,
-                        'disabled:cursor-default disabled:opacity-70',
+                        </button>
                       )}
-                    >
-                      <span className="flex items-center justify-center">
-                        <span className="relative inline-flex shrink-0 items-center gap-1.5 font-medium">
-                          <span
-                            aria-hidden="true"
-                            className="pointer-events-none absolute right-full top-1/2 mr-2 h-px w-6 -translate-y-1/2 bg-text-600/35 transition-colors group-hover:bg-text-500/55"
-                          />
+
+                      {visibleSessions.length > DIRECTORY_PAGE_SIZE && (
+                        <button
+                          onClick={() => void collapse()}
+                          disabled={isLoadingMore}
+                          aria-busy={isLoadingMore}
+                          aria-label={t('sidebar.showFewerChats')}
+                          title={t('sidebar.showFewerChats')}
+                          className={cn(
+                            'group inline-flex items-center gap-1.5 rounded-md py-1.5 pr-2 text-[length:var(--fs-xs)] font-medium text-accent-main-100',
+                            hasMore ? 'flex-1 justify-center pl-2' : 'flex-1 justify-start pl-[30px]',
+                            interactive.subtle,
+                            'disabled:cursor-default disabled:opacity-70',
+                          )}
+                        >
                           <span>{t('sidebar.showFewerChats')}</span>
                           <ChevronDownIcon
                             size={12}
-                            className="rotate-180 text-text-400/90 transition-colors group-hover:text-text-200"
+                            className="rotate-180 text-accent-main-100 transition-colors"
                           />
-                        </span>
-                      </span>
-                    </button>
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}

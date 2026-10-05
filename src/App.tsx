@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
 import { Sidebar } from './features/chat'
@@ -11,6 +11,7 @@ import { BottomPanel } from './components/BottomPanel'
 import { DesktopTitlebar } from './components/DesktopTitlebar'
 import { useDirectory, useGlobalEvents, useGlobalKeybindings, useRouter } from './hooks'
 import { useGlobalHaptics } from './hooks/useGlobalHaptics'
+import { hapticTap } from './utils/haptics'
 import { useInputCapabilities } from './hooks/useInputCapabilities'
 import { useViewportHeight } from './hooks/useViewportHeight'
 import { useCloseServiceDialog } from './hooks/useCloseServiceDialog'
@@ -55,12 +56,11 @@ const CommandPalette = lazy(() =>
 const CloseServiceDialog = lazy(() =>
   import('./components/CloseServiceDialog').then(module => ({ default: module.CloseServiceDialog })),
 )
-
-const MOBILE_PAGER_SCROLL_END_MS = 120
-const MOBILE_RIGHT_PANEL_UNMOUNT_MS = 420
-
-type MobilePagerPage = 'left' | 'chat' | 'right'
-
+const ScheduledTasksDialog = lazy(() =>
+  import('./features/settings/components/ScheduledTasksDialog').then(module => ({
+    default: module.ScheduledTasksDialog,
+  })),
+)
 function App() {
   const { t } = useTranslation(['commands', 'chat', 'common', 'components'])
   const router = useRouter()
@@ -343,289 +343,25 @@ function App() {
     wasMobilePanelLayoutRef.current = isMobilePanelLayout
   }, [isMobilePanelLayout])
 
-  const mobileLeftPanelWidth = chatViewport.layout.sidebar.overlayWidth
-  const mobilePageWidth = Math.max(1, chatViewport.layout.viewportWidth)
-  const mobileChatScrollLeft = mobileLeftPanelWidth
-  const mobileRightScrollLeft = mobileLeftPanelWidth + mobilePageWidth
-  const mobilePagerRef = useRef<HTMLDivElement | null>(null)
-  const mobilePagerInitializedRef = useRef(false)
-  const mobilePagerInteractingRef = useRef(false)
-  const mobileProgrammaticTargetRef = useRef<MobilePagerPage | null>(null)
-  const mobileScrollEndTimerRef = useRef<number | null>(null)
-  const mobileRightUnmountTimerRef = useRef<number | null>(null)
-  const shouldRenderMobileRightPanelRef = useRef(false)
-  const [shouldRenderMobileRightPanel, setShouldRenderMobileRightPanel] = useState(false)
-  // 移动端聊天面是否处于「手势翻页」状态。3D 深度变换（rotateY/scale）只在翻页
-  // 过程中需要；静止时若仍挂着 translate3d/preserve-3d/will-change，Android WebView
-  // 会长期持有一个包裹虚拟滚动列表的 3D 合成层，滚动对话时反复重栅格化 → 闪烁。
-  // 因此仅在翻页途中开启，回到页面静止后关闭。
-  const [mobileChatDepth, setMobileChatDepth] = useState(false)
-  const mobileChatDepthRef = useRef(false)
-  const setMobileChatDepthIfChanged = useCallback((active: boolean) => {
-    if (mobileChatDepthRef.current === active) return
-    mobileChatDepthRef.current = active
-    setMobileChatDepth(active)
-  }, [])
-
-  const setMobileRightPanelRendered = useCallback((rendered: boolean) => {
-    if (shouldRenderMobileRightPanelRef.current === rendered) return
-    shouldRenderMobileRightPanelRef.current = rendered
-    setShouldRenderMobileRightPanel(rendered)
-  }, [])
-
-  const clearMobileRightUnmountTimer = useCallback(() => {
-    if (mobileRightUnmountTimerRef.current === null) return
-    window.clearTimeout(mobileRightUnmountTimerRef.current)
-    mobileRightUnmountTimerRef.current = null
-  }, [])
-
-  const ensureMobileRightPanelRendered = useCallback(() => {
-    clearMobileRightUnmountTimer()
-    setMobileRightPanelRendered(true)
-  }, [clearMobileRightUnmountTimer, setMobileRightPanelRendered])
-
-  const mobileActivePage: MobilePagerPage = rightPanelOpen ? 'right' : sidebarExpanded ? 'left' : 'chat'
-
-  const getMobilePageScrollLeft = useCallback(
-    (page: MobilePagerPage) => (page === 'left' ? 0 : page === 'right' ? mobileRightScrollLeft : mobileChatScrollLeft),
-    [mobileChatScrollLeft, mobileRightScrollLeft],
-  )
-
-  const scrollMobilePagerTo = useCallback(
-    (page: MobilePagerPage, behavior: ScrollBehavior = 'smooth') => {
-      const pager = mobilePagerRef.current
-      if (!pager) return
-
-      const left = getMobilePageScrollLeft(page)
-      if (Math.abs(pager.scrollLeft - left) < 1) {
-        mobileProgrammaticTargetRef.current = null
-        setMobileChatDepthIfChanged(false)
-        pager.scrollTo({ left, behavior: 'auto' })
-        return
-      }
-
-      // 平滑翻页前开启深度层；落位后由 scroll 结束回调关闭
-      setMobileChatDepthIfChanged(true)
-      mobileProgrammaticTargetRef.current = behavior === 'smooth' ? page : null
-      pager.scrollTo({ left, behavior })
-    },
-    [getMobilePageScrollLeft, setMobileChatDepthIfChanged],
-  )
-
-  const getNearestMobilePage = useCallback(
-    (scrollLeft: number): MobilePagerPage => {
-      const leftDistance = Math.abs(scrollLeft)
-      const chatDistance = Math.abs(scrollLeft - mobileChatScrollLeft)
-      const rightDistance = Math.abs(scrollLeft - mobileRightScrollLeft)
-
-      if (leftDistance <= chatDistance && leftDistance <= rightDistance) return 'left'
-      if (rightDistance <= chatDistance) return 'right'
-      return 'chat'
-    },
-    [mobileChatScrollLeft, mobileRightScrollLeft],
-  )
-
-  const syncMobilePagerState = useCallback(() => {
-    const pager = mobilePagerRef.current
-    if (!pager) return
-
-    const page = getNearestMobilePage(pager.scrollLeft)
-    // 落位静止后关闭 3D 深度层：只要 pager 停在某个页边界，chat 面就恢复普通布局，
-    // 不再挂着包裹滚动列表的合成层（滚动对话时不再闪烁）。
-    const atRest = Math.abs(pager.scrollLeft - getMobilePageScrollLeft(page)) < 1
-    setMobileChatDepthIfChanged(!atRest)
-    // 移动端侧栏开合是手势翻页的临时状态，走 transient 不落盘、不参与同步
-    if (page === 'left') {
-      if (!sidebarExpanded) layoutStore.setSidebarExpandedTransient(true)
-      if (rightPanelOpen) layoutStore.closeRightPanel()
-      return
-    }
-
-    if (page === 'right') {
-      ensureMobileRightPanelRendered()
-      if (sidebarExpanded) layoutStore.setSidebarExpandedTransient(false)
-      if (!rightPanelOpen) layoutStore.openRightPanel()
-      return
-    }
-
-    if (sidebarExpanded) layoutStore.setSidebarExpandedTransient(false)
-    if (rightPanelOpen) layoutStore.closeRightPanel()
-  }, [
-    ensureMobileRightPanelRendered,
-    getMobilePageScrollLeft,
-    getNearestMobilePage,
-    rightPanelOpen,
-    setMobileChatDepthIfChanged,
-    sidebarExpanded,
-  ])
-
-  const handleMobilePagerScroll = useCallback(() => {
-    const pager = mobilePagerRef.current
-    if (!pager) return
-
-    const scrollLeft = pager.scrollLeft
-
-    // -1 (滑向左栏) 到 0 (对话页) 到 1 (滑向右栏)
-    const rawProgress =
-      (scrollLeft - mobileChatScrollLeft) / (scrollLeft < mobileChatScrollLeft ? mobileLeftPanelWidth : mobilePageWidth)
-    const progress = Math.max(-1, Math.min(1, rawProgress))
-    const absProgress = Math.abs(progress)
-    const rightProgress = Math.max(0, progress)
-    const easedRightProgress = rightProgress * rightProgress
-    const originX = 50 - progress * 50
-
-    pager.style.setProperty('--mobile-chat-rotate-y', `${progress * 10}deg`)
-    pager.style.setProperty('--mobile-chat-scale', `${1 - absProgress * 0.06}`)
-    pager.style.setProperty('--mobile-chat-offset-x', `${easedRightProgress * -48}px`)
-    pager.style.setProperty('--mobile-chat-transform-origin', `${originX}% 50%`)
-
-    // 翻页途中开启 3D 深度层；停到某页边界后由 scroll 结束回调关闭。
-    setMobileChatDepthIfChanged(absProgress > 0.001)
-
-    if (scrollLeft > mobileChatScrollLeft + 24) {
-      ensureMobileRightPanelRendered()
-    }
-
-    if (mobileScrollEndTimerRef.current !== null) {
-      window.clearTimeout(mobileScrollEndTimerRef.current)
-    }
-
-    mobileScrollEndTimerRef.current = window.setTimeout(() => {
-      mobileScrollEndTimerRef.current = null
-      if (mobilePagerInteractingRef.current) return
-
-      if (mobileProgrammaticTargetRef.current) {
-        const targetLeft = getMobilePageScrollLeft(mobileProgrammaticTargetRef.current)
-        if (Math.abs(pager.scrollLeft - targetLeft) >= 2) return
-        mobileProgrammaticTargetRef.current = null
-      }
-
-      syncMobilePagerState()
-    }, MOBILE_PAGER_SCROLL_END_MS)
-  }, [
-    ensureMobileRightPanelRendered,
-    getMobilePageScrollLeft,
-    mobileChatScrollLeft,
-    mobileLeftPanelWidth,
-    mobilePageWidth,
-    setMobileChatDepthIfChanged,
-    syncMobilePagerState,
-  ])
-
-  const handleMobilePagerInteractionStart = useCallback(() => {
-    mobilePagerInteractingRef.current = true
-    mobileProgrammaticTargetRef.current = null
-    // 手势开始即开启深度层（早于任何 scroll 事件），避免首帧出现
-    // 「pager 已滚动、chat 面还没套变换」的一帧错位。
-    setMobileChatDepthIfChanged(true)
-  }, [setMobileChatDepthIfChanged])
-
-  const handleMobilePagerInteractionEnd = useCallback(() => {
-    mobilePagerInteractingRef.current = false
-
-    if (mobileScrollEndTimerRef.current !== null) {
-      window.clearTimeout(mobileScrollEndTimerRef.current)
-    }
-
-    mobileScrollEndTimerRef.current = window.setTimeout(() => {
-      mobileScrollEndTimerRef.current = null
-      syncMobilePagerState()
-    }, MOBILE_PAGER_SCROLL_END_MS)
-  }, [syncMobilePagerState])
-
-  useLayoutEffect(() => {
-    if (!isMobilePanelLayout) {
-      mobilePagerInitializedRef.current = false
-      // 离开移动布局：确保深度层关闭，避免桌面端残留 3D 合成层
-      setMobileChatDepthIfChanged(false)
-      return
-    }
-
-    const page = rightPanelOpen ? 'right' : sidebarExpanded ? 'left' : 'chat'
-    if (!mobilePagerInitializedRef.current) {
-      const pager = mobilePagerRef.current
-      if (pager) {
-        pager.scrollLeft = getMobilePageScrollLeft(page)
-      }
-      mobileProgrammaticTargetRef.current = null
-      mobilePagerInitializedRef.current = true
-      // 首帧直接落位到目标页：属于静止态，不启用 3D 深度层
-      setMobileChatDepthIfChanged(false)
-      return
-    }
-
-    const frameId = window.requestAnimationFrame(() => {
-      scrollMobilePagerTo(page, 'smooth')
-    })
-    return () => window.cancelAnimationFrame(frameId)
-  }, [
-    getMobilePageScrollLeft,
-    isMobilePanelLayout,
-    rightPanelOpen,
-    scrollMobilePagerTo,
-    setMobileChatDepthIfChanged,
-    sidebarExpanded,
-  ])
-
-  useEffect(() => {
-    if (!isMobilePanelLayout) {
-      clearMobileRightUnmountTimer()
-      const frameId = window.requestAnimationFrame(() => setMobileRightPanelRendered(false))
-      return () => window.cancelAnimationFrame(frameId)
-    }
-
-    if (rightPanelOpen) {
-      clearMobileRightUnmountTimer()
-      const frameId = window.requestAnimationFrame(() => setMobileRightPanelRendered(true))
-      return () => window.cancelAnimationFrame(frameId)
-    }
-
-    clearMobileRightUnmountTimer()
-    mobileRightUnmountTimerRef.current = window.setTimeout(() => {
-      setMobileRightPanelRendered(false)
-      mobileRightUnmountTimerRef.current = null
-    }, MOBILE_RIGHT_PANEL_UNMOUNT_MS)
-
-    return clearMobileRightUnmountTimer
-  }, [clearMobileRightUnmountTimer, isMobilePanelLayout, rightPanelOpen, setMobileRightPanelRendered])
-
-  useEffect(() => {
-    if (!isMobilePanelLayout || !rightPanelOpen || !sidebarExpanded) return
-
-    // 移动端：打开右面板时收起侧栏，属临时交互，不落盘同步
-    const frameId = window.requestAnimationFrame(() => layoutStore.setSidebarExpandedTransient(false))
-    return () => window.cancelAnimationFrame(frameId)
-  }, [isMobilePanelLayout, rightPanelOpen, sidebarExpanded])
-
-  useEffect(() => {
-    return () => {
-      if (mobileScrollEndTimerRef.current !== null) window.clearTimeout(mobileScrollEndTimerRef.current)
-      if (mobileRightUnmountTimerRef.current !== null) window.clearTimeout(mobileRightUnmountTimerRef.current)
-      mobileProgrammaticTargetRef.current = null
-    }
-  }, [])
-
   const handleOpenSidebar = useCallback(() => {
     if (isMobilePanelLayout && rightPanelOpen) {
       layoutStore.closeRightPanel()
     }
     if (isMobilePanelLayout) {
-      scrollMobilePagerTo('left')
       // 移动端 overlay 侧栏是浏览动作，不写同步键（否则会关掉桌面端的侧栏）
       layoutStore.setSidebarExpandedTransient(true)
       return
     }
     setSidebarExpanded(true)
-  }, [isMobilePanelLayout, rightPanelOpen, scrollMobilePagerTo, setSidebarExpanded])
+  }, [isMobilePanelLayout, rightPanelOpen, setSidebarExpanded])
 
   const handleCloseSidebar = useCallback(() => {
     if (isMobilePanelLayout) {
-      scrollMobilePagerTo('chat')
       layoutStore.setSidebarExpandedTransient(false)
       return
     }
     setSidebarExpanded(false)
-  }, [isMobilePanelLayout, scrollMobilePagerTo, setSidebarExpanded])
+  }, [isMobilePanelLayout, setSidebarExpanded])
 
   const handleToggleSidebar = useCallback(() => {
     if (sidebarExpanded) {
@@ -642,23 +378,68 @@ function App() {
     }
 
     if (rightPanelOpen) {
-      scrollMobilePagerTo('chat')
       layoutStore.closeRightPanel()
       return
     }
 
-    ensureMobileRightPanelRendered()
-    // 移动端：切到右面板时收起侧栏，属临时交互，不落盘同步
+    // 移动端：右栏是覆盖式 overlay；切到右栏时收起侧栏（临时交互，不落盘同步）
     if (sidebarExpanded) layoutStore.setSidebarExpandedTransient(false)
-    scrollMobilePagerTo('right')
     layoutStore.openRightPanel()
-  }, [
-    ensureMobileRightPanelRendered,
-    isMobilePanelLayout,
-    rightPanelOpen,
-    scrollMobilePagerTo,
-    sidebarExpanded,
-  ])
+  }, [isMobilePanelLayout, rightPanelOpen, sidebarExpanded])
+
+  // ── 主界面左右滑动开抽屉 ──
+  // 从主界面向右滑开侧栏、向左滑开右栏。只处理横向手势（纵向滚动对话放行），
+  // 且仅在两个抽屉都未打开时生效（抽屉打开后由抽屉自身负责关闭手势）。
+  const mainSwipeRef = useRef<{ startX: number; startY: number; axis: 'x' | 'y' | null } | null>(null)
+  const MAIN_SWIPE_AXIS_PX = 12
+  const MAIN_SWIPE_TRIGGER_PX = 60
+
+  const handleMainTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (!isMobilePanelLayout || sidebarExpanded || rightPanelOpen) {
+        mainSwipeRef.current = null
+        return
+      }
+      const touch = e.touches[0]
+      if (!touch) return
+      mainSwipeRef.current = { startX: touch.clientX, startY: touch.clientY, axis: null }
+    },
+    [isMobilePanelLayout, rightPanelOpen, sidebarExpanded],
+  )
+
+  const handleMainTouchMove = useCallback((e: React.TouchEvent) => {
+    const swipe = mainSwipeRef.current
+    const touch = e.touches[0]
+    if (!swipe || !touch) return
+    if (swipe.axis === null) {
+      const dx = touch.clientX - swipe.startX
+      const dy = touch.clientY - swipe.startY
+      if (Math.abs(dx) < MAIN_SWIPE_AXIS_PX && Math.abs(dy) < MAIN_SWIPE_AXIS_PX) return
+      // 横向意图明显强于纵向才接管，避免与对话滚动打架
+      swipe.axis = Math.abs(dx) > Math.abs(dy) * 1.25 ? 'x' : 'y'
+    }
+  }, [])
+
+  const handleMainTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      const swipe = mainSwipeRef.current
+      mainSwipeRef.current = null
+      if (!swipe || swipe.axis !== 'x') return
+      const touch = e.changedTouches[0]
+      if (!touch) return
+      const dx = touch.clientX - swipe.startX
+      if (dx >= MAIN_SWIPE_TRIGGER_PX) {
+        // 右滑：开侧栏
+        hapticTap('medium')
+        handleOpenSidebar()
+      } else if (dx <= -MAIN_SWIPE_TRIGGER_PX) {
+        // 左滑：开右栏
+        hapticTap('medium')
+        handleToggleRightPanel()
+      }
+    },
+    [handleOpenSidebar, handleToggleRightPanel],
+  )
 
   const focusedDirectory = focusedRouteDirectory || ''
 
@@ -686,6 +467,10 @@ function App() {
   const [projectDialogOpen, setProjectDialogOpen] = useState(false)
   const openProject = useCallback(() => setProjectDialogOpen(true), [])
   const closeProjectDialog = useCallback(() => setProjectDialogOpen(false), [])
+
+  const [scheduledTasksOpen, setScheduledTasksOpen] = useState(false)
+  const openScheduledTasks = useCallback(() => setScheduledTasksOpen(true), [])
+  const closeScheduledTasks = useCallback(() => setScheduledTasksOpen(false), [])
 
   const renderPaneLeaf = useCallback(
     (paneId: string, paneSessionId: string | null) => (
@@ -878,6 +663,13 @@ function App() {
         },
       },
       {
+        id: 'openScheduledTasks',
+        label: t('commands:openScheduledTasks', { defaultValue: '定时任务' }),
+        description: t('commands:openScheduledTasksDesc', { defaultValue: '管理定时任务' }),
+        category: t('commands:categories.general'),
+        action: openScheduledTasks,
+      },
+      {
         id: 'toggleSidebar',
         label: t('commands:toggleSidebar'),
         description: t('commands:toggleSidebarDesc'),
@@ -1052,6 +844,7 @@ function App() {
     t,
     openSettings,
     openProject,
+    openScheduledTasks,
     openSettingsTab,
     handleToggleSidebar,
     handleToggleRightPanel,
@@ -1069,12 +862,12 @@ function App() {
   // （覆盖 RightPanel 上方），RightPanel 天然位于标题栏下方；网页/非全高模式没有全局标题栏，
   // 需用一条与主区 chat-topbar 同高同框的顶栏线横跨主区和右侧面板上方，并将 RightPanel
   // 整体下移到该顶栏下方，视觉上和桌面端保持一致。
-  // 网页/Linux 没有固定的全宽顶栏：右侧面板以浮层从右侧滑入顶栏下方。
+  // 网页/Linux 桌面端没有固定的全宽顶栏：右侧面板以浮层从右侧滑入顶栏下方。
   // 为避免盖住工作状态面板（会话信息卡片）与对话内容，把主区内容让出面板宽度，
   // 通过 --right-drawer-width 下发给对话区与底部面板；Windows/macOS 桌面走 docked，
-  // 无需让位，恒为 0。
+  // 移动端右栏是覆盖式 overlay（不挤压主区），二者都恒为 0。
   const rightPanelDrawerWidth =
-    !desktopFullHeightSidebar && !usesCustomDesktopTitlebar() && rightPanelOpen
+    !isMobilePanelLayout && !desktopFullHeightSidebar && !usesCustomDesktopTitlebar() && rightPanelOpen
       ? chatViewport.layout.rightPanel.dockedWidth || rightPanelWidth
       : 0
 
@@ -1178,153 +971,47 @@ function App() {
           <>
             <DesktopTitlebar headerProps={desktopTitlebarHeaderProps} />
             <div className="relative flex min-h-0 flex-1 overflow-hidden">
+              {/* 侧栏：移动端为覆盖式 overlay 抽屉（主界面不缩放、无 3D）；
+                  桌面端为 docked 常驻列。 */}
+              <Sidebar
+                isOpen={sidebarExpanded}
+                selectedSessionId={paneLayout.focusedSessionId}
+                onSelectSession={handleSelectSession}
+                onNewSession={handleNewSession}
+                onOpen={handleOpenSidebar}
+                onClose={handleCloseSidebar}
+                contextLimit={focusedController?.contextLimit}
+                onOpenSettings={openSettings}
+                projectDialogOpen={projectDialogOpen}
+                onProjectDialogClose={closeProjectDialog}
+              />
+
+              {/* 主界面：移动端挂左右滑动手势（右滑开侧栏、左滑开右栏）。 */}
               {isMobilePanelLayout ? (
-                <>
-                  <div
-                    ref={mobilePagerRef}
-                    className="mobile-chat-pager absolute inset-x-0 top-0 -bottom-4 flex overflow-x-auto overflow-y-hidden bg-bg-100 pb-4"
-                    style={{
-                      scrollSnapType: 'x mandatory',
-                      overscrollBehaviorX: 'contain',
-                      scrollbarWidth: 'none',
-                      WebkitOverflowScrolling: 'touch',
-                      // perspective 仅在翻页途中启用：静止时挂 perspective 会让子层
-                      // 常驻 3D 合成上下文，滚动对话反复重栅格化 → 闪烁。
-                      perspective: mobileChatDepth ? '1200px' : undefined,
-                      perspectiveOrigin: mobileChatDepth ? '50% 50%' : undefined,
-                    }}
-                    onScroll={handleMobilePagerScroll}
-                    onTouchStart={handleMobilePagerInteractionStart}
-                    onTouchEnd={handleMobilePagerInteractionEnd}
-                    onTouchCancel={handleMobilePagerInteractionEnd}
-                  >
-                    <section
-                      className="h-full shrink-0 overflow-hidden bg-bg-100"
-                      aria-hidden={mobileActivePage !== 'left'}
-                      inert={mobileActivePage !== 'left'}
-                      style={{
-                        width: `${mobileLeftPanelWidth}px`,
-                        flexBasis: `${mobileLeftPanelWidth}px`,
-                        scrollSnapAlign: 'start',
-                        scrollSnapStop: 'always',
-                      }}
-                    >
-                      <Sidebar
-                        isOpen={sidebarExpanded}
-                        selectedSessionId={paneLayout.focusedSessionId}
-                        onSelectSession={handleSelectSession}
-                        onNewSession={handleNewSession}
-                        onOpen={handleOpenSidebar}
-                        onClose={handleCloseSidebar}
-                        contextLimit={focusedController?.contextLimit}
-                        onOpenSettings={openSettings}
-                        projectDialogOpen={projectDialogOpen}
-                        onProjectDialogClose={closeProjectDialog}
-                        mobileInline
-                      />
-                    </section>
-
-                    <section
-                      ref={surfaceRef}
-                      className="relative h-full shrink-0 overflow-visible bg-bg-100"
-                      style={{
-                        width: `${mobilePageWidth}px`,
-                        flexBasis: `${mobilePageWidth}px`,
-                        scrollSnapAlign: 'start',
-                        scrollSnapStop: 'always',
-                      }}
-                    >
-                      <div
-                        className="absolute inset-y-0 -left-4 -right-4 z-10 flex flex-col overflow-hidden bg-bg-100 rounded-xl shadow-[0_0_24px_hsl(var(--always-black)/0.15)] [contain:layout_paint]"
-                        aria-hidden={mobileActivePage !== 'chat'}
-                        inert={mobileActivePage !== 'chat'}
-                        style={{
-                          // 3D 深度变换只在翻页途中应用。静止时完全去掉 transform/
-                          // preserve-3d/will-change，让包裹虚拟滚动列表的合成层消失，
-                          // 消除滚动对话时的重栅格化闪烁。
-                          transform: mobileChatDepth
-                            ? 'translate3d(var(--mobile-chat-offset-x, 0px), 0, 0) rotateY(var(--mobile-chat-rotate-y, 0deg)) scale(var(--mobile-chat-scale, 1))'
-                            : undefined,
-                          transformOrigin: mobileChatDepth ? 'var(--mobile-chat-transform-origin, 50% 50%)' : undefined,
-                          transformStyle: mobileChatDepth ? 'preserve-3d' : undefined,
-                          backfaceVisibility: mobileChatDepth ? 'hidden' : undefined,
-                          willChange: mobileChatDepth ? 'transform' : undefined,
-                        }}
-                      >
-                        <div
-                          className={`flex-1 min-h-0 px-4 ${paneLayout.isSplit && !paneLayout.fullscreenPaneId ? 'py-2' : ''}`}
-                        >
-                          <SplitContainer
-                            node={paneLayout.root}
-                            renderLeaf={renderPaneLeaf}
-                            fullscreenPaneId={paneLayout.fullscreenPaneId}
-                          />
-                        </div>
-
-                        <div
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-0 z-[80] rounded-xl border-x border-border-200/50"
-                        />
-                      </div>
-
-                      {sidebarExpanded && (
-                        <button
-                          type="button"
-                          aria-label={t('chat:sidebar.collapseSidebar')}
-                          className="absolute inset-0 z-[70] cursor-default bg-transparent [touch-action:pan-x]"
-                          onClick={handleCloseSidebar}
-                        />
-                      )}
-                    </section>
-
-                    <section
-                      className="h-full shrink-0 overflow-hidden bg-bg-100"
-                      aria-hidden={mobileActivePage !== 'right'}
-                      inert={mobileActivePage !== 'right'}
-                      style={{
-                        width: `${mobilePageWidth}px`,
-                        flexBasis: `${mobilePageWidth}px`,
-                        scrollSnapAlign: 'start',
-                        scrollSnapStop: 'always',
-                      }}
-                    >
-                      <RightPanel
-                        directory={focusedDirectory}
-                        sessionId={paneLayout.focusedSessionId}
-                        serverId={focusedServerId}
-                        inline
-                        renderPanelContent={rightPanelOpen || shouldRenderMobileRightPanel}
-                      />
-                    </section>
-                  </div>
-
-                  <BottomPanel directory={focusedDirectory} serverId={focusedServerId} />
-                </>
-              ) : (
-                <>
-                  <Sidebar
-                    isOpen={sidebarExpanded}
-                    selectedSessionId={paneLayout.focusedSessionId}
-                    onSelectSession={handleSelectSession}
-                    onNewSession={handleNewSession}
-                    onOpen={handleOpenSidebar}
-                    onClose={handleCloseSidebar}
-                    contextLimit={focusedController?.contextLimit}
-                    onOpenSettings={openSettings}
-                    projectDialogOpen={projectDialogOpen}
-                    onProjectDialogClose={closeProjectDialog}
-                  />
-
+                <div
+                  className="relative flex min-h-0 min-w-0 flex-1"
+                  onTouchStart={handleMainTouchStart}
+                  onTouchMove={handleMainTouchMove}
+                  onTouchEnd={handleMainTouchEnd}
+                  onTouchCancel={handleMainTouchEnd}
+                >
                   {desktopMainArea}
-                </>
+                </div>
+              ) : (
+                desktopMainArea
               )}
-              <ToastContainer onOpenAbout={openAboutSettings} />
             </div>
+            <ToastContainer onOpenAbout={openAboutSettings} />
           </>
         )}
 
         <Suspense fallback={null}>
           <SettingsDialog isOpen={settingsDialogOpen} onClose={closeSettings} initialTab={settingsInitialTab} />
+          <ScheduledTasksDialog
+            isOpen={scheduledTasksOpen}
+            onClose={closeScheduledTasks}
+            defaultDirectory={routeDirectory || currentDirectory || ''}
+          />
           <CommandPalette
             isOpen={commandPaletteOpen}
             onClose={() => setCommandPaletteOpen(false)}

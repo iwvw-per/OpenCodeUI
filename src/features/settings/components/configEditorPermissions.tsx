@@ -70,7 +70,7 @@ export function PermissionEditor({ value, onChange, lang }: { value: unknown; on
                 <div className="flex min-w-0 items-center justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[length:var(--fs-md)] font-medium text-text-100">{tool}</div>
-                    <div className="mt-0.5 text-[length:var(--fs-sm)] leading-relaxed text-text-300">{tx(en, zh, lang)}</div>
+                    <div data-setting-desc className="mt-0.5 text-[length:var(--fs-sm)] leading-relaxed text-text-300">{tx(en, zh, lang)}</div>
                   </div>
                   <div className="w-36 shrink-0">
                     <Select
@@ -119,7 +119,7 @@ export function PermissionEditor({ value, onChange, lang }: { value: unknown; on
                   <div className="flex min-w-0 items-center justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[length:var(--fs-md)] font-medium text-text-100">{tool}</div>
-                      <div className="mt-0.5 text-[length:var(--fs-sm)] leading-relaxed text-text-300">
+                      <div data-setting-desc className="mt-0.5 text-[length:var(--fs-sm)] leading-relaxed text-text-300">
                         {tx('Custom tool permission key.', '自定义工具权限 key。', lang)}
                       </div>
                     </div>
@@ -214,7 +214,7 @@ function PatternRules({ value, onChange, lang }: { value: JsonRecord; onChange: 
           <PlusIcon size={14} />
         </button>
       </div>
-      <div className="text-[length:var(--fs-xs)] leading-relaxed text-text-500">
+      <div data-setting-desc className="text-[length:var(--fs-xs)] leading-relaxed text-text-500">
         {tx('Existing pattern keys cannot be reliably deleted or renamed through the official merge API. Change the action instead.', '官方 merge API 不能可靠删除或重命名已保存的 pattern key。请修改动作。', lang)}
       </div>
     </div>
@@ -224,7 +224,7 @@ function PatternRules({ value, onChange, lang }: { value: JsonRecord; onChange: 
 export function PermissionsSection({ config, setConfig, lang }: SectionProps) {
   return (
     <SectionShell id="permissions" lang={lang}>
-      <p className="mb-3 text-[length:var(--fs-xs)] leading-relaxed text-text-300">
+      <p data-setting-desc className="mb-3 text-[length:var(--fs-xs)] leading-relaxed text-text-300">
         {tx(
           'ask = prompt every time, allow = run without asking, deny = block. Pattern rules let you match specific commands or paths (e.g. "git push *").',
           'ask = 每次询问，allow = 直接放行，deny = 拒绝。pattern 规则可匹配具体命令或路径（如 "git push *"）。',
@@ -272,7 +272,7 @@ export function ToolToggleMap({ value, onChange }: { value: unknown; onChange: (
           <PlusIcon size={14} />
         </button>
       </div>
-      <div className="text-[length:var(--fs-xs)] leading-relaxed text-text-300">
+      <div data-setting-desc className="text-[length:var(--fs-xs)] leading-relaxed text-text-300">
         {tx('Existing tool keys cannot be reliably deleted through the official merge API. Toggle them instead.', '官方 merge API 不能可靠删除已保存的 tool key。请改为切换启用状态。', lang)}
       </div>
     </div>

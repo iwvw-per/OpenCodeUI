@@ -5,6 +5,8 @@ import { CheckIcon, ClockIcon, CircleIcon, CloseIcon, FastForwardIcon } from '..
 import { CircularProgress } from '../../../components/CircularProgress'
 import { useTodos, useTodoStats, useCurrentTask, todoStore } from '../../../store'
 import { getSessionTodos } from '../../../api/session'
+import { subscribeToServerEvents } from '../../../api/events'
+import { sessionKeyToServerId } from '../../../utils/sessionKey'
 import { useTokenRate } from '../../../hooks/useTokenRate'
 import { useSessionTurnStats } from '../../../hooks/useSessionTurnStats'
 import { SessionStatsPopover } from './SessionStatsPopover'
@@ -58,13 +60,36 @@ export const InputFooter = memo(function InputFooter({
     if (!sessionId || loadedRef.current === sessionId) return
     loadedRef.current = sessionId
 
+    const revisionAtRequest = todoStore.getRevision(sessionId)
     getSessionTodos(sessionId)
       .then(apiTodos => {
         if (apiTodos.length > 0) {
-          todoStore.setTodos(sessionId, apiTodos)
+          // D4：回包时校验写入世代。期间若 SSE 已推来更新的 todo，世代已变，
+          // setTodos 会丢弃这份过时快照，避免旧值覆盖新值。
+          todoStore.setTodos(sessionId, apiTodos, revisionAtRequest)
         }
       })
       .catch(() => {})
+  }, [sessionId])
+
+  // D16：网络重连/回前台后补拉当前会话的 todo。断线窗口内的 todo.updated 会丢失，
+  // 而上面的初始加载受 loadedRef 限制不会重跑，故单独订阅重连事件补一次。
+  useEffect(() => {
+    if (!sessionId) return
+    const serverId = sessionKeyToServerId(sessionId)
+    const reload = () => {
+      const revisionAtRequest = todoStore.getRevision(sessionId)
+      getSessionTodos(sessionId)
+        .then(apiTodos => {
+          if (apiTodos.length > 0) todoStore.setTodos(sessionId, apiTodos, revisionAtRequest)
+        })
+        .catch(() => {})
+    }
+    return subscribeToServerEvents(serverId, {
+      onReconnected: reason => {
+        if (reason !== 'server-switch') reload()
+      },
+    })
   }, [sessionId])
 
   const clearPanelTimers = useCallback(() => {

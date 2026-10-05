@@ -13,6 +13,7 @@
 
 import { getSession, getSessionTurnPage } from '../api'
 import { messageStore } from '../store/messageStore'
+import { serverStore } from '../store/serverStore'
 import { makeSessionKey } from './sessionKey'
 import { INITIAL_TURN_LIMIT } from '../constants/pagination'
 
@@ -40,13 +41,16 @@ function shouldPrefetch(sessionKey: string): boolean {
  */
 export function prefetchSessionMessages(sessionId: string, directory?: string, serverId?: string): void {
   if (!sessionId) return
-  const sessionKey = makeSessionKey(serverId ?? '', sessionId)
+  // D20：serverId 缺失时回退到活动服务器。此前用 '' 拼出 `::sessionId`，
+  // 与正式加载路径的 `local::sessionId` 不一致，预取缓存永不命中，白拉一次。
+  const resolvedServerId = serverId ?? serverStore.getActiveServerId()
+  const sessionKey = makeSessionKey(resolvedServerId, sessionId)
   if (!shouldPrefetch(sessionKey)) return
 
   const request = (async () => {
     const [sessionInfo, page] = await Promise.all([
-      getSession(sessionId, directory, serverId).catch(() => null),
-      getSessionTurnPage(sessionId, INITIAL_TURN_LIMIT, undefined, directory, serverId),
+      getSession(sessionId, directory, resolvedServerId).catch(() => null),
+      getSessionTurnPage(sessionId, INITIAL_TURN_LIMIT, undefined, directory, resolvedServerId),
     ])
 
     // 请求期间该会话可能已被正常加载（或已开始流式），不覆盖

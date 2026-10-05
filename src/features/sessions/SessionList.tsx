@@ -17,6 +17,8 @@ import { prefetchSessionMessages } from '../../utils/sessionPrefetch'
 import { serverStore } from '../../store/serverStore'
 import { interactive } from '../../utils/interaction'
 import { cn } from '../../utils/cn'
+import { hapticTap } from '../../utils/haptics'
+import { SessionContextMenu } from './SessionContextMenu'
 
 interface SessionListProps {
   sessions: ApiSession[]
@@ -399,6 +401,11 @@ export interface SessionListItemProps {
   /** 下一项也选中时，去掉下圆角 */
   checkedNext?: boolean
   onToggleCheck?: (options?: { shiftKey?: boolean }) => void
+  // ---- 右键菜单 ----
+  /** 标题变更后刷新（AI 重命名成功后调用） */
+  onChanged?: () => void
+  /** 是否允许右键菜单（编辑模式下关闭） */
+  contextMenuEnabled?: boolean
 }
 
 function SessionListItemComponent({
@@ -418,12 +425,15 @@ function SessionListItemComponent({
   checkedPrev = false,
   checkedNext = false,
   onToggleCheck,
+  onChanged,
+  contextMenuEnabled = true,
 }: SessionListItemProps) {
   const { t } = useTranslation(['commands', 'common', 'chat'])
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [editTitle, setEditTitle] = useState(session.title || '')
   const [showActions, setShowActions] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const touchMoved = useRef(false)
@@ -479,6 +489,13 @@ function SessionListItemComponent({
     setIsEditing(true)
   }
 
+  // 右键菜单触发的重命名：无鼠标事件，直接进入编辑态
+  const startEditFromMenu = useCallback(() => {
+    setShowActions(false)
+    setEditTitle(session.title || '')
+    setIsEditing(true)
+  }, [session.title])
+
   const handlePin = (e: React.MouseEvent) => {
     e.stopPropagation()
     ;(e.currentTarget as HTMLElement).blur()
@@ -527,6 +544,11 @@ function SessionListItemComponent({
     }
   }
 
+  // 右键菜单触发的归档：无鼠标事件
+  const archiveFromMenu = useCallback(async () => {
+    await callbacksRef.current.onArchive?.()
+  }, [])
+
   const handleCancelEdit = () => {
     setEditTitle(session.title || '')
     setIsEditing(false)
@@ -542,20 +564,43 @@ function SessionListItemComponent({
     }
   }
 
-  // 长按触摸手势：显示操作按钮
-  const handleTouchStart = useCallback(() => {
-    if (!preferTouchUi) return
-    if (!isEditMode && !isEditing) {
-      const serverId = activeSessionKey ? splitSessionKey(activeSessionKey).serverId : serverStore.getActiveServerId()
-      prefetchSessionMessages(session.id, session.directory, serverId)
-    }
-    touchMoved.current = false
-    longPressTimer.current = setTimeout(() => {
-      if (!touchMoved.current) {
-        setShowActions(true)
+  // 右键：打开会话操作菜单
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      if (!contextMenuEnabled || isEditMode) return
+      e.preventDefault()
+      e.stopPropagation()
+      setShowActions(false)
+      setContextMenu({ x: e.clientX, y: e.clientY })
+    },
+    [contextMenuEnabled, isEditMode],
+  )
+
+  // 长按触摸手势：打开右键菜单（位置取触点坐标）
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (!preferTouchUi) return
+      if (!isEditMode && !isEditing) {
+        const serverId = activeSessionKey ? splitSessionKey(activeSessionKey).serverId : serverStore.getActiveServerId()
+        prefetchSessionMessages(session.id, session.directory, serverId)
       }
-    }, 500)
-  }, [preferTouchUi, isEditMode, isEditing, activeSessionKey, session.id, session.directory])
+      const touch = e.touches[0]
+      const x = touch?.clientX ?? 0
+      const y = touch?.clientY ?? 0
+      touchMoved.current = false
+      longPressTimer.current = setTimeout(() => {
+        if (!touchMoved.current && contextMenuEnabled && !isEditMode) {
+          hapticTap('medium')
+          setShowActions(false)
+          setContextMenu({ x, y })
+        } else if (!touchMoved.current) {
+          hapticTap('medium')
+          setShowActions(true)
+        }
+      }, 500)
+    },
+    [preferTouchUi, isEditMode, isEditing, activeSessionKey, session.id, session.directory, contextMenuEnabled],
+  )
 
   const handleTouchMove = useCallback(() => {
     if (!preferTouchUi) return
@@ -710,6 +755,19 @@ function SessionListItemComponent({
   // 鼠标/悬停设备：沿用 hover 触发
   const actionsVisible = preferTouchUi ? showActions : false
 
+  // 会话右键菜单（桌面右键 / 移动长按），两个渲染分支共用
+  const contextMenuNode = contextMenu ? (
+    <SessionContextMenu
+      state={{ x: contextMenu.x, y: contextMenu.y, session, activeSessionKey }}
+      onClose={() => setContextMenu(null)}
+      onRequestRename={startEditFromMenu}
+      onArchive={onArchive ? archiveFromMenu : undefined}
+      onDelete={() => callbacksRef.current.onDelete()}
+      onChanged={onChanged}
+      isPinned={isPinned}
+    />
+  ) : null
+
   // ============================================
   // Minimal 模式 —— 文件夹视图下的紧凑单行
   // 标题 + 时间 + 活跃状态圆点
@@ -721,7 +779,9 @@ function SessionListItemComponent({
     const isWorking = !!activeStatus?.pulse
 
     return (
+      <>
       <div
+        onContextMenu={handleContextMenu}
         className={cn(
           // 与父级会话行（ActiveSessionItem）保持同一套几何：
           // pl-[6px] pr-3 py-2 rounded-lg。子行此前用 px-2 py-1.5，
@@ -789,8 +849,8 @@ function SessionListItemComponent({
           className={`peer flex min-w-0 flex-1 items-center gap-1.5 bg-transparent border-none p-0 text-left select-none ${
             !isEditMode && onArchive
               ? isArchiving || actionsVisible
-                ? 'pr-7'
-                : 'group-hover:pr-7 group-focus-within:pr-7'
+                ? 'pr-11 md:pr-7'
+                : 'group-hover:pr-11 md:group-hover:pr-7 group-focus-within:pr-11 md:group-focus-within:pr-7'
               : ''
           }`}
         >
@@ -832,7 +892,7 @@ function SessionListItemComponent({
             data-compact
             onClick={handleArchive}
             className={cn(
-              'absolute right-1.5 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center p-0.5 rounded transition-opacity duration-150 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset',
+              'absolute right-1 inset-y-0 z-10 flex items-center justify-center min-w-9 md:min-w-0 md:right-1.5 p-0.5 rounded transition-opacity duration-150 focus-visible:ring-1 focus-visible:ring-border-200 focus-visible:ring-inset',
               actionsVisible || isArchiving
                 ? 'opacity-100 pointer-events-auto'
                 : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto',
@@ -847,6 +907,8 @@ function SessionListItemComponent({
           </button>
         )}
       </div>
+      {contextMenuNode}
+      </>
     )
   }
 
@@ -859,6 +921,7 @@ function SessionListItemComponent({
       {...selectionAttrs}
       onClick={handleClick}
       onMouseDown={handleSelectionMouseDown}
+      onContextMenu={handleContextMenu}
       onMouseEnter={!isEditMode ? schedulePrefetch : undefined}
       onMouseOver={!isEditMode ? schedulePrefetch : undefined}
       onMouseLeave={!isEditMode ? cancelPrefetch : undefined}
@@ -892,7 +955,9 @@ function SessionListItemComponent({
         className="peer flex min-w-0 flex-1 items-start bg-transparent border-none p-0 text-left select-none"
       >
         <div
-          className={`flex-1 min-w-0 transition-[padding] duration-200 ${showActions ? 'pr-[88px]' : 'pr-1 group-hover:pr-[88px]'}`}
+          className={`flex-1 min-w-0 transition-[padding] duration-200 ${
+            showActions ? 'pr-[132px] md:pr-[88px]' : 'pr-1 group-hover:pr-[132px] md:group-hover:pr-[88px]'
+          }`}
         >
           <p
             className={`${isCompact ? 'text-[length:var(--fs-md)]' : 'text-[length:var(--fs-base)]'} truncate font-medium ${
@@ -999,6 +1064,7 @@ function SessionListItemComponent({
           </IconButton>
         </div>
       )}
+      {contextMenuNode}
     </div>
   )
 }
@@ -1023,7 +1089,9 @@ export const SessionListItem = memo(SessionListItemComponent, (prev, next) => {
     prev.isChecked === next.isChecked &&
     prev.checkedPrev === next.checkedPrev &&
     prev.checkedNext === next.checkedNext &&
+    prev.contextMenuEnabled === next.contextMenuEnabled &&
     (prev.onArchive == null) === (next.onArchive == null) &&
+    (prev.onChanged == null) === (next.onChanged == null) &&
     (prev.onToggleCheck == null) === (next.onToggleCheck == null)
   )
 })

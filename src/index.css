@@ -191,6 +191,12 @@ body,
   padding-left: max(1rem, var(--safe-area-inset-left));
 }
 
+/* 移动端全屏 Dialog：铺满视口，仅避开状态栏/标题栏，无内边距 */
+.dialog-safe-region-fullscreen {
+  top: calc(var(--desktop-titlebar-height, 0px) + var(--safe-area-inset-top, 0px));
+  padding: 0;
+}
+
 .settings-search-highlight {
   border-radius: 0.5rem;
   animation: settings-search-highlight 1.8s ease-out;
@@ -1011,6 +1017,42 @@ h6 {
   }
 
   /*
+   * 侧栏内的图标按钮在小屏上放大到 36×36：原 size-6(24px) 的按钮相邻
+   * 只隔 2px，手指很容易点错。只作用于侧栏，避免影响其他密集工具栏。
+   */
+  [data-sidebar] [data-icon-button] {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+  }
+
+  /*
+   * 移动端小屏空间有限，隐藏设置面板里所有说明/描述文本。
+   * 由组件在描述节点上标注 data-setting-desc，桌面端不受影响。
+   */
+  [data-setting-desc] {
+    display: none;
+  }
+
+  /*
+   * 含分段控件的设置行在小屏上改为上下堆叠：左侧标签独占一行，
+   * 分段控件撑满整行，避免窄列里文字被挤成竖排或溢出。
+   */
+  [data-setting-row]:has([data-segmented]) > div {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  [data-setting-row]:has([data-segmented]) [data-setting-control] {
+    width: 100%;
+    align-self: stretch;
+  }
+
+  [data-setting-row]:has([data-segmented]) [data-setting-control] [data-segmented] {
+    width: 100%;
+  }
+
+  /*
    * iOS 缩放已由 viewport meta (maximum-scale=1, user-scalable=no) 阻止，
    * 不再需要强制 16px，让 textarea 继承 --fs-base 与信息流字号一致。
    */
@@ -1092,6 +1134,55 @@ h6 {
 
 .slide-in-from-bottom-2 {
   animation-name: slide-in-from-bottom;
+}
+
+/* 欢迎语翻牌时钟：旧句绕中轴向前翻倒，新句延迟翻回 */
+@keyframes greeting-flip-out {
+  from {
+    transform: rotateX(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: rotateX(-90deg);
+    opacity: 1;
+  }
+}
+
+@keyframes greeting-flip-in {
+  from {
+    transform: rotateX(90deg);
+    opacity: 1;
+  }
+  to {
+    transform: rotateX(0deg);
+    opacity: 1;
+  }
+}
+
+.greeting-flip-stage {
+  perspective: 900px;
+}
+
+.greeting-flip-card {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+.greeting-flip-out {
+  transform-origin: center center;
+  animation: greeting-flip-out 300ms ease-in both;
+}
+
+.greeting-flip-in {
+  transform-origin: center center;
+  animation: greeting-flip-in 300ms ease-out 160ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .greeting-flip-out,
+  .greeting-flip-in {
+    animation: fade-in 200ms ease-out both;
+  }
 }
 
 /* ============================================
@@ -1189,8 +1280,26 @@ h6 {
   animation: reasoning-shimmer 2.4s linear infinite;
 }
 
+/* 强调色版流光：用于「处理中」这类进行中的状态文字，与 accent 图标同色。 */
+.accent-shimmer-text {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--accent-main-100) / 0.55) 0%,
+    hsl(var(--accent-main-100) / 0.8) 35%,
+    hsl(var(--accent-main-100)) 50%,
+    hsl(var(--accent-main-100) / 0.8) 65%,
+    hsl(var(--accent-main-100) / 0.55) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: reasoning-shimmer 2.4s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .reasoning-shimmer-text {
+  .reasoning-shimmer-text,
+  .accent-shimmer-text {
     animation: none !important;
     background: none;
     -webkit-text-fill-color: currentColor;

@@ -705,7 +705,7 @@ export function KeyValueField({
           </button>
         </div>
       </div>
-      <div className="text-[length:var(--fs-xs)] leading-relaxed text-text-400">
+      <div data-setting-desc className="text-[length:var(--fs-xs)] leading-relaxed text-text-400">
         {tx('Existing object keys cannot be reliably deleted through the official merge API; change values instead, or reset before saving newly added keys.', '官方 merge API 不能可靠删除已保存的 object key；请改值，刚新增但不想保存的键可以在保存前 Reset。', lang)}
       </div>
     </div>
@@ -801,7 +801,7 @@ export function StringMapField({
           <PlusIcon size={13} />
         </button>
       </div>
-      <div className="text-[length:var(--fs-xs)] leading-relaxed text-text-400">
+      <div data-setting-desc className="text-[length:var(--fs-xs)] leading-relaxed text-text-400">
         {tx('This map only accepts string values. Existing keys cannot be reliably deleted through the official merge API.', '这个 map 只接受字符串值。官方 merge API 不能可靠删除已保存的 key。', lang)}
       </div>
     </div>

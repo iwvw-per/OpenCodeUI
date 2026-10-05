@@ -144,7 +144,7 @@ export function DrillRow({
           <span className="min-w-0 break-all text-[length:var(--fs-sm)] font-medium text-text-100">{label}</span>
           {badge && <span className="text-[10px] font-medium uppercase tracking-wide text-warning-100">{badge}</span>}
         </div>
-        {desc && <div className="mt-0.5 text-[length:var(--fs-xs)] leading-relaxed text-text-300">{desc}</div>}
+        {desc && <div data-setting-desc className="mt-0.5 text-[length:var(--fs-xs)] leading-relaxed text-text-300">{desc}</div>}
       </div>
       {preview ? (
         <span className="min-w-0 max-w-full truncate text-[length:var(--fs-xs)] text-text-400 sm:max-w-[200px] sm:text-right">{preview}</span>
