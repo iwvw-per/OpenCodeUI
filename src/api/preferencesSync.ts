@@ -118,6 +118,7 @@ import { notifyPerServerStorageChanged } from '../utils/perServerStorage'
 import { layoutStore } from '../store/layoutStore'
 import { serverStore } from '../store/serverStore'
 import { readWatermarkStore } from '../store/readWatermarkStore'
+import { sessionActivityStore } from '../store/sessionActivityStore'
 
 /**
  * B 类缺陷 1：同步时间戳的时钟。
@@ -452,6 +453,13 @@ const MERGE_RULES: Record<string, MergeRule> = {
   // 未读「已读水位」：{ [sessionId]: 校准时间戳 }，逐键取最大值（单调、收敛）。
   // 使一端已读后，另一端不会回退成未读。详见数据同步层设计 §10.3 C3。
   'opencode-read-watermarks': {
+    kind: 'map-number',
+  },
+  // 项目「最后用户活动时间」：{ [归一化目录]: 用户消息 time.created }，逐键取最大。
+  // 供项目排序与项目行时间使用：新设备登录 pull 一次即可恢复顺序，不必点进会话，
+  // 也不依赖 assistant 流式抬高的 time.updated（后者是多项目并行时排序抖动的来源）。
+  // 时间戳来自服务端消息创建时间，各端读同一后端即同一值，无需设备身份、不依赖本地钟。
+  'opencode-project-last-used': {
     kind: 'map-number',
   },
   // B 类缺陷 3：对象型键字段级合并，避免整键 LWW 互相覆盖。
@@ -911,6 +919,9 @@ export async function pullPreferences(account?: AiAgentAccount | null): Promise<
     // 已读水位是裸键（opencode-read-watermarks），同样不经 per-server 存储；
     // 拉取到另一端的已读后必须让水位 store 重读，否则本端未读点不会消失。
     readWatermarkStore.reload()
+    // 项目「最后活动时间」水位同理：拉取到另一端的活动时间后重读，未点开的项目
+    // 顺序/时间才立即对齐（否则要等点进会话或流式抬高 time.updated）。
+    sessionActivityStore.reload()
   }
   return written
 }

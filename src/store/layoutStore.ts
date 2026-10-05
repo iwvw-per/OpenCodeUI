@@ -4,6 +4,7 @@
 
 // 直接引文件而非 '../utils' barrel：barrel 会连带 settingsBackup → store，形成循环依赖
 import { DEFAULT_PROJECT_SORT_FIELD, DEFAULT_PROJECT_SORT_DESC, isSessionSortField, type SessionSortField } from '../utils/sessionSort'
+import { notifyPerServerStorageChanged } from '../utils/perServerStorage'
 import i18n from '../i18n'
 
 // 面板位置
@@ -678,6 +679,7 @@ export class LayoutStore {
     this.state.sidebarProjectSortDesc = desc
     try {
       localStorage.setItem(STORAGE_KEY_SIDEBAR_PROJECT_SORT, JSON.stringify({ field, desc }))
+      notifyPerServerStorageChanged()
     } catch {
       /* ignore */
     }

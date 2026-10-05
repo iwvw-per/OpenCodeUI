@@ -104,6 +104,8 @@ describe('preferences sync', () => {
     expect(isSyncableKey('opencode-pinned-messages')).toBe(true)
     // 已读水位：裸键，跨端同步「未读」依赖它
     expect(isSyncableKey('opencode-read-watermarks')).toBe(true)
+    // 项目最后活动时间：裸键，跨端同步项目顺序依赖它
+    expect(isSyncableKey('opencode-project-last-used')).toBe(true)
   })
 
   it('rejects UI open/collapse state so panels do not fight across devices', async () => {
@@ -387,6 +389,32 @@ describe('preferences sync', () => {
     expect(merged.ses_a).toBe(2000)
     expect(merged.ses_local).toBe(500)
     expect(merged.ses_server).toBe(3000)
+  })
+
+  it('merges project last-used watermarks by taking the max per directory', async () => {
+    const account = await seedAccount()
+    // 本地：/a 记录 1000，/local-only 仅本地有
+    localStorage.setItem(
+      'opencode-project-last-used',
+      JSON.stringify({ '/a': 1000, '/local-only': 500 }),
+    )
+
+    stubPreferencesFetch([
+      {
+        key: 'opencode-project-last-used',
+        // 服务端：/a 更高（另一端更晚活动）、/server-only 仅服务端有
+        value: { '/a': 2000, '/server-only': 3000 },
+        updatedAt: '2030-01-01T00:00:00Z',
+      },
+    ])
+
+    const { pullPreferences } = await import('./preferencesSync')
+    await pullPreferences(account)
+
+    const merged = JSON.parse(localStorage.getItem('opencode-project-last-used') || '{}')
+    expect(merged['/a']).toBe(2000)
+    expect(merged['/local-only']).toBe(500)
+    expect(merged['/server-only']).toBe(3000)
   })
 
   it('merges per-server pinned sessions and saved directories as a union', async () => {

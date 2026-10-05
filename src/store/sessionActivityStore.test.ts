@@ -22,6 +22,7 @@ function makeSession(id: string, updated: number, created = updated): ApiSession
 describe('sessionActivityStore', () => {
   beforeEach(() => {
     sessionActivityStore.reset()
+    localStorage.removeItem('opencode-project-last-used')
   })
 
   it('records a session anchor and notifies subscribers', () => {
@@ -97,5 +98,84 @@ describe('sessionActivityStore', () => {
     const snapshot = input.map(s => s.id)
     sortSessionsByAnchor(input)
     expect(input.map(s => s.id)).toEqual(snapshot)
+  })
+
+  // ---- 跨端水位 opencode-project-last-used ----
+
+  const WATERMARK_KEY = 'opencode-project-last-used'
+
+  it('persists a bare-key watermark when recording directory activity', () => {
+    sessionActivityStore.recordActivity('s1', 100, '/workspace/demo', 'local')
+
+    expect(JSON.parse(localStorage.getItem(WATERMARK_KEY) ?? '{}')).toEqual({ '/workspace/demo': 100 })
+    expect(sessionActivityStore.getProjectLastUsed('/workspace/demo')).toBe(100)
+  })
+
+  it('watermark only ever rises (monotonic)', () => {
+    sessionActivityStore.recordActivity('s1', 200, '/workspace/demo', 'local')
+    sessionActivityStore.recordActivity('s2', 100, '/workspace/demo', 'local')
+
+    expect(sessionActivityStore.getProjectLastUsed('/workspace/demo')).toBe(200)
+  })
+
+  it('getDirectoryAnchor takes the max of local bucket and cross-device watermark', () => {
+    // 本机分桶锚点（local 前缀）
+    sessionActivityStore.recordActivity('s1', 300, '/workspace/demo', 'local')
+    // 模拟另一端 pull 到更高值写入裸键
+    localStorage.setItem(WATERMARK_KEY, JSON.stringify({ '/workspace/demo': 900 }))
+    sessionActivityStore.reload()
+
+    expect(sessionActivityStore.getDirectoryAnchor('local', '/workspace/demo')).toBe(900)
+  })
+
+  it('prefers the local bucket when it is higher, but reload never lowers the watermark', () => {
+    // 本机分桶锚点 300 高于外部水位 100
+    sessionActivityStore.recordActivity('s1', 300, '/workspace/demo', 'local')
+    localStorage.setItem(WATERMARK_KEY, JSON.stringify({ '/workspace/demo': 100 }))
+    sessionActivityStore.reload()
+
+    expect(sessionActivityStore.getDirectoryAnchor('local', '/workspace/demo')).toBe(300)
+    // 内存水位只增不降：外部较低值不会把它压低
+    expect(sessionActivityStore.getProjectLastUsed('/workspace/demo')).toBe(300)
+  })
+
+  it('recovers a directory anchor from the watermark without a local bucket', () => {
+    localStorage.setItem(WATERMARK_KEY, JSON.stringify({ '/workspace/fresh': 777 }))
+    sessionActivityStore.reload()
+
+    // 新设备冷启动：本机无锚点，靠水位恢复（不依赖 time.updated 兜底）
+    expect(sessionActivityStore.getDirectoryAnchor('local', '/workspace/fresh')).toBe(777)
+  })
+
+  it('normalizes case and slashes for the watermark key (D29)', () => {
+    // 服务端返回的目录与用户保存的 worktree 大小写/斜杠可能不同
+    sessionActivityStore.recordActivity('s1', 100, 'C:\\Work\\Demo', 'local')
+
+    expect(sessionActivityStore.getDirectoryAnchor('local', 'c:/work/demo')).toBe(100)
+    expect(sessionActivityStore.getProjectLastUsed('C:/WORK/DEMO')).toBe(100)
+  })
+
+  it('matches the watermark written by another device regardless of path casing', () => {
+    localStorage.setItem(WATERMARK_KEY, JSON.stringify({ 'c:/work/demo': 900 }))
+    sessionActivityStore.reload()
+
+    expect(sessionActivityStore.getDirectoryAnchor('local', 'C:\\Work\\Demo')).toBe(900)
+  })
+
+  it('reload merges external watermarks by max, never lowering in-memory values', () => {
+    sessionActivityStore.recordActivity('s1', 500, '/workspace/demo', 'local')
+    // 外部写入较低值 + 一个新目录
+    localStorage.setItem(WATERMARK_KEY, JSON.stringify({ '/workspace/demo': 100, '/workspace/other': 400 }))
+    sessionActivityStore.reload()
+
+    expect(sessionActivityStore.getProjectLastUsed('/workspace/demo')).toBe(500)
+    expect(sessionActivityStore.getProjectLastUsed('/workspace/other')).toBe(400)
+  })
+
+  it('reload does not notify when nothing changed', () => {
+    const listener = vi.fn()
+    sessionActivityStore.subscribe(listener)
+    sessionActivityStore.reload()
+    expect(listener).not.toHaveBeenCalled()
   })
 })
