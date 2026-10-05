@@ -81,6 +81,11 @@
   --safe-area-inset-left: env(safe-area-inset-left, 0px);
   --safe-area-inset-right: env(safe-area-inset-right, 0px);
   --app-safe-top: 0px;
+  /* 固定定位的抽屉/浮层会绕过 #root 的 safe-area padding，需自行让开状态栏；
+   * 但抽屉内顶栏（mobile-safe-topbar-14）已用 --app-safe-top 让过一次。
+   * 这里只补差额：浏览器 PWA 有刘海时 app-safe-top 为 0 → 全额让位；
+   * Tauri 上 app-safe-top 等于 safe-area-inset-top → 差额为 0，避免状态栏被叠加两次。 */
+  --overlay-safe-top: calc(var(--safe-area-inset-top, 0px) - var(--app-safe-top, 0px));
   --keyboard-inset-bottom: 0px;
   /* 对话区顶栏高度（不含安全区）。Header、消息区上边距、工作状态卡片上边距共用。 */
   --chat-header-height: 2.75rem;

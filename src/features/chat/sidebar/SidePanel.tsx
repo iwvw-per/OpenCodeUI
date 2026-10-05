@@ -967,7 +967,7 @@ export function SidePanel({
       {hideHeader ? null : (
         <div
           className={`shrink-0 flex items-center border-b border-border-200/60 px-2 gap-1 ${
-            isMobile ? 'mobile-safe-topbar-14' : 'h-11'
+            isMobile ? 'chat-topbar' : 'h-11'
           }`}
         >
           {/* 折叠按钮 - 最左侧，与下方各项目图标对齐（mx-2 + paddingLeft 6） */}
