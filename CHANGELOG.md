@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.6.122] - 2026-10-06
+
+- fix(chat): 上滚加 24px 死区，起手不立刻收起输入框 (b5eda934)
+- fix(chat): 收起动画改由 transitionend 收尾，避免被定时器截断 (9a233036)
+
 ## [v0.6.121] - 2026-10-06
 
 - fix(service): 登录 AI Agent 账号时不再自行拉起本地 opencode (bd612a4d)
