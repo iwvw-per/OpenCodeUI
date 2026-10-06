@@ -75,6 +75,39 @@ describe('useAutoScroll userScrolled 判定', () => {
     expect(result.current.userScrolledRef.current).toBe(true)
   })
 
+  it('keeps userScrolled false for a tiny upward nudge (escape dead zone)', () => {
+    const el = makeScrollEl({ scrollHeight: 3000, clientHeight: 800, scrollTop: 2200 })
+    const { result } = renderHook(() => useAutoScroll(10))
+
+    act(() => {
+      result.current.setScrollRef(el)
+    })
+    act(() => {
+      result.current.handleWheel(wheel(-120))
+    })
+    // 从底部只上移几像素，不到死区 → 不收起
+    act(() => {
+      el.scrollTop = 2185
+      result.current.handleScroll()
+    })
+    expect(result.current.userScrolledRef.current).toBe(false)
+  })
+
+  it('keeps userScrolled false when a touch scroll moves just past the bottom threshold', () => {
+    const el = makeScrollEl({ scrollHeight: 3000, clientHeight: 800, scrollTop: 2200 })
+    const { result } = renderHook(() => useAutoScroll(10))
+
+    act(() => {
+      result.current.setScrollRef(el)
+    })
+    // 触屏没有 wheel：轻扫离底一点点（不足死区）不应触发收起
+    act(() => {
+      el.scrollTop = 2185
+      result.current.handleScroll()
+    })
+    expect(result.current.userScrolledRef.current).toBe(false)
+  })
+
   it('ignores wheel when the container has no overflow', () => {
     const el = makeScrollEl({ scrollHeight: 800, clientHeight: 800, scrollTop: 0 })
     const { result } = renderHook(() => useAutoScroll(10))

@@ -12,6 +12,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 const AUTO_TTL = 1500
 const AUTO_TOLERANCE = 2
+// 上滚离底的确认距离（px）：手指刚离开底部的一两像素不触发收起，留一点死区，
+// 避免滚动起手就把输入框收掉。只有累计上移超过此值才判为用户主动离底。
+const UPWARD_ESCAPE_PX = 24
 
 export function useAutoScroll(bottomThreshold = 10) {
   const scrollElRef = useRef<HTMLElement | undefined>(undefined)
@@ -74,17 +77,20 @@ export function useAutoScroll(bottomThreshold = 10) {
   const handleScroll = useCallback(() => {
     const el = scrollElRef.current
     if (!el) return
-    // 确认上滚：wheel 记录的起始位置确实被超过了，才算用户真的离底。
-    // 这一步是「收起输入框」的正确触发点（见 handleWheel 注释）。
+    // 确认上滚：wheel 记录的起始位置累计上移超过死区，才算用户真的离底。
+    // 留 UPWARD_ESCAPE_PX 的余量，起手的一两像素不触发收起。
     if (pendingUpwardRef.current !== null) {
       const from = pendingUpwardRef.current
-      if (el.scrollTop < from) {
+      if (from - el.scrollTop >= UPWARD_ESCAPE_PX) {
         pendingUpwardRef.current = null
         if (pendingUpwardTimerRef.current !== null) {
           clearTimeout(pendingUpwardTimerRef.current)
           pendingUpwardTimerRef.current = null
         }
         if (!userScrolledRef.current) setScrolled(true)
+      } else if (el.scrollTop > from) {
+        // 手势回退到起点以下：重置基线，等待下一次上滚
+        pendingUpwardRef.current = null
       }
     }
     const max = el.scrollHeight - el.clientHeight
@@ -106,6 +112,9 @@ export function useAutoScroll(bottomThreshold = 10) {
       scrollToBottom(false)
       return
     }
+    // 未离底时，距底超过死区才允许 stop() 置位。触屏没有 wheel 事件，
+    // 收起完全由这里驱动，所以死区必须在这里也生效——否则轻扫一下就把输入框收掉。
+    if (!userScrolledRef.current && max - el.scrollTop < UPWARD_ESCAPE_PX) return
     stop()
   }, [bottomThreshold, isAuto, scrollToBottom, setScrolled, stop])
 
@@ -144,10 +153,13 @@ export function useAutoScroll(bottomThreshold = 10) {
     // 最终被虚拟列表吸收、没有产生实际滚动，就等于凭空收起一次。
     // 改为记录上滚前的 scrollTop，交给 scroll 事件确认真的移动后再置位。
     //
+    // 基线只在没有待确认时记录一次：连续上滚会不断派发 wheel，若每个都重置基线，
+    // 累计位移永远追不上死区，收起就再也不会触发。
+    //
     // 实测（scripts/probe-collapse-trigger.mjs）：不确认时 isCollapsed 会在
     // scrollTop 完全未变的情况下翻 true，动画空跑一遍；真实滚动随后发生又翻回，
     // 视觉上表现为「首帧抽两下」。
-    pendingUpwardRef.current = el.scrollTop
+    if (pendingUpwardRef.current === null) pendingUpwardRef.current = el.scrollTop
     // 兜底：部分环境下 scroll 事件的 scrollTop 与 wheel 同步更新、或容器不产生
     // scroll 事件（滚动被完全吸收）。超过一帧仍未确认就不再等待，避免上滚需要
     // 「先动一下才生效」的迟滞感。
@@ -159,8 +171,9 @@ export function useAutoScroll(bottomThreshold = 10) {
       if (from === null) return
       const el2 = scrollElRef.current
       if (!el2) return
-      // 只有确实没动过才放弃；动过则由 scroll 事件负责置位
-      if (el2.scrollTop >= from) return
+      // 只有确实没动过才放弃；动过则由 scroll 事件负责置位。
+      // 同样要越过死区才算离底，起手的一两像素不收起。
+      if (from - el2.scrollTop < UPWARD_ESCAPE_PX) return
       setScrolled(true)
     }, 120)
   }, [bottomThreshold, setScrolled])
