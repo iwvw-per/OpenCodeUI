@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.6.121] - 2026-10-06
+
+- fix(service): 登录 AI Agent 账号时不再自行拉起本地 opencode (bd612a4d)
+- fix(sidebar): 修复已完成/已归档会话仍显示运行中 (626a8d1f)
+- feat(header): 打开项目目录改为拆分按钮，可选择打开方式 (a65a9fc3)
+
 ## [v0.6.120] - 2026-10-05
 
 - fix(mobile): 收紧主界面手势与面板/输入框过渡 (5f2e14e7)
