@@ -115,6 +115,19 @@ function configureNativeShell() {
 async function initializeNativeDesktopService() {
   if (!isNativeTauri || isNativeTauriMobile || !serviceStore.autoStart) return
 
+  // 已登录 AI Agent 账号时不再自行拉起本地 opencode：
+  // 此时 opencode 由面板 Agent 统一托管（生命周期 + 端口由网关管理），
+  // 本应用再拉起一个会在同一端口区间内与其互相抢占/被清理。改为只经网关连接。
+  try {
+    const { readAccount } = await import('./api/aiagent')
+    if (readAccount()) {
+      console.info('[Service] AI Agent account detected; skipping local opencode auto-start (gateway-managed)')
+      return
+    }
+  } catch {
+    // 账号模块不可用时按原有行为继续
+  }
+
   const serverUrl = serverStore.getLocalServerUrl()
   serviceStore.setStarting(true)
 
