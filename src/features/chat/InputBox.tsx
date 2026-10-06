@@ -89,6 +89,10 @@ const COLLAPSED_BOX_HEIGHT = 36
 // 过渡尚未 armed 时被定型，表现为横向瞬间收窄、纵向才走动画（快速滚动时明显）。
 const COLLAPSED_BOX_WIDTH = 132
 const COLLAPSED_BOX_RADIUS = 24
+// 变形收尾的兜底时长：真正的收尾信号是 transitionend，这个定时器只防
+// 「几何值未变、没有过渡」时状态卡死。必须明显大于 --chat-morph-dur(520ms)，
+// 否则主线程繁忙时会在过渡完成前摘掉 data-morphing，几何直接瞬跳。
+const MORPH_FALLBACK_MS = 900
 
 const MAX_DROPPED_FILE_SIZE = 20 * 1024 * 1024
 const MAX_DROPPED_FILE_SIZE_LABEL = `${MAX_DROPPED_FILE_SIZE / (1024 * 1024)}MB`
@@ -1504,6 +1508,52 @@ function InputBoxComponent({
     if (Math.abs(el.offsetHeight - target) > 0.5) el.style.height = `${target}px`
   }, [isCollapsed, inputContainerRef])
 
+  // 变形收尾：摘掉 data-morphing 会把 width/height/border-radius 从 transition
+  // 列表里移除。若在几何过渡真正跑完之前摘，正在进行的过渡会被取消、几何直接
+  // 瞬跳到终点——表现就是「收起动画没走完」。所以收尾以 transitionend 为准，
+  // 定时器只作兜底（几何值没变、没有过渡事件时用）。
+  const finishMorph = useCallback(() => {
+    if (morphTimerRef.current !== null) {
+      window.clearTimeout(morphTimerRef.current)
+      morphTimerRef.current = null
+    }
+    inputContainerRef.current?.removeAttribute('data-morphing')
+    setIsMorphing(false)
+    if (morphClaimRef.current) {
+      morphClaimRef.current = false
+      setChatMorphing(false)
+    }
+  }, [inputContainerRef])
+
+  // 几何过渡结束信号：只听目标元素自身、且只认几何属性，避免 border-color /
+  // background-color（360ms）或 transform（480ms）先结束时提前收尾。
+  // 三个几何属性共享同一时长与缓动、通常在同一帧结束，用 rAF 合并成一次收尾，
+  // 避免只等其中一个（先到者摘掉 data-morphing，其余属性被瞬跳）。
+  useEffect(() => {
+    if (!isMorphing) return
+    const el = inputContainerRef.current
+    if (!el) return
+    let finishFrame: number | null = null
+    const scheduleFinish = () => {
+      if (finishFrame !== null) cancelAnimationFrame(finishFrame)
+      finishFrame = requestAnimationFrame(() => {
+        finishFrame = null
+        finishMorph()
+      })
+    }
+    const onTransitionEnd = (event: TransitionEvent) => {
+      if (event.target !== el) return
+      if (event.propertyName === 'width' || event.propertyName === 'height' || event.propertyName === 'border-radius') {
+        scheduleFinish()
+      }
+    }
+    el.addEventListener('transitionend', onTransitionEnd)
+    return () => {
+      if (finishFrame !== null) cancelAnimationFrame(finishFrame)
+      el.removeEventListener('transitionend', onTransitionEnd)
+    }
+  }, [isMorphing, finishMorph, inputContainerRef])
+
   useLayoutEffect(() => {
     const el = inputContainerRef.current
     const toggled = prevCollapsedRef.current !== isCollapsed
@@ -1530,15 +1580,13 @@ function InputBoxComponent({
         setChatMorphing(true)
       }
       if (morphTimerRef.current !== null) window.clearTimeout(morphTimerRef.current)
+      // 兜底：万一没有产生 transitionend（几何值恰好没变、或环境不派发过渡事件），
+      // 也必须收尾，否则 data-morphing 永久挂着。时长取得比过渡明显长，
+      // 保证正常情况下是 transitionend 先到、不会在动画中途被定时器截断。
       morphTimerRef.current = window.setTimeout(() => {
         morphTimerRef.current = null
-        el.removeAttribute('data-morphing')
-        setIsMorphing(false)
-        if (morphClaimRef.current) {
-          morphClaimRef.current = false
-          setChatMorphing(false)
-        }
-      }, 520)
+        finishMorph()
+      }, MORPH_FALLBACK_MS)
     }
 
     // 收起态几何（宽度 / 圆角）与 data-morphing 在同一帧写入：保证宽度过渡先
@@ -1557,7 +1605,7 @@ function InputBoxComponent({
     }
 
     syncBoxHeight()
-  }, [isCollapsed, syncBoxHeight, text, attachments.length, inputContainerMaxHeight])
+  }, [isCollapsed, syncBoxHeight, finishMorph, text, attachments.length, inputContainerMaxHeight])
 
   // 展开态内容变化（增高、变宽、附件、工具栏）时同步容器高度，并记录内容宽度，
   // 供收起时把内容冻住。
