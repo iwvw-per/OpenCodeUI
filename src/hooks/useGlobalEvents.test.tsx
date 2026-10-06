@@ -82,6 +82,8 @@ const {
     addPendingRequest: vi.fn(),
     resolvePendingRequest: vi.fn(),
     updateStatus: vi.fn(() => true),
+    removeSession: vi.fn(),
+    replaceServerStatus: vi.fn(),
     getSnapshot: vi.fn(() => ({ statusMap: {} })),
   },
   autoApproveStoreMock: {
@@ -305,6 +307,47 @@ describe('useGlobalEvents', () => {
     expect(clearSessionRuntimeStateMock).toHaveBeenCalledWith('local::deleted-session')
     expect(clearPaneSessionMock).toHaveBeenCalledWith('local::deleted-session')
     expect(clearPaneSessionMock).toHaveBeenCalledWith('local::child-session')
+  })
+
+  it('clears active state and notifications when a session is archived by another client', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+
+    renderHook(() => useGlobalEvents())
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onSessionUpdated?.({
+      id: 'archived-session',
+      time: { archived: Date.now() },
+    } as never)
+
+    // 归档后会话不再出现在侧栏：活跃条目与通知都要清掉，否则项目行/会话行
+    // 会残留「运行中」标识或未读点。
+    expect(activeSessionStoreMock.removeSession).toHaveBeenCalledWith('local::archived-session')
+    expect(removeSessionNotificationsMock).toHaveBeenCalledWith('local::archived-session')
+  })
+
+  it('reconciles full server status when SSE reconnects to drop stale busy entries', async () => {
+    let callbacks: Parameters<typeof subscribeToEventsMock>[0] | undefined
+    subscribeToEventsMock.mockImplementation(cb => {
+      callbacks = cb
+      return vi.fn()
+    })
+    getSessionStatusMock.mockResolvedValue({})
+
+    renderHook(() => useGlobalEvents())
+    await waitFor(() => expect(callbacks).toBeDefined())
+
+    callbacks!.onReconnected?.('network')
+
+    // 重连必须做一次整台替换：断连期间漏掉的 idle/归档事件靠 merge 清不掉，
+    // 会让侧栏项目行/会话行一直显示运行中。
+    await waitFor(() => {
+      expect(activeSessionStoreMock.replaceServerStatus).toHaveBeenCalledWith('local', {})
+    })
   })
 
   it('ignores stale initialization responses after directories change', async () => {

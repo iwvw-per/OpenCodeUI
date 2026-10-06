@@ -457,6 +457,10 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
     let scrollPending = false
     const pendingScrollSessionIds = new Set<string>()
     const fetchVersions = new Map<string, number>()
+    // 整台状态对账用的独立版本号：与 fetchVersions 分开，避免重连时
+    // reconcileServerStatus 与 fetchAndInitialize 并发调用互相作废（两者共用同一
+    // 计数器时，后者的递增会让前者的 .then 因版本不符被丢弃）。
+    const reconcileVersions = new Map<string, number>()
     const activeFetchVersions = new Map<string, number>()
     let disposed = false
     const latePendingRequests = new Map<string, LatePendingRequest>()
@@ -539,12 +543,11 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
      * 陈旧 busy，同时保留其它服务器状态。失败则静默，下次重连会再对齐。
      */
     const reconcileServerStatus = (serverId: string) => {
-      const currentVersion = (fetchVersions.get(serverId) ?? 0) + 1
-      fetchVersions.set(serverId, currentVersion)
-      activeFetchVersions.set(serverId, currentVersion)
+      const currentVersion = (reconcileVersions.get(serverId) ?? 0) + 1
+      reconcileVersions.set(serverId, currentVersion)
       void getSessionStatus(undefined, serverId)
         .then(statusMap => {
-          if (disposed || currentVersion !== fetchVersions.get(serverId)) return
+          if (disposed || currentVersion !== reconcileVersions.get(serverId)) return
           const scoped: SessionStatusMap = {}
           for (const [sid, status] of Object.entries(statusMap)) {
             scoped[makeSessionKey(serverId, sid)] = status
@@ -552,11 +555,6 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
           activeSessionStore.replaceServerStatus(serverId, scoped)
         })
         .catch(() => {})
-        .finally(() => {
-          if (currentVersion === fetchVersions.get(serverId)) {
-            activeFetchVersions.set(serverId, 0)
-          }
-        })
     }
 
     const markPermissionReplied = (sessionID: string, requestID: string) => {
@@ -798,6 +796,9 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
           // 通知一直亮未读点（本端归档入口已清，这里覆盖其他客户端归档）。
           if (session.time?.archived) {
             notificationStore.removeSessionNotifications(scopedId)
+            // 归档的会话不应再出现在侧栏状态里：清掉它的活跃条目（含 pending），
+            // 否则「归档前正在跑」的会话会永久留在 busy 集合，项目行一直显示运行中。
+            activeSessionStore.removeSession(scopedId)
           }
           // 更新 session meta 供 active tab 使用
           activeSessionStore.setSessionMeta(scopedId, session.title, session.directory)
@@ -991,7 +992,12 @@ export function useGlobalEvents(directoriesByServer?: ReadonlyMap<string, readon
             notificationStore.toast('completed', i18n.t('common:reconnected', { serverName }), undefined)
           }
           refreshServerHealth(serverId)
-          // 重连后重新拉取全量状态 + pending requests
+          // 重连后重新拉取全量状态 + pending requests。
+          // 先做一次「整台替换」对账：断连期间可能漏掉 idle/归档事件，而 merge 只增
+          // 不删清不掉陈旧 busy（表现为侧栏项目行/会话行一直显示运行中）。整台替换
+          // 以服务端权威状态为准，顺带清掉这些残留；随后 fetchAndInitialize 补齐
+          // pending 与 session meta。
+          reconcileServerStatus(serverId)
           fetchAndInitialize(serverId)
           // 只通知「关心的 session 属于该重连服务器」的消费者。
           // 重连是按 serverId 独立的：某台服务器网络抖动不应让其它服务器的

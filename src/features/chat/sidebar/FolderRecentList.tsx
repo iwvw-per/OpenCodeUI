@@ -25,8 +25,8 @@ import { layoutStore, useLayoutStore } from '../../../store'
 import { canOpenDirectoryNatively } from '../../../utils/nativeFileIntegration'
 import { isTauri, isTauriMobile } from '../../../utils/tauri'
 import { uiErrorHandler } from '../../../utils'
-import { useBusySessions } from '../../../store/activeSessionStore'
-import { splitSessionKey } from '../../../utils/sessionKey'
+import { useBusySessions, activeSessionStore } from '../../../store/activeSessionStore'
+import { makeSessionKey, splitSessionKey } from '../../../utils/sessionKey'
 import { notificationStore, useNotifications } from '../../../store/notificationStore'
 import { pinnedSessionsStore, type PinnedSessionEntry } from '../../../store/pinnedSessionsStore'
 import { serverStore } from '../../../store/serverStore'
@@ -1076,6 +1076,9 @@ function FolderRecentSection({
         await updateSession(session.id, { time: { archived: Date.now() } }, session.directory, serverId)
         // 归档后会话不再出现在列表，通知也要清掉，否则项目行残留未读点
         notificationStore.removeSessionNotifications(sessionId)
+        // 清活跃状态：否则「归档前正在跑」的会话会永久留在 busy 集合，
+        // 项目行/会话行一直显示运行中。
+        activeSessionStore.removeSession(makeSessionKey(serverId ?? serverStore.getActiveServerId(), sessionId))
         removeLocalSession(sessionId)
         // 本地移除不会收敛分页上限：归档掉最后一条「多取的探针行」后，
         // hasMore 会停在 true，导致只剩 5 条也显示加载更多。重新拉取校准。

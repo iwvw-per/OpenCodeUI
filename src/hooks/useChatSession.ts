@@ -11,6 +11,7 @@ import {
   autoApproveStore,
   childSessionStore,
   activeSessionStore,
+  notificationStore,
   type RevertHistoryItem,
 } from '../store'
 import {
@@ -1219,6 +1220,10 @@ export function useChatSession({
     if (!routeSessionId) return
     try {
       await updateSession(routeSessionId, { time: { archived: Date.now() } }, effectiveDirectory, paneServerId)
+      // 归档后会话不再出现在侧栏：清掉活跃状态与通知，否则项目行/会话行会残留
+      // 「运行中」标识或未读点（归档前正在跑的会话会永久留在 busy 集合）。
+      activeSessionStore.removeSession(routeSessionId)
+      notificationStore.removeSessionNotifications(routeSessionId)
       navigateHome()
       handleNewChat()
     } catch (error) {
