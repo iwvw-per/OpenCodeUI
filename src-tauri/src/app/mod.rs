@@ -467,6 +467,7 @@ pub fn run() {
             commands::utils::get_cli_directory,
             commands::utils::get_dropped_paths_info,
             commands::utils::is_local_directory,
+            commands::utils::open_directory_with,
             commands::utils::open_new_window,
             commands::utils::desktop_window_ready,
             commands::opencode::check_opencode_service,

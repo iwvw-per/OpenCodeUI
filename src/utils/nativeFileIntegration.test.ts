@@ -5,6 +5,7 @@ import {
   canUseNativeFileIntegration,
   canUseSystemDirectoryPicker,
   isLocalServer,
+  openDirectoryWith,
 } from './nativeFileIntegration'
 
 const { isTauriMock, isTauriMobileMock, invokeMock } = vi.hoisted(() => ({
@@ -146,5 +147,22 @@ describe('canOpenDirectoryNatively', () => {
     isTauriMobileMock.mockReturnValue(false)
     await expect(canOpenDirectoryNatively('local', '/repo')).resolves.toBe(false)
     expect(invokeMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('openDirectoryWith', () => {
+  afterEach(() => {
+    invokeMock.mockReset()
+  })
+
+  it('invokes the host command with the path and target', async () => {
+    invokeMock.mockResolvedValue(undefined)
+    await openDirectoryWith('C:/repo', 'vscode')
+    expect(invokeMock).toHaveBeenCalledWith('open_directory_with', { path: 'C:/repo', target: 'vscode' })
+  })
+
+  it('propagates host failures so the caller can surface an error', async () => {
+    invokeMock.mockRejectedValue(new Error('Not a directory: /srv/app'))
+    await expect(openDirectoryWith('/srv/app', 'terminal')).rejects.toThrow('Not a directory: /srv/app')
   })
 })

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, Suspense, lazy } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, Suspense, lazy } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   PanelRightIcon,
@@ -7,7 +7,6 @@ import {
   SplitHorizontalIcon,
   MaximizeIcon,
   MinimizeIcon,
-  FolderIcon,
   ShareIcon,
   PlugIcon,
   SpinnerIcon,
@@ -17,7 +16,8 @@ import { Dialog, IconButton } from '../../components/ui'
 import { cn } from '../../utils/cn'
 import { interactive } from '../../utils/interaction'
 import { ShareDialog } from './ShareDialog'
-import { messageStore, useHeaderSessionMeta, notificationStore, usePaneLayout, usePaneController } from '../../store'
+import { OpenDirectoryButton } from './OpenDirectoryButton'
+import { messageStore, useHeaderSessionMeta, usePaneLayout, usePaneController } from '../../store'
 import { useLayoutStore, layoutStore } from '../../store/layoutStore'
 import { useWorkStatusPanelVisible } from '../workStatus/workStatusVisibilityStore'
 import { ContextUsageRing } from './ContextUsageRing'
@@ -28,7 +28,6 @@ import { useSessionContext } from '../../contexts/useSessionContext'
 import { updateSession } from '../../api'
 import { useDirectory } from '../../contexts/useDirectory'
 import { uiErrorHandler } from '../../utils'
-import { canOpenDirectoryNatively } from '../../utils/nativeFileIntegration'
 import { sessionKeyToServerId } from '../../utils/sessionKey'
 import { useChatViewport } from './chatViewport'
 import { isTauri, isTauriMobile } from '../../utils/tauri'
@@ -221,28 +220,10 @@ export function Header({
   const targetDirectory = sessionDirectory || currentDirectory
   const canOpenDirectory = isTauri() && !isTauriMobile() && !!targetDirectory
   // 系统文件管理器只能打开本机磁盘。远程服务器（经网关访问）的目录通常在本机
-  // 不存在，openPath 只会打开本机同名路径或报错；但 AI Agent 实例可能就跑在本机，
-  // 此时该路径确实存在，仍应直接用资源管理器打开。故远程时向宿主确认本机是否存在，
-  // 不存在才退回应用内右侧面板的文件树（文件树走 listDirectory(serverId) 远程读取）。
+  // 不存在；但 AI Agent 实例可能就跑在本机，此时该路径确实存在，仍应直接用本机
+  // 程序打开。OpenDirectoryButton 内部用 canOpenDirectoryNatively 判定，本机不
+  // 存在的远程路径退回应用内右侧面板的文件树（走 listDirectory(serverId) 远程读取）。
   const targetServerId = sessionId ? sessionKeyToServerId(sessionId) : serverStore.getActiveServerId()
-  const handleOpenDirectory = useCallback(async () => {
-    if (!targetDirectory) return
-
-    if (!(await canOpenDirectoryNatively(targetServerId, targetDirectory))) {
-      layoutStore.openRightPanel('files')
-      return
-    }
-
-    try {
-      const { openPath } = await import('@tauri-apps/plugin-opener')
-      await openPath(targetDirectory)
-    } catch (e) {
-      uiErrorHandler('open project directory', e)
-      // 客户端上错误原本不可见（production 不输出日志），弹出错误提示便于定位
-      const message = e instanceof Error ? e.message : String(e)
-      notificationStore.push('error', t('header.openProjectDirectory'), message, sessionId ?? '')
-    }
-  }, [targetDirectory, targetServerId, sessionId, t])
 
   const titleControl = (
     <SessionTitleControl
@@ -289,6 +270,14 @@ export function Header({
               <ContextUsageRing
                 contextLimit={contextRingLimit}
                 onOpenDetails={() => setContextDialogOpen(true)}
+              />
+            )}
+
+            {canOpenDirectory && (
+              <OpenDirectoryButton
+                directory={targetDirectory}
+                serverId={targetServerId}
+                onOpenInApp={() => layoutStore.openRightPanel('files')}
               />
             )}
 
@@ -349,17 +338,6 @@ export function Header({
             >
               <LayersIcon size={16} />
             </IconButton>
-
-            {canOpenDirectory && (
-              <IconButton
-                aria-label={t('header.openProjectDirectory')}
-                title={t('header.openProjectDirectory')}
-                onClick={handleOpenDirectory}
-                className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
-              >
-                <FolderIcon size={16} />
-              </IconButton>
-            )}
 
             <IconButton
               aria-label={t('header.mcpStatus')}
@@ -441,6 +419,14 @@ export function Header({
             />
           )}
 
+          {canOpenDirectory && (
+            <OpenDirectoryButton
+              directory={targetDirectory}
+              serverId={targetServerId}
+              onOpenInApp={() => layoutStore.openRightPanel('files')}
+            />
+          )}
+
           {onTogglePaneFullscreen && (
             <IconButton
               aria-label={isPaneFullscreen ? t('header.exitFullscreenPane') : t('header.enterFullscreenPane')}
@@ -498,17 +484,6 @@ export function Header({
               )}
             >
               <LayersIcon size={16} />
-            </IconButton>
-          )}
-
-          {canOpenDirectory && (
-            <IconButton
-              aria-label={t('header.openProjectDirectory')}
-              title={t('header.openProjectDirectory')}
-              onClick={handleOpenDirectory}
-              className={cn('text-text-300 hover:text-text-100', interactive.subtle)}
-            >
-              <FolderIcon size={16} />
             </IconButton>
           )}
 

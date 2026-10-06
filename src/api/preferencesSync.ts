@@ -185,6 +185,9 @@ const EXCLUDED_OPENCODE_DASH_KEYS = new Set([
   'opencode-terminal-layout',
   'opencode-aiagent-account',
   'opencode-multi-server',
+  // 「打开项目目录」的目标程序：不同机器装的编辑器/终端不同，属本机专属偏好，
+  // 同步会让 A 端选定的方式覆盖 B 端（B 端可能根本没装那个工具）。
+  'opencode-open-directory-target',
   // 界面开合状态：属当前这一屏的浏览状态，跨端同步会互相折叠/弹开（见文件头）
   'opencode-sidebar-expanded',
   'opencode-sidebar-expanded-projects',

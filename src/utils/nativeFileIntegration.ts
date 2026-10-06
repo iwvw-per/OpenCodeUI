@@ -79,3 +79,21 @@ export async function canOpenDirectoryNatively(
     return false
   }
 }
+
+/** 「打开目录」的目标程序。 */
+export type OpenDirectoryTarget = 'file_manager' | 'vscode' | 'terminal'
+
+/**
+ * 用指定程序打开本机目录。
+ *
+ * 仅对运行本应用的机器上的真实目录有意义；调用前应先用
+ * {@link canOpenDirectoryNatively} 确认目标可用。桌面端与移动端的平台差异
+ * 由宿主（Rust）处理，前端只传目标程序与路径。
+ */
+export async function openDirectoryWith(
+  directory: string,
+  target: OpenDirectoryTarget,
+): Promise<void> {
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('open_directory_with', { path: directory, target })
+}

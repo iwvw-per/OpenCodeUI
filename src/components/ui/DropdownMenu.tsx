@@ -20,6 +20,8 @@ interface DropdownMenuProps {
   /** z-index，默认 100；在 Dialog 等高 z-index 容器内使用时需要调高 */
   zIndex?: number
   className?: string
+  /** 菜单容器的 ref（供调用方判断「点击是否落在菜单内」） */
+  menuRef?: React.RefObject<HTMLDivElement | null>
   children: React.ReactNode
 }
 
@@ -39,6 +41,7 @@ export function DropdownMenu({
   constrainToRef,
   zIndex = 100,
   className = '',
+  menuRef,
   children,
 }: DropdownMenuProps) {
   const [isVisible, setIsVisible] = useState(false)
@@ -169,6 +172,7 @@ export function DropdownMenu({
 
   return createPortal(
     <div
+      ref={menuRef}
       aria-hidden={!isOpen}
       // 开合动效统一走 index.css 的 .overlay-surface（与 Popover/Select 同一套
       // 参数）。用 data-overlay-state 标记可见态：
