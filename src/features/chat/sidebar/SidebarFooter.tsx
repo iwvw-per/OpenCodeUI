@@ -350,7 +350,10 @@ export function SidebarFooter({
           `}
           style={{
             width: showLabels ? '100%' : 32,
-            paddingLeft: showLabels ? 6 : 6, // 收起时为了对齐中心线(16px)，20px圆环需要6px padding (6+10=16)
+            // 本按钮带 1px 边框（hover/open 态需要），上方导航按钮无边框。
+            // 收起时圆环中心要对齐到按钮中线 16px：border(1) + padding(5) + 圆环半宽(10) = 16，
+            // 所以 paddingLeft 取 5；取 6 会让圆环右偏 1px。
+            paddingLeft: showLabels ? 6 : 5,
             paddingRight: showLabels ? 8 : 4,
           }}
           title={`Context: ${formatTokens(hasMessages ? stats.contextUsed : 0)} tokens • ${Math.round(stats.contextPercent)}% • ${formatCost(stats.totalCost)}`}
