@@ -278,15 +278,21 @@ export function buildChatPageViewModel(messages: Message[], previous?: ChatPageV
   )
 
   let pageRecords: StableChatPage[] | undefined
+  // pageRecords 惰性计算需要上一帧的 pages，但若用普通闭包捕获 previous，每帧
+  // viewModel 都会经这个 getter 闭包强引用上一帧，串成一条随流式帧数无限增长、
+  // 永不释放的保留链（实测数小时可达数千帧、数百 MB，并连带钉住整棵聊天 DOM）。
+  // 用 WeakRef 持有：上一帧 viewModel 不再被本帧强引用，无其它引用时即可回收。
+  const previousRef = previous ? new WeakRef(previous) : null
   return {
     visibleMessageEntries,
     visibleMessages,
     get pageRecords() {
       if (pageRecords) return pageRecords
+      const prev = previousRef?.deref()
       pageRecords = reusePageRecords(
-        previous?.pageRecords,
+        prev?.pageRecords,
         reconcileStableChatPages({
-          currentPages: previous?.pageRecords ?? [],
+          currentPages: prev?.pageRecords ?? [],
           nextMessages: visibleMessages,
           allocateKey: page => page.key,
         }),

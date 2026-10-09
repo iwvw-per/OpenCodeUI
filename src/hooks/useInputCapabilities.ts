@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
 
 const CAN_HOVER_QUERY = '((hover: hover) and (pointer: fine)), ((any-hover: hover) and (any-pointer: fine))'
 const COARSE_POINTER_QUERY = '(pointer: coarse), (any-pointer: coarse)'
@@ -32,42 +32,76 @@ export function getInputCapabilities(): InputCapabilities {
   }
 }
 
-export function useInputCapabilities() {
-  const [capabilities, setCapabilities] = useState<InputCapabilities>(getInputCapabilities)
+// 模块级共享订阅：整个应用只挂一套监听器（2 个 matchMedia + 1 个 window pointerdown）。
+// 此前每个 useInputCapabilities 调用点各挂一套，聊天里每个 CodeBlock / Terminal /
+// MarkdownRenderer 都注册，随虚拟列表滚动不断累积（实测 window 上出现 25 个相同的
+// pointerdown 处理器）。
+const listeners = new Set<() => void>()
+let cached = getInputCapabilities()
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+function sameCapabilities(a: InputCapabilities, b: InputCapabilities): boolean {
+  return (
+    a.canHover === b.canHover &&
+    a.hasCoarsePointer === b.hasCoarsePointer &&
+    a.hasTouch === b.hasTouch &&
+    a.preferTouchUi === b.preferTouchUi
+  )
+}
 
-    const canHoverMediaQuery = window.matchMedia(CAN_HOVER_QUERY)
-    const coarsePointerMediaQuery = window.matchMedia(COARSE_POINTER_QUERY)
-    const handleChange = () => {
-      setCapabilities(getInputCapabilities())
-    }
+function handleChange() {
+  const next = getInputCapabilities()
+  if (sameCapabilities(next, cached)) return
+  cached = next
+  for (const listener of listeners) listener()
+}
 
-    handleChange()
+let detach: (() => void) | null = null
 
-    if (typeof canHoverMediaQuery.addEventListener === 'function') {
-      canHoverMediaQuery.addEventListener('change', handleChange)
-      coarsePointerMediaQuery.addEventListener('change', handleChange)
-    } else {
-      canHoverMediaQuery.addListener(handleChange)
-      coarsePointerMediaQuery.addListener(handleChange)
-    }
+function attach() {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return
+  const canHoverMediaQuery = window.matchMedia(CAN_HOVER_QUERY)
+  const coarsePointerMediaQuery = window.matchMedia(COARSE_POINTER_QUERY)
 
-    window.addEventListener('pointerdown', handleChange, { passive: true })
-
-    return () => {
-      if (typeof canHoverMediaQuery.removeEventListener === 'function') {
-        canHoverMediaQuery.removeEventListener('change', handleChange)
-        coarsePointerMediaQuery.removeEventListener('change', handleChange)
-      } else {
-        canHoverMediaQuery.removeListener(handleChange)
-        coarsePointerMediaQuery.removeListener(handleChange)
-      }
-
+  if (typeof canHoverMediaQuery.addEventListener === 'function') {
+    canHoverMediaQuery.addEventListener('change', handleChange)
+    coarsePointerMediaQuery.addEventListener('change', handleChange)
+    detach = () => {
+      canHoverMediaQuery.removeEventListener('change', handleChange)
+      coarsePointerMediaQuery.removeEventListener('change', handleChange)
       window.removeEventListener('pointerdown', handleChange)
     }
-  }, [])
+  } else {
+    canHoverMediaQuery.addListener(handleChange)
+    coarsePointerMediaQuery.addListener(handleChange)
+    detach = () => {
+      canHoverMediaQuery.removeListener(handleChange)
+      coarsePointerMediaQuery.removeListener(handleChange)
+      window.removeEventListener('pointerdown', handleChange)
+    }
+  }
 
-  return capabilities
+  window.addEventListener('pointerdown', handleChange, { passive: true })
+}
+
+function subscribe(listener: () => void): () => void {
+  if (listeners.size === 0) {
+    cached = getInputCapabilities()
+    attach()
+  }
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      detach?.()
+      detach = null
+    }
+  }
+}
+
+function getSnapshot(): InputCapabilities {
+  return cached
+}
+
+export function useInputCapabilities(): InputCapabilities {
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

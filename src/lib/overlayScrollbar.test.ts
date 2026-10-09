@@ -75,6 +75,33 @@ describe('overlayScrollbar lifecycle', () => {
     await new Promise(resolve => setTimeout(resolve, 300))
     expect(afterParent.querySelector('.os-thumb')).toBeNull()
   })
+  it('detaches a removed scroll container even while mutations keep streaming in', async () => {
+    const { parent, vp } = makeScrollContainer()
+    initOverlayScrollbars()
+    await vi.waitFor(() => {
+      expect(parent.querySelector('.os-thumb')).not.toBeNull()
+    })
+
+    // 模拟会话 remount：容器从 DOM 摘除
+    parent.remove()
+    expect(vp.hasAttribute('data-os')).toBe(true)
+
+    // 持续注入无关 mutation（模拟流式渲染不断改写 DOM），期间仍应清理已摘除的 entry
+    const noise = document.createElement('div')
+    document.body.appendChild(noise)
+    const streamTimer = setInterval(() => {
+      noise.appendChild(document.createElement('span'))
+    }, 20)
+
+    try {
+      await vi.waitFor(() => {
+        expect(vp.hasAttribute('data-os')).toBe(false)
+      })
+    } finally {
+      clearInterval(streamTimer)
+    }
+  })
+
   it('dispose removes the window resize listener', () => {
     initOverlayScrollbars()
     const removeSpy = vi.spyOn(window, 'removeEventListener')

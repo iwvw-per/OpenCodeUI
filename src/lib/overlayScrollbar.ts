@@ -507,8 +507,13 @@ export function initOverlayScrollbars() {
     timer = null
     const batch = pendingMutations
     pendingMutations = []
+    // 先核对已有 entry：已从 DOM 摘除的容器必须 detach，否则其 vp（整棵消息
+    // DOM）会经 entries 这个模块级 Map 永久驻留。此前只在「空批次」分支经
+    // scan() 走到这一步，流式期间 mutation 不断、永远走 scanMutations，
+    // 导致每次会话 remount 的旧滚动容器都泄漏（实测累积 131 个）。
+    reconcileAll()
     if (batch.length === 0) {
-      scan()
+      if (document.body) scanTree(document.body)
       return
     }
     scanMutations(batch)
