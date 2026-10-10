@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.6.125] - 2026-10-10
+
+- feat(update): canary 版本也能检测并自更新 (578a321a)
+- fix(chat): 修复输入框变形动画被 undo/redo 脉冲中断 (7c7802ce)
+
 ## [v0.6.124] - 2026-10-09
 
 - fix(memory): 修复聊天渲染 DOM/监听器泄漏 (f7464997)
