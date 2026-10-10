@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, useSyncExternalStore, type ChangeEvent }
 import { useTranslation } from 'react-i18next'
 import { Button } from '../../../components/ui/Button'
 import { DownloadIcon, ExternalLinkIcon, RetryIcon, UploadIcon } from '../../../components/Icons'
-import { hasUpdateAvailable, updateStore, useUpdateStore, RELEASES_PAGE_URL } from '../../../store/updateStore'
+import { hasUpdateAvailable, updateStore, useUpdateStore, getReleaseManifestUrl, RELEASES_PAGE_URL } from '../../../store/updateStore'
 import { desktopUpdater, isDesktopUpdaterAvailable, type UpdaterProgress } from '../../../utils/desktopUpdater'
 import { saveData } from '../../../utils/downloadUtils'
 import { exportSettingsBackup, importSettingsBackup, previewBackupMeta } from '../../../utils/settingsBackup'
@@ -47,8 +47,10 @@ export function AboutSettings() {
   }, [])
 
   const handleAutoUpdate = useCallback(() => {
-    void desktopUpdater.installLatest()
-  }, [])
+    // 把该 release 自己的 latest.json 传给 Rust：canary 清单在其 tag 路径下，
+    // 静态 endpoint（releases/latest）解析不到。
+    void desktopUpdater.installLatest(latestRelease ? getReleaseManifestUrl(latestRelease) : undefined)
+  }, [latestRelease])
 
   const handleRelaunch = useCallback(() => {
     void desktopUpdater.relaunchApp().catch(() => {
@@ -140,6 +142,12 @@ export function AboutSettings() {
             <div className="text-[length:var(--fs-sm)] text-text-300">{t('about.currentVersion')}</div>
             <div className="shrink-0 text-[length:var(--fs-sm)] font-semibold text-text-100 tabular-nums">
               v{updateState.currentVersion}
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-4 py-2.5">
+            <div className="text-[length:var(--fs-sm)] text-text-300">{t('about.updateChannel')}</div>
+            <div className="shrink-0 text-[length:var(--fs-sm)] font-semibold text-text-100">
+              {updateState.currentChannel === 'canary' ? t('about.channelCanary') : t('about.channelStable')}
             </div>
           </div>
           <div className="flex items-center justify-between gap-4 py-2.5">

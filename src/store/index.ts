@@ -105,7 +105,9 @@ export {
   compareVersions,
   hasUpdateAvailable,
   shouldShowUpdateToast,
+  getReleaseManifestUrl,
+  isPrereleaseVersion,
   exportUpdateSettingsBackup,
   importUpdateSettingsBackup,
 } from './updateStore'
-export type { UpdateRelease, UpdateSettingsBackup, UpdateState } from './updateStore'
+export type { UpdateChannel, UpdateRelease, UpdateSettingsBackup, UpdateState } from './updateStore'

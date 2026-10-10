@@ -7,10 +7,16 @@ export interface UpdateRelease {
   url: string
   publishedAt: string | null
   name: string | null
+  /** 该 release 是否为预发布（canary/alpha/beta）；旧备份数据可能缺失该字段 */
+  prerelease?: boolean
 }
+
+/** 更新通道：由当前安装的版本自动判定，不提供用户开关 */
+export type UpdateChannel = 'stable' | 'canary'
 
 export interface UpdateState {
   currentVersion: string
+  currentChannel: UpdateChannel
   latestRelease: UpdateRelease | null
   lastCheckedAt: number | null
   dismissedVersion: string | null
@@ -35,29 +41,79 @@ type Subscriber = () => void
 
 const STORAGE_KEY = 'opencode:update-check'
 const CHECK_INTERVAL_MS = 12 * 60 * 60 * 1000
-export const RELEASES_API_URL = 'https://api.github.com/repos/iwvw-per/OpenCodeUI/releases/latest'
+const RELEASES_ROOT_URL = 'https://api.github.com/repos/iwvw-per/OpenCodeUI/releases'
+// canary 通道用列表接口拉取最近若干个 release，取语义最大的 prerelease。
+// 单次响应约 27KB/release，per_page 取最小可用值控制流量。
+const CANARY_RELEASE_SCAN_LIMIT = 5
+export const RELEASES_API_URL = `${RELEASES_ROOT_URL}/latest`
 export const RELEASES_PAGE_URL = 'https://github.com/iwvw-per/OpenCodeUI/releases/latest'
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+const PRERELEASE_RE = /-(?:canary|alpha|beta)(?:\.|$)/i
+
+/** 去掉开头的 v，保留 prerelease 后缀（semver 比较需要它） */
 export function normalizeVersion(version: string): string {
-  return version.trim().replace(/^v/i, '').replace(/-.+$/, '')
+  return version.trim().replace(/^v/i, '')
 }
 
+/** 版本号是否为预发布（canary/alpha/beta）——决定更新通道 */
+export function isPrereleaseVersion(version: string): boolean {
+  return PRERELEASE_RE.test(normalizeVersion(version))
+}
+
+/**
+ * semver 风格比较：main 三段数字逐段比，相同则比 prerelease。
+ * semver 语义下 prerelease 小于同号正式版：
+ *   0.6.125 > 0.6.125-canary.1 > 0.6.125-canary.0 > 0.6.124
+ * 因此 canary 用户既能收到更新的 canary，也能收到更高号的 stable。
+ */
 export function compareVersions(a: string, b: string): number {
-  const left = normalizeVersion(a)
-    .split('.')
-    .map(part => Number.parseInt(part, 10) || 0)
-  const right = normalizeVersion(b)
-    .split('.')
-    .map(part => Number.parseInt(part, 10) || 0)
-  const length = Math.max(left.length, right.length)
+  const parse = (raw: string) => {
+    const normalized = normalizeVersion(raw)
+    const dashIndex = normalized.indexOf('-')
+    const core = dashIndex === -1 ? normalized : normalized.slice(0, dashIndex)
+    const prerelease = dashIndex === -1 ? null : normalized.slice(dashIndex + 1)
+    const numbers = core.split('.').map(part => Number.parseInt(part, 10) || 0)
+    const preParts = prerelease
+      ? prerelease
+          .split('.')
+          .map(part => (/^\d+$/.test(part) ? Number.parseInt(part, 10) : part.toLowerCase()))
+      : null
+    return { numbers, preParts }
+  }
+
+  const left = parse(a)
+  const right = parse(b)
+  const length = Math.max(left.numbers.length, right.numbers.length)
 
   for (let i = 0; i < length; i += 1) {
-    const diff = (left[i] ?? 0) - (right[i] ?? 0)
+    const diff = (left.numbers[i] ?? 0) - (right.numbers[i] ?? 0)
     if (diff !== 0) return diff
+  }
+
+  // 正式版 > 预发布
+  if (!left.preParts && !right.preParts) return 0
+  if (!left.preParts) return 1
+  if (!right.preParts) return -1
+
+  const preLength = Math.max(left.preParts.length, right.preParts.length)
+  for (let i = 0; i < preLength; i += 1) {
+    const l = left.preParts[i]
+    const r = right.preParts[i]
+    if (l === undefined) return -1
+    if (r === undefined) return 1
+    if (typeof l === 'number' && typeof r === 'number') {
+      if (l !== r) return l - r
+    } else if (typeof l === 'number') {
+      return -1
+    } else if (typeof r === 'number') {
+      return 1
+    } else if (l !== r) {
+      return l < r ? -1 : 1
+    }
   }
 
   return 0
@@ -72,6 +128,16 @@ export function shouldShowUpdateToast(state: UpdateState): boolean {
   if (state.dismissedVersion === state.latestRelease.version) return false
   if (state.hiddenToastVersion === state.latestRelease.version) return false
   return true
+}
+
+/**
+ * 某个 release 的更新清单（latest.json）下载地址。
+ * canary release 的清单在其 tag 下（其 version 即为 canary 版本号），
+ * 桌面端一键更新用它作为动态 updater endpoint——稳定通道的
+ * releases/latest/download 永远解析不到 prerelease。
+ */
+export function getReleaseManifestUrl(release: UpdateRelease): string {
+  return `https://github.com/iwvw-per/OpenCodeUI/releases/download/${release.tagName}/latest.json`
 }
 
 function loadPersistedState(): PersistedUpdateState {
@@ -123,7 +189,33 @@ function parseRelease(payload: unknown): UpdateRelease {
     url: htmlUrl,
     publishedAt: typeof payload.published_at === 'string' ? payload.published_at : null,
     name: typeof payload.name === 'string' ? payload.name : null,
+    prerelease: payload.prerelease === true,
   }
+}
+
+/**
+ * 从 release 列表里挑出本通道语义最大的候选：跳过 draft。
+ * - stable 通道：只接受正式版（prerelease=true 的跳过）
+ * - canary 通道：预发布与正式版都接受，取语义最大者——canary 用户既该收到
+ *   更新的 canary（0.6.125-canary.2 > canary.1），也该在该号 stable 发布后
+ *   升级到正式版（0.6.125 > 0.6.125-canary.2）。
+ */
+function pickRelease(payload: unknown, channel: UpdateChannel): UpdateRelease | null {
+  if (!Array.isArray(payload)) throw new Error('Invalid release list payload')
+
+  let best: UpdateRelease | null = null
+  for (const entry of payload) {
+    if (!isPlainObject(entry) || entry.draft === true) continue
+    if (channel === 'stable' && entry.prerelease === true) continue
+    let release: UpdateRelease
+    try {
+      release = parseRelease(entry)
+    } catch {
+      continue
+    }
+    if (!best || compareVersions(release.version, best.version) > 0) best = release
+  }
+  return best
 }
 
 function getDefaultCurrentVersion(): string {
@@ -141,8 +233,10 @@ export class UpdateStore {
 
   constructor(currentVersion?: string) {
     const persisted = loadPersistedState()
+    const resolvedVersion = normalizeVersion(currentVersion ?? getDefaultCurrentVersion())
     this.state = {
-      currentVersion: normalizeVersion(currentVersion ?? getDefaultCurrentVersion()),
+      currentVersion: resolvedVersion,
+      currentChannel: isPrereleaseVersion(resolvedVersion) ? 'canary' : 'stable',
       latestRelease: persisted.latestRelease,
       lastCheckedAt: persisted.lastCheckedAt,
       dismissedVersion: persisted.dismissedVersion,
@@ -169,7 +263,12 @@ export class UpdateStore {
     this.notify()
   }
 
-  private applyRelease(release: UpdateRelease, checkedAt: number): void {
+  private applyRelease(release: UpdateRelease | null, checkedAt: number): void {
+    // 列表接口按通道筛选后可能为空（如尚未发布过任何 canary）：保留旧值仅更新时间戳。
+    if (!release) {
+      this.setState({ ...this.state, lastCheckedAt: checkedAt, checking: false, error: null })
+      return
+    }
     const previousVersion = this.state.latestRelease?.version ?? null
     this.setState({
       ...this.state,
@@ -200,7 +299,14 @@ export class UpdateStore {
 
     this.inflightCheck = (async () => {
       try {
-        const response = await fetch(RELEASES_API_URL, {
+        // canary 通道：列表接口拉最近若干个 release，取语义最大的 prerelease。
+        // （/releases/latest 只返回正式版，永远解析不到 canary。）
+        const isCanary = this.state.currentChannel === 'canary'
+        const requestUrl = isCanary
+          ? `${RELEASES_ROOT_URL}?per_page=${CANARY_RELEASE_SCAN_LIMIT}`
+          : RELEASES_API_URL
+
+        const response = await fetch(requestUrl, {
           headers: { Accept: 'application/vnd.github+json' },
         })
         if (!response.ok) {
@@ -208,7 +314,8 @@ export class UpdateStore {
         }
 
         const payload = await response.json()
-        const release = parseRelease(payload)
+        // stable 通道列表接口只用于兜底；正常走 latest 单对象端点。
+        const release = Array.isArray(payload) ? pickRelease(payload, this.state.currentChannel) : parseRelease(payload)
         this.applyRelease(release, now)
       } catch (error) {
         this.state = {

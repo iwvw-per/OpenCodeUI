@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { UpdateStore, compareVersions, hasUpdateAvailable, shouldShowUpdateToast } from './updateStore'
+import {
+  UpdateStore,
+  compareVersions,
+  getReleaseManifestUrl,
+  hasUpdateAvailable,
+  isPrereleaseVersion,
+  shouldShowUpdateToast,
+} from './updateStore'
 
 describe('updateStore helpers', () => {
   it('compares versions with optional v prefix', () => {
@@ -8,15 +15,48 @@ describe('updateStore helpers', () => {
     expect(compareVersions('0.5', '0.5.1')).toBeLessThan(0)
   })
 
+  it('compares prerelease versions with semver semantics', () => {
+    // canary 之间：序号大者更新
+    expect(compareVersions('0.6.125-canary.2', '0.6.125-canary.1')).toBeGreaterThan(0)
+    expect(compareVersions('0.6.125-canary.10', '0.6.125-canary.9')).toBeGreaterThan(0)
+    // 同号正式版 > 预发布
+    expect(compareVersions('0.6.125', '0.6.125-canary.2')).toBeGreaterThan(0)
+    expect(compareVersions('0.6.125-canary.2', '0.6.125')).toBeLessThan(0)
+    // 高号预发布 > 低号正式版
+    expect(compareVersions('0.6.125-canary.1', '0.6.124')).toBeGreaterThan(0)
+    // 完全相同
+    expect(compareVersions('0.6.125-canary.1', 'v0.6.125-canary.1')).toBe(0)
+  })
+
+  it('detects the update channel from the running version', () => {
+    expect(isPrereleaseVersion('0.6.125-canary.1')).toBe(true)
+    expect(isPrereleaseVersion('v0.6.125-beta.2')).toBe(true)
+    expect(isPrereleaseVersion('0.6.125')).toBe(false)
+  })
+
+  it('builds the per-release manifest url', () => {
+    expect(
+      getReleaseManifestUrl({
+        version: '0.6.125-canary.1',
+        tagName: 'v0.6.125-canary.1',
+        url: 'https://example.com',
+        publishedAt: null,
+        name: null,
+      }),
+    ).toBe('https://github.com/iwvw-per/OpenCodeUI/releases/download/v0.6.125-canary.1/latest.json')
+  })
+
   it('detects whether an update toast should be shown', () => {
     const baseState = {
       currentVersion: '0.5.1',
+      currentChannel: 'stable' as const,
       latestRelease: {
         version: '0.5.2',
         tagName: 'v0.5.2',
         url: 'https://example.com',
         publishedAt: null,
         name: null,
+        prerelease: false,
       },
       lastCheckedAt: Date.now(),
       dismissedVersion: null,
@@ -52,6 +92,7 @@ describe('UpdateStore', () => {
           html_url: 'https://github.com/iwvw-per/OpenCodeUI/releases/tag/v0.5.2',
           published_at: '2026-04-15T00:00:00Z',
           name: 'OpenCodeUI v0.5.2',
+          prerelease: false,
         }),
       }),
     )
@@ -67,6 +108,100 @@ describe('UpdateStore', () => {
     expect(store.getSnapshot().dismissedVersion).toBe('0.5.2')
     expect(shouldShowUpdateToast(store.getSnapshot())).toBe(false)
     expect(localStorage.getItem('opencode:update-check')).toContain('0.5.2')
+  })
+
+  it('stable 通道走 latest 单对象端点', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ tag_name: 'v0.6.125', html_url: 'https://example.com', prerelease: false }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = new UpdateStore('0.6.124')
+    await store.checkForUpdates({ force: true })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.github.com/repos/iwvw-per/OpenCodeUI/releases/latest',
+      expect.anything(),
+    )
+    expect(store.getSnapshot().latestRelease?.version).toBe('0.6.125')
+  })
+
+  it('canary 版本走列表接口并取语义最大的 prerelease', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        {
+          tag_name: 'v0.6.125-canary.1',
+          html_url: 'https://example.com/canary1',
+          prerelease: true,
+          draft: false,
+        },
+        {
+          tag_name: 'v0.6.126-canary.0',
+          html_url: 'https://example.com/canary0',
+          prerelease: true,
+          draft: false,
+        },
+        { tag_name: 'v0.6.124', html_url: 'https://example.com/stable', prerelease: false, draft: false },
+        { tag_name: 'v0.6.130-canary.9', html_url: 'https://example.com/draft', prerelease: true, draft: true },
+      ],
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const store = new UpdateStore('0.6.125-canary.1')
+    expect(store.getSnapshot().currentChannel).toBe('canary')
+
+    await store.checkForUpdates({ force: true })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.github.com/repos/iwvw-per/OpenCodeUI/releases?per_page=5',
+      expect.anything(),
+    )
+    // draft 被跳过；稳定版 0.6.124 语义低于 0.6.126-canary.0，canary 通道取更大者
+    expect(store.getSnapshot().latestRelease?.version).toBe('0.6.126-canary.0')
+    expect(store.getSnapshot().latestRelease?.prerelease).toBe(true)
+    expect(hasUpdateAvailable(store.getSnapshot())).toBe(true)
+  })
+
+  it('canary 用户能收到更高号的正式版', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { tag_name: 'v0.6.125-canary.3', html_url: 'https://example.com', prerelease: true, draft: false },
+          { tag_name: 'v0.6.125', html_url: 'https://example.com', prerelease: false, draft: false },
+        ],
+      }),
+    )
+
+    const store = new UpdateStore('0.6.125-canary.2')
+    await store.checkForUpdates({ force: true })
+
+    // 同号正式版语义大于其预发布
+    expect(store.getSnapshot().latestRelease?.version).toBe('0.6.125')
+    expect(hasUpdateAvailable(store.getSnapshot())).toBe(true)
+  })
+
+  it('canary 通道列表里只有更低号的正式版时不报更新', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { tag_name: 'v0.6.124', html_url: 'https://example.com', prerelease: false, draft: false },
+        ],
+      }),
+    )
+
+    const store = new UpdateStore('0.6.126-canary.1')
+    await store.checkForUpdates({ force: true })
+
+    // 候选是正式版 0.6.124，但语义低于当前 canary → 无更新、无错误
+    expect(store.getSnapshot().latestRelease?.version).toBe('0.6.124')
+    expect(hasUpdateAvailable(store.getSnapshot())).toBe(false)
+    expect(store.getSnapshot().error).toBeNull()
   })
 })
 

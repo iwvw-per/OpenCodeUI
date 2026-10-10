@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { isTauriMock, isTauriMobileMock, checkMock, relaunchMock } = vi.hoisted(() => ({
+const { isTauriMock, isTauriMobileMock, invokeMock, relaunchMock } = vi.hoisted(() => ({
   isTauriMock: vi.fn(() => true),
   isTauriMobileMock: vi.fn(() => false),
-  checkMock: vi.fn(),
+  invokeMock: vi.fn(),
   relaunchMock: vi.fn(),
 }))
 
@@ -12,8 +12,11 @@ vi.mock('../utils/tauri', () => ({
   isTauriMobile: () => isTauriMobileMock(),
 }))
 
-vi.mock('@tauri-apps/plugin-updater', () => ({
-  check: checkMock,
+vi.mock('@tauri-apps/api/core', () => ({
+  Channel: class {
+    onmessage: ((event: unknown) => void) | null = null
+  },
+  invoke: (...args: unknown[]) => invokeMock(...args),
 }))
 
 vi.mock('@tauri-apps/plugin-process', () => ({
@@ -44,36 +47,48 @@ describe('isDesktopUpdaterAvailable', () => {
 
 describe('DesktopUpdater', () => {
   afterEach(() => {
-    checkMock.mockReset()
+    invokeMock.mockReset()
     relaunchMock.mockReset()
     isTauriMock.mockReturnValue(true)
     isTauriMobileMock.mockReturnValue(false)
   })
 
-  it('returns to idle when no update is available', async () => {
-    checkMock.mockResolvedValue(null)
+  it('returns to idle when the manifest has no newer version', async () => {
+    invokeMock.mockResolvedValue({ installedVersion: null })
     const updater = new DesktopUpdater()
 
-    await updater.installLatest()
+    await updater.installLatest('https://example.com/latest.json')
 
     expect(updater.getSnapshot().phase).toBe('idle')
     expect(updater.getSnapshot().error).toBeNull()
   })
 
+  it('passes the manifest url to the custom command', async () => {
+    invokeMock.mockResolvedValue({ installedVersion: '0.6.125-canary.2' })
+    const updater = new DesktopUpdater()
+
+    await updater.installLatest('https://example.com/v0.6.125-canary.2/latest.json')
+
+    expect(invokeMock).toHaveBeenCalledWith(
+      'updater_install',
+      expect.objectContaining({ manifestUrl: 'https://example.com/v0.6.125-canary.2/latest.json' }),
+    )
+  })
+
   it('reports download progress and reaches ready', async () => {
-    const downloadAndInstall = vi.fn(async (onEvent: (event: unknown) => void) => {
-      onEvent({ event: 'Started', data: { contentLength: 100 } })
-      onEvent({ event: 'Progress', data: { chunkLength: 40 } })
-      onEvent({ event: 'Progress', data: { chunkLength: 60 } })
-      onEvent({ event: 'Finished' })
+    invokeMock.mockImplementation(async (_cmd: string, args: { onEvent: { onmessage: (event: unknown) => void } }) => {
+      args.onEvent.onmessage({ event: 'Started', data: { contentLength: 100 } })
+      args.onEvent.onmessage({ event: 'Progress', data: { chunkLength: 40 } })
+      args.onEvent.onmessage({ event: 'Progress', data: { chunkLength: 60 } })
+      args.onEvent.onmessage({ event: 'Finished' })
+      return { installedVersion: '0.6.125' }
     })
-    checkMock.mockResolvedValue({ downloadAndInstall })
 
     const updater = new DesktopUpdater()
     const phases: string[] = []
     updater.subscribe(progress => phases.push(progress.phase))
 
-    await updater.installLatest()
+    await updater.installLatest('https://example.com/latest.json')
 
     const final = updater.getSnapshot()
     expect(final.phase).toBe('ready')
@@ -84,34 +99,33 @@ describe('DesktopUpdater', () => {
   })
 
   it('captures errors without throwing', async () => {
-    checkMock.mockRejectedValue(new Error('network down'))
+    invokeMock.mockRejectedValue(new Error('network down'))
     const updater = new DesktopUpdater()
 
-    await updater.installLatest()
+    await updater.installLatest('https://example.com/latest.json')
 
     expect(updater.getSnapshot().phase).toBe('error')
     expect(updater.getSnapshot().error).toBe('network down')
   })
 
   it('deduplicates concurrent install requests', async () => {
-    let resolveInstall: (() => void) | undefined
-    const downloadAndInstall = vi.fn(
+    let resolveInstall: ((value: { installedVersion: string | null }) => void) | undefined
+    invokeMock.mockImplementation(
       () =>
-        new Promise<void>(resolve => {
+        new Promise<{ installedVersion: string | null }>(resolve => {
           resolveInstall = resolve
         }),
     )
-    checkMock.mockResolvedValue({ downloadAndInstall })
 
     const updater = new DesktopUpdater()
-    const first = updater.installLatest()
-    const second = updater.installLatest()
+    const first = updater.installLatest('https://example.com/latest.json')
+    const second = updater.installLatest('https://example.com/latest.json')
 
-    // 第二次调用必须复用同一个 in-flight promise，不再发起新的 check。
-    await vi.waitFor(() => expect(checkMock).toHaveBeenCalledTimes(1))
+    // 第二次调用必须复用同一个 in-flight promise，不再发起新的命令调用。
+    await vi.waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1))
 
-    resolveInstall?.()
+    resolveInstall?.({ installedVersion: '0.6.125' })
     await Promise.all([first, second])
-    expect(downloadAndInstall).toHaveBeenCalledTimes(1)
+    expect(invokeMock).toHaveBeenCalledTimes(1)
   })
 })

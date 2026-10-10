@@ -1,15 +1,20 @@
 // ============================================
-// 桌面端自更新（tauri-plugin-updater）
+// 桌面端自更新（tauri-plugin-updater 的 Rust 侧能力，经自定义命令调用）
 //
 // 与 updateStore 的分工：
-//   - updateStore：查 GitHub Releases API，得到「有没有新版本」并驱动提示条，
-//     跨平台通用（含 Android）。
+//   - updateStore：查 GitHub Releases，判定「有没有新版本」，跨平台通用（含 Android）。
 //   - 这里：在桌面客户端上真正执行下载 + 安装 + 重启，一端完成。
 //
-// 插件只在桌面平台注册（见 src-tauri/capabilities/updater.json），移动端调用
-// 会直接失败，因此所有入口都先过 isDesktopUpdaterAvailable()。
+// 为什么不用 @tauri-apps/plugin-updater 的 JS `check()`：它只能读取
+// tauri.conf.json 里静态配置的 endpoints，无法按通道切换。canary 的更新清单
+// 在各自 release tag 下，静态 endpoint（releases/latest）永远解析不到。
+// 因此改调自定义命令 `updater_install`，把目标清单 URL 动态传给 Rust 侧。
+//
+// 命令只在桌面平台注册（见 src-tauri/src/app/mod.rs 与 capabilities），
+// 移动端调用会失败，因此所有入口都先过 isDesktopUpdaterAvailable()。
 // ============================================
 
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { isTauri, isTauriMobile } from './tauri'
 import i18n from '../i18n'
 
@@ -31,6 +36,18 @@ const INITIAL_PROGRESS: UpdaterProgress = {
   downloadedBytes: 0,
   totalBytes: null,
   error: null,
+}
+
+/** 下载清单请求超时：5 分钟，足以覆盖慢网络下几十 MB 的安装包 */
+const UPSTREAM_TIMEOUT_MS = 5 * 60 * 1000
+
+interface UpdaterDownloadEvent {
+  event: 'Started' | 'Progress' | 'Finished'
+  data?: { contentLength?: number; chunkLength?: number }
+}
+
+interface UpdaterInstallResult {
+  installedVersion: string | null
 }
 
 /**
@@ -61,44 +78,51 @@ export class DesktopUpdater {
   }
 
   /**
-   * 下载并安装最新版本。
+   * 按指定清单 URL 下载并安装更新。
+   *
+   * @param manifestUrl release 的 latest.json 地址（见 updateStore.getReleaseManifestUrl）；
+   *                    不传则回退到 tauri.conf.json 配置的静态 endpoints（稳定通道）。
    *
    * 返回后：
-   *   - Windows：安装器已启动，进程即将退出（由插件接管），phase 停在 'ready'
+   *   - Windows：安装器已启动，进程即将退出（由 Rust 侧接管），phase 停在 'ready'
    *   - macOS / Linux：字节已就位，需要调用方调 relaunchApp() 重启
-   *   - 没有可用更新：phase 回到 'idle'
+   *   - 清单版本不高于当前版本 / 无更新：phase 回到 'idle'
    */
-  async installLatest(): Promise<void> {
+  async installLatest(manifestUrl?: string): Promise<void> {
     if (this.running) return this.running
 
     this.running = (async () => {
       try {
         this.setProgress({ phase: 'checking', downloadedBytes: 0, totalBytes: null, error: null })
 
-        const { check } = await import('@tauri-apps/plugin-updater')
-        const update = await check()
-
-        if (!update) {
-          this.setProgress({ phase: 'idle' })
-          return
-        }
-
+        // 未指定清单时（异常兜底路径）仍走自定义命令，让 Rust 使用静态 endpoints。
+        const channel = new Channel<UpdaterDownloadEvent>()
         let total: number | null = null
         let downloaded = 0
-
-        await update.downloadAndInstall(event => {
+        channel.onmessage = event => {
           if (event.event === 'Started') {
-            total = event.data.contentLength ?? null
+            total = event.data?.contentLength ?? null
             this.setProgress({ phase: 'downloading', downloadedBytes: 0, totalBytes: total })
             return
           }
           if (event.event === 'Progress') {
-            downloaded += event.data.chunkLength
+            downloaded += event.data?.chunkLength ?? 0
             this.setProgress({ phase: 'downloading', downloadedBytes: downloaded, totalBytes: total })
             return
           }
           this.setProgress({ phase: 'installing' })
+        }
+
+        const result = await invoke<UpdaterInstallResult>('updater_install', {
+          manifestUrl: manifestUrl ?? null,
+          onEvent: channel,
+          options: { timeout: UPSTREAM_TIMEOUT_MS },
         })
+
+        if (!result.installedVersion) {
+          this.setProgress({ phase: 'idle' })
+          return
+        }
 
         this.setProgress({ phase: 'ready' })
       } catch (error) {

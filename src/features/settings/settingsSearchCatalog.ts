@@ -190,7 +190,7 @@ export const SETTINGS_SEARCH_DEFINITIONS: SettingsSearchDefinition[] = [
     'copyLastResponse',
     'toggleFullAuto',
   ].map(label => ({ tab: 'keybindings' as const, labelKey: `commands:${label}` })),
-  ...definitions('about', ['about.versionCardTitle', 'about.backupCardTitle']),
+  ...definitions('about', ['about.versionCardTitle', 'about.updateChannel', 'about.backupCardTitle']),
 ]
 
 function normalizeSearchText(value: string) {
