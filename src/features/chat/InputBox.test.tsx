@@ -172,6 +172,32 @@ describe('InputBox 收起动画', () => {
     expect(fab.dataset.mode).toBe('scroll')
   })
 
+  it('收起过渡已结束、收尾 rAF 未执行时立刻展开：旧世代的收尾不得摘掉新动画的 data-morphing', async () => {
+    viewportState.enableCollapsedInputDock = true
+    const { rerender } = render(<InputBox paneId="pane-test" onSend={vi.fn()} isAtBottom />)
+
+    const inputBox = document.querySelector('[data-input-box]') as HTMLElement
+
+    rerender(<InputBox paneId="pane-test" onSend={vi.fn()} isAtBottom={false} />)
+    expect(inputBox.hasAttribute('data-morphing')).toBe(true)
+
+    // 收起过渡结束：收尾被合并进 rAF，此刻还没执行
+    fireEvent.transitionEnd(inputBox, { propertyName: 'width', elapsedTime: 0.52 })
+
+    // rAF 落地之前用户又展开 → 进入新世代
+    rerender(<InputBox paneId="pane-test" onSend={vi.fn()} isAtBottom />)
+    expect(inputBox.hasAttribute('data-morphing')).toBe(true)
+    // 展开态清掉内联几何，回到 CSS 的 width:100%
+    expect(inputBox.style.width).toBe('')
+    expect(inputBox.style.borderRadius).toBe('')
+
+    // 等旧世代的 rAF 执行完：它必须被世代号丢弃，新动画不能被它打断
+    await act(async () => {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    })
+    expect(inputBox.hasAttribute('data-morphing')).toBe(true)
+  })
+
   it('运行中发送请求未返回（isSubmitting 仍为 true）时，FAB 是停止态且不禁用', async () => {
     viewportState.enableCollapsedInputDock = false
     let resolveSend: ((value: boolean) => void) | null = null

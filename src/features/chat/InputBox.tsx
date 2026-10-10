@@ -1482,6 +1482,12 @@ function InputBoxComponent({
   const [morphContentWidth, setMorphContentWidth] = useState(0)
   // 本组件当前是否持有 chatMorph 的降载占用（引用计数），卸载时据此释放。
   const morphClaimRef = useRef(false)
+  // 变形世代：每次翻转 +1。收尾信号（transitionend / 兜底定时器）入队时带上
+  // 世代号，回来时与 ref 比对，不符即丢弃——防止「收起刚结束就立刻展开」时，
+  // 旧过渡入队的 rAF 或旧定时器在新动画刚启动时摘掉 data-morphing（几何瞬跳）。
+  // state 镜像用于让过渡监听器随世代重建，closure 不持有过期世代。
+  const morphGenerationRef = useRef(0)
+  const [morphGeneration, setMorphGeneration] = useState(0)
 
   useEffect(
     () => () => {
@@ -1512,18 +1518,27 @@ function InputBoxComponent({
   // 列表里移除。若在几何过渡真正跑完之前摘，正在进行的过渡会被取消、几何直接
   // 瞬跳到终点——表现就是「收起动画没走完」。所以收尾以 transitionend 为准，
   // 定时器只作兜底（几何值没变、没有过渡事件时用）。
-  const finishMorph = useCallback(() => {
-    if (morphTimerRef.current !== null) {
-      window.clearTimeout(morphTimerRef.current)
-      morphTimerRef.current = null
-    }
-    inputContainerRef.current?.removeAttribute('data-morphing')
-    setIsMorphing(false)
-    if (morphClaimRef.current) {
-      morphClaimRef.current = false
-      setChatMorphing(false)
-    }
-  }, [inputContainerRef])
+  // expectedGeneration 见 morphGenerationRef：只接受当前世代的收尾请求。
+  // 收尾时顺带补一次 syncBoxHeight：翻转那一帧若量不到展开内容高度（元素刚切回
+  // 文档流），高度会停在上一个态；这里在动画结束后自愈，避免输入框被 overflow
+  // 裁成半截。
+  const finishMorph = useCallback(
+    (expectedGeneration: number) => {
+      if (expectedGeneration !== morphGenerationRef.current) return
+      if (morphTimerRef.current !== null) {
+        window.clearTimeout(morphTimerRef.current)
+        morphTimerRef.current = null
+      }
+      inputContainerRef.current?.removeAttribute('data-morphing')
+      setIsMorphing(false)
+      if (morphClaimRef.current) {
+        morphClaimRef.current = false
+        setChatMorphing(false)
+      }
+      syncBoxHeight()
+    },
+    [inputContainerRef, syncBoxHeight],
+  )
 
   // 几何过渡结束信号：只听目标元素自身、且只认几何属性，避免 border-color /
   // background-color（360ms）或 transform（480ms）先结束时提前收尾。
@@ -1533,12 +1548,15 @@ function InputBoxComponent({
     if (!isMorphing) return
     const el = inputContainerRef.current
     if (!el) return
+    // closure 绑定当前世代：监听器随 morphGeneration 重建，不会拿着过期世代
+    // 去处理新过渡的事件（陈旧入队信号直接被 finishMorph 丢弃）。
+    const generation = morphGeneration
     let finishFrame: number | null = null
     const scheduleFinish = () => {
       if (finishFrame !== null) cancelAnimationFrame(finishFrame)
       finishFrame = requestAnimationFrame(() => {
         finishFrame = null
-        finishMorph()
+        finishMorph(generation)
       })
     }
     const onTransitionEnd = (event: TransitionEvent) => {
@@ -1552,7 +1570,7 @@ function InputBoxComponent({
       if (finishFrame !== null) cancelAnimationFrame(finishFrame)
       el.removeEventListener('transitionend', onTransitionEnd)
     }
-  }, [isMorphing, finishMorph, inputContainerRef])
+  }, [isMorphing, morphGeneration, finishMorph, inputContainerRef])
 
   useLayoutEffect(() => {
     const el = inputContainerRef.current
@@ -1571,6 +1589,12 @@ function InputBoxComponent({
       // 收起方向：用展开态记下的内容宽度把内容冻住，否则容器逐帧收窄会把
       // 工具栏/textarea 一路 reflow，看起来就是不丝滑。
       if (isCollapsed) setMorphContentWidth(expandedWidthRef.current)
+      // 新世代：上一世代的收尾信号（transitionend / 兜底定时器 / 已入队的 rAF）
+      // 到此全部失效，防止它们在新过渡刚启动时提前摘掉 data-morphing。
+      // ref 供 finishMorph 校验，state 驱动监听器重建（closure 不持过期世代）。
+      morphGenerationRef.current += 1
+      const generation = morphGenerationRef.current
+      setMorphGeneration(generation)
       el.setAttribute('data-morphing', '')
       setIsMorphing(true)
       // 变形期间降载：通知虚拟列表降低 overscan，把主线程让给几何动画，
@@ -1585,7 +1609,7 @@ function InputBoxComponent({
       // 保证正常情况下是 transitionend 先到、不会在动画中途被定时器截断。
       morphTimerRef.current = window.setTimeout(() => {
         morphTimerRef.current = null
-        finishMorph()
+        finishMorph(generation)
       }, MORPH_FALLBACK_MS)
     }
 

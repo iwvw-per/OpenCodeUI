@@ -14,6 +14,17 @@ export function useMessageAnimation() {
   // 追踪所有 timeout，用于清理
   const timeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
+  // 输入框脉冲动画句柄（WAAPI）。脉冲必须走 Web Animations API：输入框本体
+  // [data-input-box] 的 width/height/border-radius 过渡由 CSS 的 data-morphing
+  // 列表驱动，写内联 style.transition 会整条覆盖该列表、把进行中的收起/展开
+  // 过渡打断成瞬跳；WAAPI 动画独立于 style.transition，不会干扰几何变形。
+  const pulseAnimationsRef = useRef<Set<globalThis.Animation>>(new Set())
+
+  const cancelPulses = useCallback(() => {
+    pulseAnimationsRef.current.forEach(animation => animation.cancel())
+    pulseAnimationsRef.current.clear()
+  }, [])
+
   // 清理所有 timeout
   useEffect(() => {
     const timeouts = timeoutsRef.current
@@ -24,6 +35,13 @@ export function useMessageAnimation() {
     }
   }, [])
 
+  // 输入框脉冲
+  useEffect(() => {
+    return () => {
+      cancelPulses()
+    }
+  }, [cancelPulses])
+
   // 包装 setTimeout，自动追踪和清理
   const safeTimeout = useCallback((fn: () => void, delay: number) => {
     const id = setTimeout(() => {
@@ -33,6 +51,19 @@ export function useMessageAnimation() {
     timeoutsRef.current.add(id)
     return id
   }, [])
+
+  const pulseInputBox = useCallback(
+    (frames: Keyframe[], options: KeyframeAnimationOptions) => {
+      const inputBoxEl = refs.current.inputBoxRef
+      if (!inputBoxEl || typeof inputBoxEl.animate !== 'function') return
+      cancelPulses()
+      const animation = inputBoxEl.animate(frames, { fill: 'none', ...options })
+      pulseAnimationsRef.current.add(animation)
+      animation.onfinish = () => pulseAnimationsRef.current.delete(animation)
+      return animation
+    },
+    [cancelPulses],
+  )
 
   // 注册消息元素（所有消息都注册，不只是用户消息）
   const registerMessage = useCallback((id: string, element: HTMLElement | null) => {
@@ -53,8 +84,6 @@ export function useMessageAnimation() {
   const animateUndo = useCallback(
     (messageIds: string[]): Promise<void> => {
       return new Promise(resolve => {
-        const inputBoxEl = refs.current.inputBoxRef
-
         // 给每个消息添加消失动画，带有交错延迟
         messageIds.forEach((id, index) => {
           const el = refs.current.messageRefs.get(id)
@@ -66,58 +95,42 @@ export function useMessageAnimation() {
           }
         })
 
-        // 输入框脉冲效果
-        if (inputBoxEl) {
-          safeTimeout(() => {
-            inputBoxEl.style.transition = 'box-shadow 150ms ease-out, transform 150ms cubic-bezier(0.34, 1.2, 0.64, 1)'
-            inputBoxEl.style.boxShadow =
-              '0 0 0 2px hsl(var(--accent-main-100) / 0.3), 0 0.25rem 1.25rem hsl(var(--always-black) / 0.1)'
-            inputBoxEl.style.transform = 'scale(1.005)'
-
-            safeTimeout(() => {
-              // 先禁掉 CSS transition，再清 transform，防止第二次 260ms 动画
-              inputBoxEl.style.transition = 'none'
-              inputBoxEl.style.transform = ''
-              inputBoxEl.style.boxShadow = ''
-              // 下一帧恢复 CSS transition
-              requestAnimationFrame(() => {
-                inputBoxEl.style.transition = ''
-              })
-            }, 200)
-          }, 100)
-        }
+        // 输入框脉冲效果（WAAPI，不碰 style.transition，见 pulseInputBox 注释）
+        safeTimeout(() => {
+          pulseInputBox(
+            [
+              { transform: 'scale(1)', boxShadow: '0 0 0 0 hsl(var(--accent-main-100) / 0)', offset: 0 },
+              { transform: 'scale(1.005)', boxShadow: '0 0 0 2px hsl(var(--accent-main-100) / 0.3)', offset: 0.4 },
+              { transform: 'scale(1)', boxShadow: '0 0 0 0 hsl(var(--accent-main-100) / 0)', offset: 1 },
+            ],
+            { duration: 200, easing: 'ease-out' },
+          )
+        }, 100)
 
         // 等待所有动画完成
         const totalDuration = 220 + (messageIds.length - 1) * 30 + 50
         safeTimeout(resolve, Math.min(totalDuration, 350))
       })
     },
-    [safeTimeout],
+    [pulseInputBox, safeTimeout],
   )
 
   // 恢复动画：输入框收缩 + 消息准备进入
   const animateRedo = useCallback((): Promise<void> => {
     return new Promise(resolve => {
-      const inputBoxEl = refs.current.inputBoxRef
-
-      if (inputBoxEl) {
-        inputBoxEl.style.transition = 'transform 180ms cubic-bezier(0.34, 1.2, 0.64, 1), box-shadow 180ms ease-out'
-        inputBoxEl.style.transform = 'scale(0.995)'
-        inputBoxEl.style.boxShadow = '0 0 0 1px hsl(var(--accent-main-100) / 0.2)'
-
-        safeTimeout(() => {
-          inputBoxEl.style.transition = 'none'
-          inputBoxEl.style.transform = ''
-          inputBoxEl.style.boxShadow = ''
-          requestAnimationFrame(() => {
-            inputBoxEl.style.transition = ''
-          })
-        }, 180)
-      }
+      // 输入框脉冲（WAAPI，不碰 style.transition，见 pulseInputBox 注释）
+      pulseInputBox(
+        [
+          { transform: 'scale(1)', boxShadow: '0 0 0 0 hsl(var(--accent-main-100) / 0)', offset: 0 },
+          { transform: 'scale(0.995)', boxShadow: '0 0 0 1px hsl(var(--accent-main-100) / 0.2)', offset: 0.5 },
+          { transform: 'scale(1)', boxShadow: '0 0 0 0 hsl(var(--accent-main-100) / 0)', offset: 1 },
+        ],
+        { duration: 180, easing: 'ease-out' },
+      )
 
       safeTimeout(resolve, 80)
     })
-  }, [safeTimeout])
+  }, [pulseInputBox, safeTimeout])
 
   return {
     registerMessage,
