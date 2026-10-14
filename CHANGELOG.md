@@ -1,5 +1,12 @@
 # Changelog
 
+## [v1.0.1] - 2026-10-14
+
+- fix(sidebar): 自动检测被污染为 Windows 时自愈回退正斜杠查询会话 (08784ee0)
+- chore: bump version to 1.0.0 (57283ebd)
+- fix(update): 按产品线（主版本号）隔离更新检查，避免 v1/v2 跨适配误报 (ba30878e)
+- revert(api): 移除 opencode v2 适配，main 恢复为纯 v1 版本 (c6fb65dd)
+
 ## [v1.0.0] - 2026-10-14
 
 - fix(update): 按产品线（主版本号）隔离更新检查，避免 v1/v2 跨适配误报 (ba30878e)
