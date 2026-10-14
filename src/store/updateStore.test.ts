@@ -110,21 +110,27 @@ describe('UpdateStore', () => {
     expect(localStorage.getItem('opencode:update-check')).toContain('0.5.2')
   })
 
-  it('stable 通道走 latest 单对象端点', async () => {
+  it('stable 通道走列表接口并按产品线取同主版本的正式版', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ tag_name: 'v0.6.125', html_url: 'https://example.com', prerelease: false }),
+      json: async () => [
+        { tag_name: 'v0.6.125', html_url: 'https://example.com/stable', prerelease: false, draft: false },
+        { tag_name: 'v1.2.0', html_url: 'https://example.com/v1', prerelease: false, draft: false },
+        { tag_name: 'v2.0.0', html_url: 'https://example.com/v2', prerelease: false, draft: false },
+      ],
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const store = new UpdateStore('0.6.124')
+    const store = new UpdateStore('1.1.0')
     await store.checkForUpdates({ force: true })
 
+    // 列表接口（含 per_page 参数），而非单对象 /latest 端点
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://api.github.com/repos/iwvw-per/OpenCodeUI/releases/latest',
+      'https://api.github.com/repos/iwvw-per/OpenCodeUI/releases?per_page=5',
       expect.anything(),
     )
-    expect(store.getSnapshot().latestRelease?.version).toBe('0.6.125')
+    // 产品线隔离：1.x 用户只看到 1.2.0，忽略 2.0.0
+    expect(store.getSnapshot().latestRelease?.version).toBe('1.2.0')
   })
 
   it('canary 版本走列表接口并取语义最大的 prerelease', async () => {
@@ -202,6 +208,47 @@ describe('UpdateStore', () => {
     expect(store.getSnapshot().latestRelease?.version).toBe('0.6.124')
     expect(hasUpdateAvailable(store.getSnapshot())).toBe(false)
     expect(store.getSnapshot().error).toBeNull()
+  })
+
+  it('v2 用户（2.x）只收到 2.x 的更新，忽略 1.x', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { tag_name: 'v1.9.0', html_url: 'https://example.com/v1', prerelease: false, draft: false },
+          { tag_name: 'v2.1.0', html_url: 'https://example.com/v2', prerelease: false, draft: false },
+          { tag_name: 'v2.0.0', html_url: 'https://example.com/v2-0', prerelease: false, draft: false },
+        ],
+      }),
+    )
+
+    const store = new UpdateStore('2.0.0')
+    await store.checkForUpdates({ force: true })
+
+    // 即便仓库里 1.9.0 是更高编号之外的产品线，也被隔离；取 2.x 里语义最大者
+    expect(store.getSnapshot().latestRelease?.version).toBe('2.1.0')
+    expect(hasUpdateAvailable(store.getSnapshot())).toBe(true)
+  })
+
+  it('本产品线无更高版本时不误报跨产品线的新版', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { tag_name: 'v1.5.0', html_url: 'https://example.com/v1', prerelease: false, draft: false },
+          { tag_name: 'v2.5.0', html_url: 'https://example.com/v2', prerelease: false, draft: false },
+        ],
+      }),
+    )
+
+    const store = new UpdateStore('1.6.0')
+    await store.checkForUpdates({ force: true })
+
+    // 1.x 用户当前 1.6.0 高于仓库 1.5.0；2.5.0 是另一产品线被忽略 → 无更新
+    expect(store.getSnapshot().latestRelease?.version).toBe('1.5.0')
+    expect(hasUpdateAvailable(store.getSnapshot())).toBe(false)
   })
 })
 
