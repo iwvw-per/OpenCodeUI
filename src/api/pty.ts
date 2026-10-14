@@ -112,14 +112,10 @@ export function getPtyConnectUrl(
 
   const auth = serverId ? serverStore.getServerAuth(serverId) : serverStore.getActiveAuth()
   const formatted = formatPathForApi(directory, serverId)
-  const isV2 = (serverId ? serverStore.getApiVersion(serverId) : serverStore.getApiVersion(serverStore.getActiveServerId() ?? '')) === 'v2'
-  // v1：/pty/{id}/connect?directory=；v2：/api/pty/{id}/connect?location[directory]=
-  const connectPath = isV2 ? `/api/pty/${ptyId}/connect` : `/pty/${ptyId}/connect`
-  const dirParam = isV2 ? 'location[directory]' : 'directory'
 
   // Tauri bridge 不需要在 URL 里放认证
   if (!includeAuthInUrl) {
-    return `${wsBase}${connectPath}${buildQueryString({ [dirParam]: formatted, cursor })}`
+    return `${wsBase}/pty/${ptyId}/connect${buildQueryString({ directory: formatted, cursor })}`
   }
 
   // 浏览器原生 WebSocket：
@@ -133,7 +129,7 @@ export function getPtyConnectUrl(
     }
   })()
 
-  const queryParams: Record<string, string | number | undefined> = { [dirParam]: formatted, cursor }
+  const queryParams: Record<string, string | number | undefined> = { directory: formatted, cursor }
 
   // 一次性短令牌：优先于 auth_token。远程服务器（如 API Monitor 网关）在
   // 需要认证时用短令牌握手，短令牌由调用方在连接前通过 streamToken 换取。
@@ -152,7 +148,7 @@ export function getPtyConnectUrl(
     wsUrl = wsBase.replace('://', `://${creds}`)
   }
 
-  return `${wsUrl}${connectPath}${buildQueryString(queryParams)}`
+  return `${wsUrl}/pty/${ptyId}/connect${buildQueryString(queryParams)}`
 }
 
 /**
