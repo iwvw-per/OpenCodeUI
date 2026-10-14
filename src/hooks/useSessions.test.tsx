@@ -4,6 +4,7 @@ import type { EventCallbacks } from '../types/api/event'
 import { useSessions } from './useSessions'
 import { sessionListIndexStore } from '../store/sessionListIndexStore'
 import { sessionActivityStore } from '../store/sessionActivityStore'
+import { getDetectedPathStyle, setDetectedPathStyle } from '../utils/directoryUtils'
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void
@@ -462,6 +463,33 @@ describe('useSessions', () => {
     })
 
     expect(result.current.sessions.map(session => session.id)).toEqual(['session-2'])
+  })
+
+  it('self-heals a directory polluted into Windows style when the unix query is empty', async () => {
+    // 模拟 ARM 场景：auto 模式下检测结果被污染成 windows（反斜杠），
+    // 用反斜杠查询返回空，正斜杠查询才有数据。
+    setDetectedPathStyle('windows')
+    getSessionsMock
+      .mockResolvedValueOnce([]) // 第一次（反斜杠）查空
+      .mockResolvedValueOnce([makeSession('session-1')]) // 回退正斜杠有数据
+
+    const { result } = renderHook(() => useSessions({ directory: '/workspace/demo' }))
+
+    await act(async () => {
+      vi.runAllTimers()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    // 反斜杠查空后自动用正斜杠重试一次（带 skipCache，避免命中反斜杠的空列表缓存）
+    expect(getSessionsMock).toHaveBeenCalledTimes(2)
+    expect(getSessionsMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ directory: '/workspace/demo', skipCache: true }),
+      undefined,
+    )
+    expect(result.current.sessions.map(s => s.id)).toEqual(['session-1'])
+    // 检测结果被纠正回 unix
+    expect(getDetectedPathStyle()).toBe('unix')
   })
 
   describe('multi-directory aggregation', () => {

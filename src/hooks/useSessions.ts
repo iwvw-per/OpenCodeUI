@@ -15,7 +15,7 @@ import {
   isIndexableQuery,
   type SessionListBucketKey,
 } from '../store/sessionListIndexStore'
-import { autoDetectPathStyle } from '../utils'
+import { autoDetectPathStyle, getPathMode, setDetectedPathStyle, getEffectivePathStyle } from '../utils'
 import { normalizeForComparison } from '../utils/directoryUtils'
 import { isEphemeralSession } from '../utils/ephemeralSessions'
 import { sortSessionsByAnchor } from '../store/sessionActivityStore'
@@ -236,16 +236,32 @@ try {
                   }),
                 )
               : null
+          // 拉单个目录的会话；auto 模式下检测结果被污染为 Windows（反斜杠）时，
+          // unix 项目目录会被转成反斜杠查询而返回空，而空列表又不会触发下方
+          // autoDetectPathStyle 的纠正，形成死循环。这里在空结果且目录本身为
+          // unix 风格时，强制用正斜杠重试一次并把检测结果纠正回 unix（自愈）。
+          // swallowErrors=true 时失败吞为 []（聚合模式原语义）；false 时向上抛，
+          // 走外层 catch 的重试/错误态（单目录模式原语义）。
+          const fetchDirSessions = async (dir: string, swallowErrors: boolean): Promise<ApiSession[]> => {
+            const baseQuery = { roots: rootsOnly, limit: requestedLimit + 1, directory: dir, ...queryParams }
+            const fetchOnce = (query: typeof baseQuery) =>
+              swallowErrors ? getSessions(query, serverId).catch(() => [] as ApiSession[]) : getSessions(query, serverId)
+            let list = await fetchOnce(baseQuery)
+            if (
+              list.length === 0 &&
+              dir &&
+              getPathMode() === 'auto' &&
+              getEffectivePathStyle(serverId) === 'windows'
+            ) {
+              setDetectedPathStyle('unix', serverId)
+              list = await fetchOnce({ ...baseQuery, skipCache: true })
+            }
+            return list
+          }
+
           if (isAggregate && normalizedDirectories) {
             // 聚合：每个目录各拉一次（多取一条判 hasMore），合并去重后按时间排序。
-            const perDirectory = await Promise.all(
-              normalizedDirectories.map(dir =>
-                getSessions(
-                  { roots: rootsOnly, limit: requestedLimit + 1, directory: dir, ...queryParams },
-                  serverId,
-                ).catch(() => [] as ApiSession[]),
-              ),
-            )
+            const perDirectory = await Promise.all(normalizedDirectories.map(dir => fetchDirSessions(dir, true)))
             const seen = new Set<string>()
             const merged: ApiSession[] = []
             let anyHasMore = false
@@ -266,15 +282,7 @@ try {
             data = merged
             hasMore = anyHasMore
           } else {
-            data = await getSessions(
-              {
-                roots: rootsOnly,
-                limit: requestedLimit + 1,
-                directory: normalizedDirectory,
-                ...queryParams,
-              },
-              serverId,
-            )
+            data = await fetchDirSessions(normalizedDirectory ?? '', false)
             hasMore = data.length > requestedLimit
           }
 
